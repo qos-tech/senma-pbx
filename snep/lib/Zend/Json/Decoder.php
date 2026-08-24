@@ -31,6 +31,19 @@ require_once 'Zend/Json.php';
  * @package    Zend_Json
  * @copyright  Copyright (c) 2005-2012 Zend Technologies USA Inc. (http://www.zend.com)
  * @license    http://framework.zend.com/license/new-bsd     New BSD License
+ *
+ * PHP 8 compatibility (TASK-0004): 6 sites used curly-brace string-offset
+ * syntax ($str{$i}), removed in PHP 8.0 as a parse-time fatal -- any file
+ * containing it fails to load at all, regardless of whether the line
+ * executes. Changed to $str[$i] (equivalent since PHP 4, zero behavior
+ * change). Zend_Json::decode() only reaches this class when native
+ * json_decode() is unavailable (it always is, in this deployment), so
+ * this was latent/currently-unreachable rather than an active bug, but
+ * Zend_Json itself IS used by first-party code (IndexController,
+ * RegisterController, ModuleSettingsController, Snep_Version,
+ * Snep_Notifications, Snep_Rest_Controller), so it was fixed rather than
+ * deferred as dead code. See
+ * docs/tasks/0004-php84-remaining-compatibility.md.
  */
 class Zend_Json_Decoder
 {
@@ -324,7 +337,7 @@ class Zend_Json_Decoder
         $i          = $this->_offset;
         $start      = $i;
 
-        switch ($str{$i}) {
+        switch ($str[$i]) {
             case '{':
                $this->_token = self::LBRACE;
                break;
@@ -351,14 +364,14 @@ class Zend_Json_Decoder
                         break;
                     }
 
-                    $chr = $str{$i};
+                    $chr = $str[$i];
 
                     if ($chr == '\\') {
                         $i++;
                         if ($i >= $str_length) {
                             break;
                         }
-                        $chr = $str{$i};
+                        $chr = $str[$i];
                         switch ($chr) {
                             case '"' :
                                 $result .= '"';
@@ -431,7 +444,7 @@ class Zend_Json_Decoder
             return($this->_token);
         }
 
-        $chr = $str{$i};
+        $chr = $str[$i];
         if ($chr == '-' || $chr == '.' || ($chr >= '0' && $chr <= '9')) {
             if (preg_match('/-?([0-9])*(\.[0-9]*)?((e|E)((-|\+)?)[0-9]+)?/s',
                 $str, $matches, PREG_OFFSET_CAPTURE, $start) && $matches[0][1] == $start) {
@@ -494,7 +507,7 @@ class Zend_Json_Decoder
                     $i += 5;
                     break;
                 case ($ord_chrs_c >= 0x20) && ($ord_chrs_c <= 0x7F):
-                    $utf8 .= $chrs{$i};
+                    $utf8 .= $chrs[$i];
                     break;
                 case ($ord_chrs_c & 0xE0) == 0xC0:
                     // characters U-00000080 - U-000007FF, mask 110XXXXX
@@ -552,7 +565,7 @@ class Zend_Json_Decoder
             return mb_convert_encoding($utf16, 'UTF-8', 'UTF-16');
         }
 
-        $bytes = (ord($utf16{0}) << 8) | ord($utf16{1});
+        $bytes = (ord($utf16[0]) << 8) | ord($utf16[1]);
 
         switch (true) {
             case ((0x7F & $bytes) == $bytes):

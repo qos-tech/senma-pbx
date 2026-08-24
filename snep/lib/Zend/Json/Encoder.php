@@ -26,6 +26,18 @@
  * @package    Zend_Json
  * @copyright  Copyright (c) 2005-2012 Zend Technologies USA Inc. (http://www.zend.com)
  * @license    http://framework.zend.com/license/new-bsd     New BSD License
+ *
+ * PHP 8 compatibility (TASK-0004): 7 sites in _utf82utf16() used
+ * curly-brace string-offset syntax ($utf8{0}), removed in PHP 8.0 as a
+ * parse-time fatal. Changed to $utf8[0] (equivalent since PHP 4, zero
+ * behavior change). This method is itself guarded by
+ * function_exists('mb_convert_encoding') (always true in this
+ * deployment) and Zend_Json::encode() only reaches Zend_Json_Encoder at
+ * all when native json_encode() is unavailable (it always is), so this
+ * was latent/currently-unreachable rather than an active bug -- fixed
+ * anyway since Zend_Json is used by first-party code (same reachable
+ * call sites as Zend_Json_Decoder, see that file). See
+ * docs/tasks/0004-php84-remaining-compatibility.md.
  */
 class Zend_Json_Encoder
 {
@@ -558,17 +570,17 @@ class Zend_Json_Encoder
             case 2:
                 // return a UTF-16 character from a 2-byte UTF-8 char
                 // see: http://www.cl.cam.ac.uk/~mgk25/unicode.html#utf-8
-                return chr(0x07 & (ord($utf8{0}) >> 2))
-                     . chr((0xC0 & (ord($utf8{0}) << 6))
-                         | (0x3F & ord($utf8{1})));
+                return chr(0x07 & (ord($utf8[0]) >> 2))
+                     . chr((0xC0 & (ord($utf8[0]) << 6))
+                         | (0x3F & ord($utf8[1])));
 
             case 3:
                 // return a UTF-16 character from a 3-byte UTF-8 char
                 // see: http://www.cl.cam.ac.uk/~mgk25/unicode.html#utf-8
-                return chr((0xF0 & (ord($utf8{0}) << 4))
-                         | (0x0F & (ord($utf8{1}) >> 2)))
-                     . chr((0xC0 & (ord($utf8{1}) << 6))
-                         | (0x7F & ord($utf8{2})));
+                return chr((0xF0 & (ord($utf8[0]) << 4))
+                         | (0x0F & (ord($utf8[1]) >> 2)))
+                     . chr((0xC0 & (ord($utf8[1]) << 6))
+                         | (0x7F & ord($utf8[2])));
         }
 
         // ignoring UTF-32 for now, sorry
