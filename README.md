@@ -36,9 +36,28 @@ make logs        # follow container logs
 make ps          # show container status
 make shell       # open a shell in the app container
 make db-shell    # open a MariaDB shell against the db container
+make smoke       # run the HTTP smoke test suite (starts the env if needed)
 make doctor      # check local prerequisites (docker, .env, compose config)
 make reset       # DESTRUCTIVE: remove containers and volumes (asks to confirm)
 ```
+
+## HTTP smoke tests
+
+`make smoke` runs `scripts/smoke-test.sh` — a plain bash + curl regression
+suite (no test framework) that exercises the 10 core admin flows (login,
+dashboard, extensions, trunks, routes, groups, queues, reports, settings,
+logout), checks logout actually invalidates the session, and confirms
+`includes/setup.conf`/`setup.conf.dist` stay inaccessible over HTTP. It logs
+in with the seeded `admin` account (password reset to a fixed dev-only
+value each run, directly in the dev database — never touching `.env` or
+real credentials) and diffs the app container's fatal-error log
+before/after to catch regressions a bare HTTP-status check would miss.
+
+One flow (`queues`) is expected to report as a known limitation, not a
+failure: this Docker topology deliberately has no Asterisk service yet, so
+`queues` 500s on a missing Asterisk config file. The suite asserts that
+*specific* failure signature — if `queues` ever fails any other way, that's
+reported as a real regression. See `docs/tasks/0003-http-smoke-harness.md`.
 
 ## Notes on the current Docker bootstrap milestone
 

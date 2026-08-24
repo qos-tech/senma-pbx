@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell test lint doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell test smoke lint doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -31,6 +31,9 @@ db-shell:
 test:
 	@echo "No automated test suite is wired yet."
 	@echo "Add project tests before changing this target to report success."
+
+smoke: up
+	@set -a; . ./.env; set +a; bash scripts/smoke-test.sh
 
 lint:
 	@echo "No lint pipeline is wired yet."
