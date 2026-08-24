@@ -580,3 +580,157 @@ that batches 2–4 worked through (`__autoload` → `create_function()` →
 - `GET /index.php/default/systemstatus`'s no-Asterisk 500 remains the
   same pre-existing, out-of-scope limitation documented since TASK-0002's
   P0.
+
+---
+
+# Post-batch-4 remaining compatibility assessment
+
+Before starting batch 5, re-ran the full compatibility inventory against
+the current tree (not TASK-0002's original counts). Headline finding:
+`snep/lib/Asterisk/AGI.php` (`Asterisk_AGI` class) was mis-classified in
+TASK-0002 as merely "AGI-context-only, not yet reachable." Tracing the
+actual call graph: `snep/lib/PBX/Asterisk/AGI.php` declares
+`class PBX_Asterisk_AGI extends Asterisk_AGI` and unconditionally
+`require_once("Asterisk/AGI.php")`s it — and `PBX_Asterisk_AGI` is the
+class every real AGI entrypoint (`agi_base.php`, `agi/snep.php`,
+`agi/Bootstrap.php`) actually uses. Confirmed live: `php -l` on
+`Asterisk/AGI.php` failed outright (parse error, line 830) before this
+batch. Since curly-brace offsets are a parse-time fatal, this meant the
+entire AGI subsystem was **guaranteed** to break the instant Asterisk was
+added and any dialplan action invoked AGI — not a "might get exercised"
+risk. Also newly found and classified (not fixed): a second, previously
+undocumented dead `each()` site in `Zend/Cache/Core.php:163`
+(`setConfig()`, zero callers anywhere — a documentation correction to
+TASK-0002, not a priority), and `Zend/Tool/Project/Provider/DbAdapter.php:100`'s
+`get_magic_quotes_gpc()` (removed PHP 8.0, `Zend_Tool` confirmed unused
+by first-party code, same disposition as `ApplicationConfigFile.php`).
+Full classification (A-F categories) was reported to you separately
+before this batch began.
+
+---
+
+# Batch 5 — `Asterisk_AGI` curly-brace offsets
+
+## Objective
+Fix the 27 confirmed curly-brace offset sites in `snep/lib/Asterisk/AGI.php`,
+identified as a guaranteed (not speculative) AGI-subsystem blocker by the
+post-batch-4 assessment above.
+
+## Re-verification before editing
+Re-grepped the file fresh immediately before editing: confirmed exactly
+26 lines / 27 sites (line 1182 has two occurrences on one line), all
+genuine `$var{expr}`-style string-offset access (`$buffer{strlen($buffer)-1}`,
+`$prompt{0}`, `$callerid{0}` ×2, `$code{0}`, `$text{$i}` ×2, `$str{0}`,
+`$token{...}` ×3) — none are string interpolation, docblock text, or
+exception-message strings. Also re-confirmed the file is otherwise clean
+of every other tracked category: zero `each()`, zero `create_function()`,
+zero `__autoload`, zero PHP4-style constructor, zero zero-argument
+`count()`/`sizeof()`.
+
+## Fix
+Mechanical `{` → `[` swap at all 27 sites (line-targeted, not a blind
+global regex, to avoid touching anything outside the confirmed set), plus
+a class-level doc-comment paragraph explaining the fix and its
+reachability — same pattern as every prior curly-brace batch. No logic,
+protocol handling, command parsing, or AGI action behavior touched.
+
+## Validation performed
+- `php -l`: **passes** ("No syntax errors detected") — this file failed
+  to parse at all before this batch; this is the primary proof for this
+  batch, exactly as scoped.
+- Re-ran the curly-brace inventory against this file specifically: 0
+  executable sites remain (the sole remaining grep match is inside the
+  new doc comment's prose, not code).
+- `make smoke`: **14 PASS, 0 FAIL, 1 EXPECTED_LIMITATION** — exactly the
+  expected baseline (this file is on no web code path, so this only
+  confirms zero regression, not the fix itself — `php -l` is what proves
+  the fix).
+- App log: zero new PHP Fatal Errors on the 10 required flows (before=0,
+  after=0).
+
+## Explicitly NOT claimed
+- **`Asterisk_AGI` now parses under PHP 8.4** — proven, via `php -l`.
+- **Actual AGI protocol/runtime behavior remains completely
+  unvalidated.** This batch changed offset syntax only; it did not
+  execute a single line of `Asterisk_AGI`'s logic (command dispatch,
+  response parsing, DTMF handling, etc.) under real conditions.
+- **Runtime validation requires an Asterisk instance** actually invoking
+  the real SENMA AGI entrypoints (`agi_base.php` / `agi/snep.php` via
+  Asterisk's `AGI()` dialplan application) — out of reach until the
+  Asterisk milestone, and out of this batch's scope by design.
+
+## Files changed
+- `snep/lib/Asterisk/AGI.php` — 27 sites, `{` → `[`, plus a class-level
+  doc comment.
+
+---
+
+# TASK-0004 final remaining-debt summary (pre-Asterisk phase)
+
+## Asterisk milestone debt (needs a real Asterisk instance to test)
+- `snep/modules/default/actions/DiscarTronco.php:270-272,297-299` —
+  `count($falsy)` `TypeError`, AGI outbound-dial billing action.
+- `snep/modules/default/controllers/ErrorsTdmController.php:93` —
+  zero-argument `count()` `ArgumentCountError`, unreachable until a real
+  AMI connection lets execution past `new AsteriskInfo()`.
+- `Asterisk_AGI`'s actual runtime/protocol behavior (batch 5 fixed only
+  the parse fatal; command execution, response parsing, DTMF/audio
+  handling, etc. are entirely unexercised under PHP 8.4).
+- Every `modules/default/actions/*.php`/`ivr`/`callback`/`portability`
+  action's real dialplan behavior — not a known defect, just genuinely
+  untestable without Asterisk dispatching AGI.
+- `QueuesController`'s and `SystemstatusController`'s no-Asterisk 500s —
+  not PHP 8 bugs, pre-existing topology limitations (ADR-0001), listed
+  here only because they'll need re-checking once Asterisk exists.
+
+## Dead/vendor debt (confirmed unreachable, not fixed, no action needed unless reachability changes)
+- Remaining vendored curly-brace offsets: `Zend/Barcode/Object/*.php` (8
+  files/11 sites), `Zend/Amf/Util/BinaryStream.php:143`,
+  `Zend/Validate/Isbn.php` (3), `Zend/Filter/Compress/Zip.php:240`,
+  `Zend/View/Helper/Navigation/Sitemap.php` (2),
+  `Zend/Wildfire/Plugin/FirePhp.php:740`,
+  `Zend/Tool/Project/Context/Zf/ApplicationConfigFile.php:142`.
+- Dead `each()` sites: `Zend/Cache/{Core.php:163,Frontend/*.php}`,
+  `Zend/Config/Yaml.php:292`, `Zend/Http/UserAgent/Features/Adapter/TeraWurfl.php:91`,
+  `Zend/Service/DeveloperGarden/Client/ClientAbstract.php:138`,
+  `Zend/XmlRpc/Value.php:489,495`.
+- Dead removed-function usages: `Zend/Feed/Element.php:196`
+  (`create_function()`), `Zend/Tool/Project/Provider/DbAdapter.php:100`
+  (`get_magic_quotes_gpc()`), `lib/linfo/lib/functions.init.php:29`
+  (`function __autoload`).
+- Dead linfo platform/plugin issues: `lib/linfo/lib/class.OS_CYGWIN.php:303`
+  (identical `explode(...,1)`/`ceil()` bug to batch 3's fix, non-Linux
+  platform class), `lib/linfo/lib/class.ext_transmission.php:129`
+  (`explode(...,1)` misuse, zero linfo extensions enabled).
+
+## Non-fatal/deprecation debt (out of this task's own scope rule: doesn't break behavior)
+- Dynamic properties (TASK-0002 §6): `Snep_Exten`, `PBX_Rule`,
+  `PBX_Asterisk_Interface` subclasses, plus ~9 lower-confidence
+  candidates — `E_DEPRECATED` only.
+- Iterator/ArrayAccess/Countable signature mismatches (TASK-0002 §10b):
+  return-type-only, `E_DEPRECATED` only; 60 of 68 vendored classes
+  remain unaudited by deliberate choice (low-probability, not worth a
+  full sweep).
+- `TrunksController.php:306-307` offset-on-`false` warning — pre-existing
+  non-PHP8 bug (invalid trunk ID), cosmetic warning only.
+- Bareword-function-argument undefined-constants sub-case (TASK-0002
+  §11) — honestly unchecked, not grep-tractable without a real parser.
+
+## Can TASK-0004's pre-Asterisk PHP 8.4 compatibility phase now be considered complete?
+
+**Yes.** Every confirmed PHP 8.4 fatal that is both first-party (or
+genuinely in the live vendored call graph) and testable without a real
+Asterisk instance has been fixed and validated: non-static-call
+incompatibilities (P1-B), reachable `each()` sites (P1-A), reachable
+`Zend_Json` curly-brace offsets (batch 1), the full `lib/linfo` fatal
+chain (`__autoload` → `create_function()` → `ceil()` `TypeError` →
+`fopen()` `ValueError`, batches 2-4), and now `Asterisk_AGI`'s guaranteed
+parse-time blocker (batch 5). `make smoke` has returned the identical
+14/0/1 baseline with zero new fatals after every batch. What remains is,
+by construction, exactly the two debt categories above that this phase
+was never able to touch: genuine Asterisk-runtime behavior (Asterisk
+milestone debt) and code with zero reachability regardless of Asterisk
+(dead/vendor debt) — plus non-fatal deprecations explicitly out of this
+task's scope from the start. There is no further meaningful,
+safely-testable PHP 8.4 compatibility work available before the Asterisk
+milestone begins.

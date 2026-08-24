@@ -51,6 +51,18 @@ require_once "Asterisk/AGI/Request.php";
   * @example examples/dtmf.php Get DTMF tones from the user and say the digits
   * @example examples/input.php Get text input from the user and say it back
   * @example examples/ping.php Ping an IP address
+  *
+  * PHP 8 compatibility (TASK-0004 batch 5): 27 sites used curly-brace
+  * string-offset syntax ($buffer{...}), removed in PHP 8.0 as a parse-time
+  * fatal -- this file could not be parsed at all under PHP 8.4 prior to
+  * this fix (confirmed via php -l). Changed to $buffer[...] (equivalent
+  * since PHP 4, zero behavior change). This class is unconditionally
+  * require_once'd by PBX_Asterisk_AGI (lib/PBX/Asterisk/AGI.php), which
+  * every real AGI entrypoint uses, so this was a guaranteed blocker for
+  * the entire AGI subsystem, not a speculative one. Only the PHP syntax
+  * is fixed here -- actual AGI protocol/runtime behavior is unvalidated
+  * and requires a real Asterisk instance invoking the SENMA AGI
+  * entrypoints. See docs/tasks/0004-php84-remaining-compatibility.md.
   */
   class Asterisk_AGI
   {
@@ -827,7 +839,7 @@ require_once "Asterisk/AGI/Request.php";
      $proceed = false;
      if($escape_digits != '' && $buffer != '')
      {
-       if(!strpos(chr(255) . $escape_digits, $buffer{strlen($buffer)-1}))
+       if(!strpos(chr(255) . $escape_digits, $buffer[strlen($buffer)-1]))
          $proceed = true;
      }
      if($buffer == '' || $proceed)
@@ -837,7 +849,7 @@ require_once "Asterisk/AGI/Request.php";
          $buffer .= chr($res['result']);
        return $res;
      }
-     return array('code'=>AGIRES_OK, 'result'=>ord($buffer{strlen($buffer)-1}));
+     return array('code'=>AGIRES_OK, 'result'=>ord($buffer[strlen($buffer)-1]));
    }
 
    /**
@@ -856,7 +868,7 @@ require_once "Asterisk/AGI/Request.php";
      $proceed = false;
      if($escape_digits != '' && $buffer != '')
      {
-       if(!strpos(chr(255) . $escape_digits, $buffer{strlen($buffer)-1}))
+       if(!strpos(chr(255) . $escape_digits, $buffer[strlen($buffer)-1]))
          $proceed = true;
      }
      if($buffer == '' || $proceed)
@@ -866,7 +878,7 @@ require_once "Asterisk/AGI/Request.php";
          $buffer .= chr($res['result']);
        return $res;
      }
-     return array('code'=>AGIRES_OK, 'result'=>ord($buffer{strlen($buffer)-1}));
+     return array('code'=>AGIRES_OK, 'result'=>ord($buffer[strlen($buffer)-1]));
    }
 
    /**
@@ -885,7 +897,7 @@ require_once "Asterisk/AGI/Request.php";
      $proceed = false;
      if($escape_digits != '' && $buffer != '')
      {
-       if(!strpos(chr(255) . $escape_digits, $buffer{strlen($buffer)-1}))
+       if(!strpos(chr(255) . $escape_digits, $buffer[strlen($buffer)-1]))
          $proceed = true;
      }
      if($buffer == '' || $proceed)
@@ -895,7 +907,7 @@ require_once "Asterisk/AGI/Request.php";
          $buffer .= chr($res['result']);
        return $res;
      }
-     return array('code'=>AGIRES_OK, 'result'=>ord($buffer{strlen($buffer)-1}));
+     return array('code'=>AGIRES_OK, 'result'=>ord($buffer[strlen($buffer)-1]));
    }
 
    /**
@@ -914,7 +926,7 @@ require_once "Asterisk/AGI/Request.php";
      $proceed = false;
      if($escape_digits != '' && $buffer != '')
      {
-       if(!strpos(chr(255) . $escape_digits, $buffer{strlen($buffer)-1}))
+       if(!strpos(chr(255) . $escape_digits, $buffer[strlen($buffer)-1]))
          $proceed = true;
      }
      if($buffer == '' || $proceed)
@@ -924,7 +936,7 @@ require_once "Asterisk/AGI/Request.php";
          $buffer .= chr($res['result']);
        return $res;
      }
-     return array('code'=>AGIRES_OK, 'result'=>ord($buffer{strlen($buffer)-1}));
+     return array('code'=>AGIRES_OK, 'result'=>ord($buffer[strlen($buffer)-1]));
    }
 
    /**
@@ -946,7 +958,7 @@ require_once "Asterisk/AGI/Request.php";
      $proceed = false;
      if($escape_digits != '' && $buffer != '')
      {
-       if(!strpos(chr(255) . $escape_digits, $buffer{strlen($buffer)-1}))
+       if(!strpos(chr(255) . $escape_digits, $buffer[strlen($buffer)-1]))
          $proceed = true;
      }
      if($buffer == '' || $proceed)
@@ -956,7 +968,7 @@ require_once "Asterisk/AGI/Request.php";
          $buffer .= chr($res['result']);
        return $res;
      }
-     return array('code'=>AGIRES_OK, 'result'=>ord($buffer{strlen($buffer)-1}), 'endpos'=>0);
+     return array('code'=>AGIRES_OK, 'result'=>ord($buffer[strlen($buffer)-1]), 'endpos'=>0);
    }
 
    /**
@@ -975,7 +987,7 @@ require_once "Asterisk/AGI/Request.php";
      $proceed = false;
      if($escape_digits != '' && $buffer != '')
      {
-       if(!strpos(chr(255) . $escape_digits, $buffer{strlen($buffer)-1}))
+       if(!strpos(chr(255) . $escape_digits, $buffer[strlen($buffer)-1]))
          $proceed = true;
      }
      if($buffer == '' || $proceed)
@@ -985,7 +997,7 @@ require_once "Asterisk/AGI/Request.php";
          $buffer .= chr($res['result']);
        return $res;
      }
-     return array('code'=>AGIRES_OK, 'result'=>ord($buffer{strlen($buffer)-1}), 'endpos'=>0);
+     return array('code'=>AGIRES_OK, 'result'=>ord($buffer[strlen($buffer)-1]), 'endpos'=>0);
    }
 
    /**
@@ -1004,7 +1016,7 @@ require_once "Asterisk/AGI/Request.php";
      $proceed = false;
      if($escape_digits != '' && $buffer != '')
      {
-       if(!strpos(chr(255) . $escape_digits, $buffer{strlen($buffer)-1}))
+       if(!strpos(chr(255) . $escape_digits, $buffer[strlen($buffer)-1]))
          $proceed = true;
      }
      if($buffer == '' || $proceed)
@@ -1014,7 +1026,7 @@ require_once "Asterisk/AGI/Request.php";
          $buffer .= chr($res['result']);
        return $res;
      }
-     return array('code'=>AGIRES_OK, 'result'=>ord($buffer{strlen($buffer)-1}), 'endpos'=>0);
+     return array('code'=>AGIRES_OK, 'result'=>ord($buffer[strlen($buffer)-1]), 'endpos'=>0);
    }
 
    /**
@@ -1032,7 +1044,7 @@ require_once "Asterisk/AGI/Request.php";
      $proceed = false;
      if($escape_digits != '' && $buffer != '')
      {
-       if(!strpos(chr(255) . $escape_digits, $buffer{strlen($buffer)-1}))
+       if(!strpos(chr(255) . $escape_digits, $buffer[strlen($buffer)-1]))
          $proceed = true;
      }
      if($buffer == '' || $proceed)
@@ -1042,7 +1054,7 @@ require_once "Asterisk/AGI/Request.php";
          $buffer .= chr($res['result']);
        return $res;
      }
-     return array('code'=>AGIRES_OK, 'result'=>ord($buffer{strlen($buffer)-1}));
+     return array('code'=>AGIRES_OK, 'result'=>ord($buffer[strlen($buffer)-1]));
    }
 
    /**
@@ -1130,7 +1142,7 @@ require_once "Asterisk/AGI/Request.php";
       {
         foreach($choices as $prompt)
         {
-          if($prompt{0} == '*')
+          if($prompt[0] == '*')
             $ret = $this->text2wav(substr($prompt, 1), $keys);
           else
             $ret = $this->stream_file($prompt, $keys);
@@ -1179,9 +1191,9 @@ require_once "Asterisk/AGI/Request.php";
       $ret = array('name'=>'', 'protocol'=>'', 'username'=>'', 'host'=>'', 'port'=>'');
       $callerid = trim($callerid);
 
-      if($callerid{0} == '"' || $callerid{0} == "'")
+      if($callerid[0] == '"' || $callerid[0] == "'")
       {
-        $d = $callerid{0};
+        $d = $callerid[0];
         $callerid = explode($d, substr($callerid, 1));
         $ret['name'] = array_shift($callerid);
         $callerid = join($d, $callerid);
@@ -1357,7 +1369,7 @@ require_once "Asterisk/AGI/Request.php";
         {
           if($command)
           {
-            switch($code{0})
+            switch($code[0])
             {
               case '2': $text = substr($text, 0, strlen($text) - 1); break; // backspace
               case '5': $mode = 'LOWERCASE'; break;
@@ -1397,7 +1409,7 @@ require_once "Asterisk/AGI/Request.php";
     {
       for($i = 0; $i < strlen($text); $i++)
       {
-        switch($text{$i})
+        switch($text[$i])
         {
           case ' ': $ret .= 'SPACE ';
           case ',': $ret .= 'COMMA '; break;
@@ -1432,7 +1444,7 @@ require_once "Asterisk/AGI/Request.php";
           case '|': $ret .= 'BAR '; break;
           case '_': $ret .= 'UNDERSCORE '; break;
           case '~': $ret .= 'TILDE '; break;
-          default: $ret .= $text{$i} . ' '; break;
+          default: $ret .= $text[$i] . ' '; break;
         }
       }
       return $this->text2wav($ret, $escape_digits, $frequency);
@@ -1491,7 +1503,7 @@ require_once "Asterisk/AGI/Request.php";
       $ret['code'] = substr($str, 0, 3);
       $str = trim(substr($str, 3));
 
-      if($str{0} == '-') // we have a multiline response!
+      if($str[0] == '-') // we have a multiline response!
       {
         $count = 0;
         $str = substr($str, 1) . "\n";
@@ -1524,11 +1536,11 @@ require_once "Asterisk/AGI/Request.php";
           if($in_token) // we previously hit a token starting with ')' but not ending in ')'
           {
             $ret['data'] .= ' ' . trim($token, '() ');
-            if($token{strlen($token)-1} == ')') $in_token = false;
+            if($token[strlen($token)-1] == ')') $in_token = false;
           }
-          elseif($token{0} == '(')
+          elseif($token[0] == '(')
           {
-            if($token{strlen($token)-1} != ')') $in_token = true;
+            if($token[strlen($token)-1] != ')') $in_token = true;
             $ret['data'] .= ' ' . trim($token, '() ');
           }
           elseif(strpos($token, '='))
