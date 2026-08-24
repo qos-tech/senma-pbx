@@ -8,10 +8,16 @@ services:
     ports:
       - "${MAG_HTTP_PORT:-8080}:80"
     volumes:
-      - ./:/var/www/html/mag
+      - ./snep:/var/www/html/snep
     depends_on:
       db:
         condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
     networks:
       - mag
     restart: unless-stopped
@@ -28,6 +34,9 @@ services:
       TZ: "${TZ:-America/Sao_Paulo}"
     volumes:
       - mag-db:/var/lib/mysql
+      - ./snep/install/database:/docker-entrypoint-initdb.d/snep-install:ro
+      - ./snep/modules/billing/install:/docker-entrypoint-initdb.d/snep-billing:ro
+      - ./docker/db-init/00-import-snep-schema.sh:/docker-entrypoint-initdb.d/00-import-snep-schema.sh:ro
     healthcheck:
       test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$$MARIADB_ROOT_PASSWORD --silent"]
       interval: 5s
