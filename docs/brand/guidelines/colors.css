@@ -1,0 +1,10 @@
+:root {
+  --senma-blue: #2563EB;
+  --senma-indigo: #4F46E5;
+  --senma-violet: #7C34ED;
+  --senma-lilac: #C084FC;
+  --senma-navy: #081120;
+  --senma-surface: #121826;
+  --senma-gray: #E5E7EB;
+  --senma-gradient: linear-gradient(135deg, var(--senma-blue), var(--senma-violet), var(--senma-lilac));
+}

@@ -1,8 +1,8 @@
-# MAG PBX — Claude Code Project Guide
+# SENMA PBX — Claude Code Project Guide
 
 ## Mission
 
-MAG PBX is a modernized fork of SNEP 3.07.
+SENMA PBX is a modernized fork of SNEP 3.07.
 
 The project must evolve incrementally, preserving legacy behavior while moving toward a modern, reproducible and maintainable PBX platform.
 
@@ -32,7 +32,7 @@ Prefer compatibility, observability and controlled migration over broad redesign
 
 ## Project identity
 
-- Product name: MAG PBX
+- Product name: SENMA PBX
 - Repository: `qos-tech/mag-pbx`
 - Origin: fork of SNEP 3.07
 - License: GPL-3.0-or-later for inherited and derivative code
@@ -92,7 +92,7 @@ Rebranding and removal of legacy SNEP naming must be handled in dedicated tasks.
 
 Goal:
 
-Preserve the original codebase and establish the MAG project identity, development conventions and licensing provenance.
+Preserve the original codebase and establish the SENMA project identity, development conventions and licensing provenance.
 
 Includes:
 
@@ -145,7 +145,7 @@ Avoid:
 - database redesign
 - PostgreSQL migration
 - frontend redesign
-- global SNEP → MAG path renaming
+- global SNEP → SENMA path renaming
 
 Legacy runtime paths such as:
 
@@ -161,7 +161,7 @@ may remain until a dedicated rebranding/filesystem task removes them safely.
 
 Goal:
 
-Make the existing MAG/SNEP application operate under PHP 8.4 while preserving behavior.
+Make the existing SENMA/SNEP application operate under PHP 8.4 while preserving behavior.
 
 This is a compatibility migration, not an architectural rewrite.
 

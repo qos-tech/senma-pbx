@@ -1,4 +1,4 @@
-# MAG PBX Agent Notes
+# SENMA PBX Agent Notes
 
 The canonical project instructions are in `CLAUDE.md`.
 
