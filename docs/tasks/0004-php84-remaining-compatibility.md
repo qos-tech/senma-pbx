@@ -323,3 +323,122 @@ security/architecture-focused task.
 - `ErrorsTdmController.php:93` and `Billing/Manager.php`'s 3 sites (§7
   `count()` misuse) — re-confirmed Asterisk-gated / dead respectively,
   excluded from this batch, unchanged from TASK-0002.
+
+---
+
+# Batch 3 — `getUpTime()`'s `ceil()` `TypeError`
+
+## Objective
+Fix the `ceil()` `TypeError` in `class.OS_Linux.php::getUpTime()`
+uncovered by batch 2's validation, per its own explicit deferral.
+
+## Root-cause trace (performed before editing)
+
+`getUpTime()` reads `/proc/uptime` via `LinfoCommon::getContents()`
+(`file_get_contents()` + `trim()`) — confirmed live content in this
+container: `372278.68 3701058.97` (the standard Linux
+`<uptime_seconds> <idle_seconds>` format). The method then did:
+```php
+list($seconds) = explode(' ', $contents, 1);      // bug
+$uptime = LinfoCommon::secondsConvert(ceil($seconds));
+```
+`explode()`'s `limit = 1` is documented to never split at all — the
+entire trimmed string becomes the single array element, so `$seconds`
+received `"372278.68 3701058.97"` in full, not just the first field.
+`secondsConvert()` (`class.LinfoCommon.php:88-99`) expects a plain
+number of seconds and does `floor()`/`%`-based arithmetic to produce
+"X years, Y days..." text — confirming the evident intent was to isolate
+just the first `/proc/uptime` field. This is a **pre-existing logic bug**
+(wrong `explode()` limit, not a removed API) that PHP 8's stricter
+internal-function argument-type coercion turned into a hard `TypeError`
+(PHP 7 would have silently coerced the leading numeric portion with a
+warning instead).
+
+**Pattern search**: the identical bug exists in `class.OS_CYGWIN.php:303,306`
+but that class is only ever instantiated when `getOS()` detects Cygwin —
+unreachable in this Linux container, same disposition as every other
+non-Linux platform class already excluded. `class.ext_transmission.php:129`
+has the same `explode(..., 1)` misuse shape but on `"\n"` (line-splitting,
+not fed to a typed function — silently wrong, not fatal) and is
+confirmed unreachable (`config.inc.php` enables zero linfo extensions).
+Neither touched, per instruction. Swept every method that runs
+immediately after `UpTime` in this deployment's enabled field set
+(`getCPU`, `getModel`, `getCPUArchitecture`, `getNet`, `getDevs`,
+`getProcessStats`) for the same raw-file-content-into-typed-function
+shape — none found.
+
+## Fix
+**`snep/lib/linfo/lib/class.OS_Linux.php:344`** (line shifted by the added
+comment) — `explode(' ', $contents, 1)` → `explode(' ', $contents, 2)`.
+One-character change, restores the behavior the surrounding code already
+describes (comment `// Seconds`, variable name `$seconds`), zero other
+logic touched.
+
+## Validation performed
+- `php -l`: clean (same pre-existing, unrelated "continue targeting
+  switch" warning as batch 2, now at line 1275 — not introduced by this
+  change, not fixed, per policy).
+- Direct `GET /lib/linfo/index.php?out=xml`: the `ceil()` `TypeError` is
+  confirmed gone — the log shows execution now proceeding past
+  `getUpTime()`, through `getCPU()`/`getModel()`, into `getDevs()`. Still
+  a bare 500 overall, **not** yet a 200 — see next section.
+- `GET /index.php/default/systemstatus` (authenticated): unchanged from
+  every prior batch's documented baseline — same clean, caught "500 —
+  Erro Interno / Unable to connect to manager" page. Same reasoning as
+  batch 2: the loopback call's failure doesn't propagate as an exception,
+  so this page's visible behavior is unaffected either way until linfo
+  itself returns 200.
+- `make smoke`: **14 PASS, 0 FAIL, 1 EXPECTED_LIMITATION**, identical to
+  baseline. App log fatal-error diff: `0 → 0`. **Zero new PHP Fatal
+  Errors on any of the 10 required flows** (smoke doesn't exercise
+  `systemstatus`/`lib/linfo`, so it can't observe the finding below
+  either way, same as batch 2).
+
+## New finding uncovered by validation — stopped here, not fixed, per instruction
+
+Fixing the `ceil()` bug let execution proceed further than ever before,
+and it immediately hit a **4th, distinct** PHP 8.4 fatal:
+```
+PHP Fatal error:  Uncaught ValueError: Path must not be empty in
+/var/www/html/snep/lib/linfo/lib/class.HW_IDS.php:153
+Stack trace:
+#0 class.HW_IDS.php(153): fopen('', 'r')
+#1 class.HW_IDS.php(278): HW_IDS->_fetchPciNames()
+#2 class.OS_Linux.php(706): HW_IDS->work('linux')
+#3 class.Linfo.php(248): OS_Linux->getDevs()
+#4 index.php(31): Linfo->scan()
+```
+`getDevs()` (enabled by this deployment's config) calls into
+`HW_IDS->_fetchPciNames()`, which calls `fopen('', 'r')` — an empty path
+string. This is a **different incompatibility category** than any fix in
+batches 1-3: PHP 8.1+ made several filesystem functions (including
+`fopen()`) throw `ValueError` on an empty-string path argument, where
+earlier PHP returned `false` with a warning. Per this batch's explicit
+instruction, **stopped immediately upon finding this — not investigated
+further, not fixed, no recursive chase**. Flagged as the batch-4
+candidate.
+
+**Effect on the two reachable entry points**, both unchanged in kind from
+batch 2's findings:
+- `GET /lib/linfo/index.php?out=xml` directly: still a bare 500, now from
+  this newly-exposed `HW_IDS` bug instead of `ceil()`. Continued net
+  progress (3 of however-many fatals in this chain now cleared), still
+  not a clean 200.
+- `GET /index.php/default/systemstatus`: unchanged, same pre-existing
+  Asterisk-absence 500 as always.
+
+## Files changed
+- `snep/lib/linfo/lib/class.OS_Linux.php` — 1 site,
+  `explode(' ', $contents, 1)` → `explode(' ', $contents, 2)`, plus an
+  explanatory comment.
+
+## Unresolved / follow-up (batch 3)
+- `lib/linfo/lib/class.HW_IDS.php:153`'s `fopen('')` `ValueError` in
+  `_fetchPciNames()`, reached via `getDevs()` — real, reachable,
+  confirmed, not fixed — proposed as the next batch-4 candidate.
+- `class.OS_CYGWIN.php`'s identical `explode(..., 1)`/`ceil()` bug —
+  confirmed dead (non-Linux platform code), deliberately excluded.
+- `class.ext_transmission.php`'s unrelated `explode(..., 1)` bug —
+  confirmed dead (no linfo extensions enabled), deliberately excluded.
+- Unauthenticated reachability of `/lib/linfo/index.php` — still
+  documented only, not remediated, per instruction.

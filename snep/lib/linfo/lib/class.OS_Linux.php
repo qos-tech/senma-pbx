@@ -333,7 +333,15 @@ class OS_Linux extends OS_Unix_Common {
 		}
 
 		// Seconds
-		list($seconds) = explode(' ', $contents, 1);
+		// PHP 8 compatibility (TASK-0004): limit was 1, which per explode()'s
+		// documented behavior never splits at all -- $seconds ended up as the
+		// whole "<uptime> <idle>" string from /proc/uptime, not just the
+		// first field. ceil() on that two-token string is a TypeError under
+		// PHP 8's stricter internal-function argument coercion (previously a
+		// silently-coerced warning). limit 2 restores the evidently-intended
+		// behavior: split into the uptime field and everything else, use
+		// only the former. See docs/tasks/0004-php84-remaining-compatibility.md.
+		list($seconds) = explode(' ', $contents, 2);
 
 		// Get it textual, as in days/minutes/hours/etc
 		$uptime = LinfoCommon::secondsConvert(ceil($seconds));
