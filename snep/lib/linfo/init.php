@@ -63,11 +63,19 @@ function linfoAutoloader($class) {
 
 // Opt for spl_autoload_register if we have it. Ancient installations
 // might not
+//
+// PHP 8 compatibility (TASK-0004): declaring a function literally named
+// __autoload() is a compile-time fatal since PHP 8.0, even inside this
+// untaken else branch (spl_autoload_register() has always existed since
+// PHP 5.1.2, so this branch never actually runs) -- PHP 8 rejects the
+// declaration itself, not just a call to it. Renamed to a non-magic name;
+// same body, same never-taken branch, zero behavior change. See
+// docs/tasks/0004-php84-remaining-compatibility.md.
 if (function_exists('spl_autoload_register')) {
 	spl_autoload_register('linfoAutoloader');
 }
 else {
-	function __autoload($class) {
+	function linfo_legacy_autoload($class) {
 		linfoAutoloader($class);
 	}
 }

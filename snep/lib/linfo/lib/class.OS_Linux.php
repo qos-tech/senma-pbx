@@ -26,7 +26,20 @@ defined('IN_LINFO') or exit;
  * Get info on a usual linux system
  * Works by exclusively looking around /proc and /sys
  * Totally ignores CallExt class, very deliberately
- * Also deliberately ignores trying to find out the distro. 
+ * Also deliberately ignores trying to find out the distro.
+ *
+ * PHP 8 compatibility (TASK-0004): getDistro() used create_function() at
+ * 2 sites to build ad hoc parser callbacks for /etc/lsb-release and
+ * /etc/os-release -- create_function() was removed in PHP 8.0 (a runtime
+ * fatal). Reachable: this deployment's lib/linfo/config.inc.php sets
+ * show.distro = true, so getDistro() runs unconditionally whenever Linfo
+ * scans (SystemstatusController's dashboard page, and the unauthenticated
+ * lib/linfo/index.php?out=xml endpoint directly). Replaced both with
+ * equivalent closures -- create_function() was always just a string-eval
+ * wrapper around an anonymous function, and the sole consumer
+ * ($distro['closure']($contents), below) calls the value directly, which
+ * works identically for a callable string or a real Closure. See
+ * docs/tasks/0004-php84-remaining-compatibility.md.
  */
 class OS_Linux extends OS_Unix_Common {
 
@@ -1320,7 +1333,7 @@ class OS_Linux extends OS_Unix_Common {
 			),
 			array(
 				'file' => '/etc/lsb-release',
-				'closure' => create_function('$ini', '
+				'closure' => function($ini) {
 					return ($info = @parse_ini_string($ini)) &&
 						isset($info["DISTRIB_ID"]) &&
 						isset($info["DISTRIB_RELEASE"]) &&
@@ -1328,17 +1341,19 @@ class OS_Linux extends OS_Unix_Common {
 							"distro" => $info["DISTRIB_ID"],
 							"version" => $info["DISTRIB_RELEASE"],
 							"codename" => $info["DISTRIB_CODENAME"],
-						) : false;')
+						) : false;
+				}
 			),
 			array(
 				'file' => '/etc/os-release',
-				'closure' => create_function('$ini', '
+				'closure' => function($ini) {
 					return ($info = @parse_ini_string($ini)) &&
 						isset($info["ID"]) &&
 						isset($info["VERSION"]) ? array(
 							"distro" => $info["ID"],
 							"version" => $info["VERSION"]
-						) : false;')
+						) : false;
+				}
 			),
 			array(
 				'file' => '/etc/fedora-release',
