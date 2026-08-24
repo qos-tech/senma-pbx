@@ -1,0 +1,96 @@
+<!--
+
+Class containing help text of the extensions
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Opens Tecnologia <desenvolvimento@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Extensions - Add / Edit</h2>
+
+        This routine allows the registration / edit an extension in the system. 
+        <br>The registered extensions should be in the range of variation of marge extensions configured on the system parameters.
+        <br><br><strong>Extension:</strong> Defines the code that identifies the extension. 
+        <br><strong>Extension Group:</strong> Sets the group of extensions which the station belongs.
+        <br><strong>Pickpup Group:</strong> Capture group that the extension will be part. Extensions in the same pickup group allowed us to capture ligaços each other.
+
+        <br><br><strong>INTERFACE TECHNOLOGY</strong>
+        <br><strong>Technology: </strong> 
+        Defines which channel technology the extension will use to make / receive calls.
+        <br><strong>SIP/IAX: </strong>
+        Channels with SIP or IAX technology.
+        <br><strong>Khomp: </strong> 
+        Technology extensions Khomp.
+        <br><strong>Virtual:</strong> 
+        Extensions with virtual interfaces are mapped in a trunk. When selecting a trunk interface to the virtual extension, the link to it will be made by dialing through the trunk to the extension number.
+        <br><strong>Manual: </strong> 
+        Allows you to specify which channel / technology will be utlizada in creating the extension.
+
+        <br><br><strong>OPTIONS SIP / IAX</strong>
+        <br><strong>Limit of simultaneous calls: </strong> 
+        Sets the maximum number of simultaneous calls to this extension.
+        <br><strong>NAT: </strong> 
+        Sets the branch connection will or not through a NAT.
+        <br><strong>Quality control: </strong> 
+        Sets whether or not quality control on the links Extension.
+        <br><strong>Direct media:</strong> 
+        Sets passage or not the RTP packets by Asterisk.
+        <br><strong>DTMF Mode: </strong> 
+        Sets the type of frequency tones used in dialing.
+        <br><strong>CODECS: </strong>
+        Define the sequence of CODECS to be preferred for Extension.
+
+        <br><br><strong>OPTIONS KHOMP</strong>
+        <br><strong>Board: </strong> 
+        Defines which of the boards in the extension system will be part.
+        <br><strong>Channel: </strong> 
+        Defines which channel of the selected card.
+
+        <br><br><strong>OPTION VIRTUAL</strong>
+        <br><strong>Trunk: </strong>
+        Sets the trunk to be mapped.
+
+        <br><br><strong>OPTION MANUAL</strong>
+        <br><strong>Manual: </strong>
+        Sets the channel / technology to be used.
+
+        <br><br><strong>ADVANCED</strong>
+        <br><strong>Voicemail: </strong> 
+        Sets whether or not the branch will use Voice Mail.
+        <br><strong>E-mail: </strong> 
+        Defines an e-mail Extension.
+        <br><strong>Block: </strong>
+        Lock for the extension. Whether to allow outgoing calls.
+        <br><strong>Enable follow me: </strong>
+        Allows the extension to make follow me.
+        <br><strong>Minutes control: </strong>
+        Defines whether it will be stipulated time to the links that extension or not.
+        <br><strong>Full Time: </strong> 
+        Total time that the extension can be in connection.
+        <br><strong>Control Type: </strong> 
+        Sets whether the minutes are controlled by year, month or day.
+        <br>
+
+        <h2>Extensions - Export CSV</h2>
+
+        This routine export data of registered extensions to a .csv file.
+        
+        <h2>Extensions - Add extensions</h2>
+
+        This routine includes a range of extensions. The range can be separated by - (hyphen) or (semicolon).
+        <br>Example ranges: 
+        <br>1000-1002 -> The system will register the extensions 1000,1001 and 1002. 
+        <br>1000;1002 -> The system will register the extensions 1000 and 1002.
+        <br>
+
+    </body>
+</html>

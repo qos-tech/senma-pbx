@@ -1,0 +1,52 @@
+<!--
+
+Class containing help text of the users
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Opens Tecnologia <desenvolvimento@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Usuários - Incluir / Alterar</h2>
+
+        Essa rotina é usada para criação/edição de um usuário de acesso ao sistema.
+        <br><br><strong>Nome:</strong> Nome do usuário.
+        <br><strong>Senha:</strong> Senha para acesso ao sistema
+        <br><strong>Email:</strong> E-mail do contato. Caso a senha seja perdida é possível 
+        a recuperação por e-mail.*
+        <br><strong>Perfil:</strong> Perfil no qual o usuário fará parte.
+
+        <br>*Caso o usuário esqueça sua senha, é possível recupera-lá por e-mail 
+        através do campo "Esqueceu a senha" na tela de login. Por default é criado um usuário admin onde o mesmo possui permissões a todas rotinas do Snep.
+        Ao recuperar a senha, será enviado uma mensagem ao e-mail cadastrado informando 
+        um código aleatório com validade de 1 hora. No snep será solicitado o código e 
+        nova senha. 
+        <br><strong>IMPORTANTE:</strong> O Snep deve possuir algum serviço de e-mail. Ex: Postfix
+
+        <h2>Usuários - Permissões</h2>
+
+        O usuário herda todas permissões do perfil vinculado a ele. Mas é possível alterar as permissões
+        diferenciando o usuário do perfil.
+        <br>Por exemplo: O perfil A que possui 3 usuários vinculados a ele e possui 
+        permissão de leitura e escrita de centro de custos. Na opção permissões do 
+        usuário é possível acrescentar permissões ou retirar uma destas duas permissões. 
+        Onde todos os usuários do perfil terão as permissões escolhidas
+        no perfil e somente este usuário possuirá permissões diferentes do grupo.
+
+        <br>
+
+        <h2>Usuários - Exportar CSV</h2>
+
+        Esta rotina exporta dados de todos os usuários cadastrados no arquivo formado .csv.
+        <br>
+
+    </body>
+</html>

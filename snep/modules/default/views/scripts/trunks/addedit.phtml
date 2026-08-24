@@ -1,0 +1,639 @@
+<?php
+$this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/password.js");
+?>
+<!-- <script src="/snep/includes/javascript/password.js"></script> -->
+
+<div class="row">
+  <form id="defaultForm" method="post" class="form-horizontal" style="margin-top: 20px;" action="<?php echo $this->url(array("controller" => "trunks", "action" => $this->action), null, false); ?>" METHOD="post">
+
+    <fieldset>
+      <legend><?php echo $this->translate('Trunk');?></legend>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Name");?></label>
+        <div class="col-sm-6">
+          <input type="text" class="form-control" name="callerid" placeholder='<?php echo $this->translate("Name")?>' value='<?php echo $this->trunk['callerid'] ?>'/>
+        </div>
+      </div>
+    </fieldset>
+<?php
+//if($this->telcos){
+  ?>
+  <fieldset data-intro='<?php echo $this->translate("You can define a Telco for this Trunk and rate each outgoing call from it.");?>'>
+        <legend><?php echo $this->translate("Telco (used for rate the calls)");?></legend>
+
+        <div class="form-group">
+            <label class="col-sm-3 control-label"><?php echo $this->translate("Telco");?></label>
+            <div class="col-sm-4">
+                <select class="form-control" name="telco" id="telco">
+                  <option value=""><?php echo $this->translate("No Telco");?></<option>
+                    <?php foreach($this->telcos as $telco){ ?>
+                        <option value="<?php echo $telco['id']; ?>"
+                          <?php
+                        if($telco['id'] === $this->trunk['telco']){
+                          echo " selected";
+                        }
+                        ?>><?php echo $telco['name'];?></option>
+                    <?php } ?>
+                </select>
+            </div>
+        </div>
+
+  </fieldset>
+  <?php
+//}
+ ?>
+    <fieldset>
+    <legend><?php echo $this->translate('Interface Technology');?></legend>
+
+      <div class="form-group" data-intro='<?php echo $this->translate("You need define the technology for this trunk.<br>
+      - If you will trunk it with other SNEP, just define the SNEP IP address and do the same in the other side.<br>
+      - If your trunk technology is not listed here, you can use the <i>Virtual</i> option and configure the technology manually at Asterisk.<br>
+      You can configure any Asterisk Supported technology and use it here as <i>Virtual</i> just specifying the technology expression, like:<br>
+      * [Dahdi/g1]<br>
+      * [SIP/account]<br>");?>'>
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Type");?></label>
+        <div class="col-sm-6">
+          <?php if ($this->action === "edit") {
+            echo '<input type="hidden" name="technology" id="technology" value="'.$this->techType.'" />';
+            echo '<input type="hidden" name="name" id="name" value="'.$this->name.'" />';
+          }?>
+
+          <select class="form-control" name="technology" id="technology" onChange="showDiv(this.value);" <?php echo $this->disabled;?> >
+
+            <option value="sip" <?php echo $this->sip;?>><?php echo $this->translate("SIP");?></option>
+            <option value="iax2" <?php echo $this->iax2;?>><?php echo $this->translate("IAX2");?></option>
+            <option value="khomp" <?php echo $this->khomp;?>><?php echo $this->translate("Khomp");?></option>
+            <option value="virtual" <?php echo $this->virtual;?>><?php echo $this->translate("Virtual");?></option>
+            <option value="snepsip" <?php echo $this->snepsip;?>><?php echo $this->translate("Snep SIP");?></option>
+            <option value="snepiax2" <?php echo $this->snepiax2;?>><?php echo $this->translate("Snep IAX");?></option>
+
+          </select>
+        </div>
+      </div>
+
+      <!-- Host -->
+      <div id="host">
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Remote Host");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="host" placeholder='<?php echo $this->translate("Remote Host")?>' value='<?php echo $this->trunk['host'] ?>'/>
+          </div>
+        </div>
+
+      </div>
+      <!-- /Host -->
+
+      <!-- DTMF -->
+      <div id="dtmfmode">
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("DTMF Mode")?></label>
+          <div class="col-sm-6">
+            <label class="radio-inline">
+              <input type="radio" name="dtmfmode" id="rfc2833" value="rfc2833" <?php echo $this->dtmf_rfc2833;?> ><?php echo $this->translate("RFC-2833");?>
+            </label>
+
+            <label class="radio-inline">
+              <input type="radio" name="dtmfmode" id="inband" value="inband" <?php echo $this->dtmf_inband;?>><?php echo $this->translate("Inband");?>
+            </label>
+
+            <label class="radio-inline">
+              <input type="radio" name="dtmfmode" id="info" value="info" <?php echo $this->dtmf_info;?>><?php echo $this->translate("Info");?>
+            </label>
+          </div>
+        </div>
+      </div>
+      <!-- /DTMF -->
+
+      <!-- SIP -->
+      <div id="ip" class="invisible">
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Dial Method")?></label>
+          <div class="col-sm-6">
+            <label class="radio-inline">
+              <input type="radio" name="dialmethod" id="normal" value="normal" <?php echo $this->dialmethod_NORMAL;?>><?php echo $this->translate("Normal");?>
+            </label>
+
+            <label class="radio-inline">
+              <input type="radio" name="dialmethod" id="noauth" value="noauth"  <?php echo $this->dialmethod_NOAUTH;?>><?php echo $this->translate("Without Authentication");?>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Username");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="username" placeholder='<?php echo $this->translate("Username")?>' value='<?php echo $this->trunk['username'] ?>'/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Password");?></label>
+          <div class="col-sm-6">
+            <input type="password" class="form-control" name="secret" id="secret" placeholder='<?php echo $this->translate("Password")?>' value='<?php echo $this->trunk['secret'] ?>'/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("From User");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="fromuser" placeholder='<?php echo $this->translate("From User")?>' value='<?php echo $this->infoTrunk['fromuser'] ?>' />
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("From Domain");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="fromdomain" placeholder='<?php echo $this->translate("From Domain")?>' value='<?php echo $this->infoTrunk['fromdomain'] ?>'/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Delay Qualification")?></label>
+          <div class="col-sm-6">
+            <label class="radio-inline">
+              <input type="radio" name="qualify" id="yes" value="yes" <?php echo $this->qualify_yes;?> ><?php echo $this->translate("Yes");?>
+            </label>
+
+            <label class="radio-inline">
+              <input type="radio" name="qualify" id="no" value="no" <?php echo $this->qualify_no;?>><?php echo $this->translate("No");?>
+            </label>
+            <label class="radio-inline">
+              <input type="radio" name="qualify" id="specify" value="specify" <?php echo $this->qualify_specify;?>><?php echo $this->translate("Specify");?>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Qualification time");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="qualify_value" placeholder='<?php echo $this->translate("Qualification time")?>' value="<?php echo $this->trunk['qualify_value'];?>"/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Type")?></label>
+          <div class="col-sm-6">
+            <label class="radio-inline">
+              <input type="radio" name="peer_type" id="peer" value="peer" <?php echo $this->type_peer;?>>
+              peer
+            </label>
+            <label class="radio-inline">
+              <input type="radio" name="peer_type" id="user" value="user" <?php echo $this->type_user;?>>
+              user
+            </label>
+            <label class="radio-inline">
+              <input type="radio" name="peer_type" id="friend" value="friend" <?php echo $this->type_friend;?>>
+              friend
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Force reverse authentication")?></label>
+          <div class="col-sm-6">
+            <div class="checkbox">
+              <label>
+                <input type="checkbox" name="reverse_auth" id="reverse_auth" value="reverse_auth" <?php echo $this->reverse_auth;?> /><?php echo $this->translate("Enabled")?>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Domain");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="domain" placeholder='<?php echo $this->translate("Domain")?>' value='<?php echo $this->trunk['domain'] ?>'/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Insecure");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="insecure" placeholder='<?php echo $this->translate("Insecure")?>' value='<?php echo $this->trunk['insecure'] ?>'/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Port");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="port" placeholder='<?php echo $this->translate("Port")?>' value='<?php echo $this->infoTrunk['port'] ?>'/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Channel Limit");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="call-limit" placeholder='<?php echo $this->translate("Channel Limit")?>' value='<?php echo $this->infoTrunk['call-limit'] ?>'/>
+          </div>
+        </div>
+      </div>
+      <!-- /SIP -->
+
+      <!-- IAX2 -->
+      <div id="iax2" class="invisible">
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("IAX2 Trunking");?></label>
+          <div class="col-sm-6">
+            <select class="form-control" name="istrunk" id="istrunk" >
+              <option value="yes"><?php echo $this->translate("Yes");?></option>
+              <option value="no"><?php echo $this->translate("No");?></option>
+            </select>
+          </div>
+        </div>
+
+      </div>
+      <!-- /IAX2 -->
+
+      <!-- Virtual -->
+      <div id="virtual" class="invisible">
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Channel Technology");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="channel" placeholder='<?php echo $this->translate("Channel Technology")?>' value='<?php echo $this->trunk['channel'];?>'/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("ID Regular Expression");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="id_regex" placeholder='<?php echo $this->translate("ID Regular Expression")?>' value='<?php echo $this->trunk['id_regex'];?>'/>
+          </div>
+        </div>
+
+      </div>
+      <!-- /virtual -->
+
+      <!-- Khomp -->
+      <div id="khomp" class="invisible">
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Board");?></label>
+          <div class="col-sm-6">
+
+            <select class="form-control" name="board" id="board">
+              <?php echo $this->boards;?>
+            </select>
+          </div>
+        </div>
+
+      </div>
+      <!-- /Khomp -->
+
+      <!-- NAT -->
+      <div id = "nat">
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("NAT Optimization")?></label>
+          <div class="col-sm-7">
+            <div class="checkbox">
+              <label>
+                <input type="checkbox" name="nat_no" <?php echo $this->nat_no;?>/>
+                no
+              </label>
+              &nbsp;&nbsp;
+              <label>
+                <input type="checkbox" name="nat_force_rport" <?php echo $this->nat_force_rport;?>/>
+                force-rport
+              </label>
+              &nbsp;&nbsp;
+              <label>
+                <input type="checkbox" name="nat_comedia" <?php echo $this->nat_comedia;?>/>
+                comedia
+              </label>
+              &nbsp;&nbsp;
+              <label>
+                <input type="checkbox" name="nat_auto_force_rport" <?php echo $this->nat_auto_force_rport;?>/>
+                auto-force-rport
+              </label>
+              &nbsp;&nbsp;
+              <label >
+                <input type="checkbox" name="nat_auto_comedia" <?php echo $this->nat_auto_comedia;?>/>
+                auto-comedia
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+      <!-- /NAT -->
+
+      <!-- CODEC -->
+      <div id="codecs">
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Codec 1");?></label>
+          <div class="col-sm-6">
+            <select class="form-control" name="codec" id="codec">
+              <?php echo $this->codec1;?>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Codec 2");?></label>
+          <div class="col-sm-6">
+            <select class="form-control" name="codec1" id="codec1">
+              <?php echo $this->codec2;?>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Codec 3");?></label>
+          <div class="col-sm-6">
+            <select class="form-control" name="codec2" id="codec2">
+              <?php echo $this->codec3;?>
+            </select>
+          </div>
+        </div>
+      </div>
+      <!-- /CODEC -->
+
+      <!-- SnepSIP -->
+      <div id="snepsip" class="invisible"></div>
+      <!-- /SnepSIP -->
+
+      <!-- SnepIAX -->
+      <div id="snepiax2" class="invisible">
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Identifier");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="identifier" placeholder='<?php echo $this->translate("Same on both servers")?>' value="<?php echo $this->trunk['identifier'];?>" />
+          </div>
+        </div>
+      </div>
+      <!-- /SnepIAX -->
+
+    </fieldset>
+
+
+    <fieldset>
+      <legend><?php echo $this->translate('Advanced');?></legend>
+
+      <div id="disabled">
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Trunk Disabled");?></label>
+          <div class="col-sm-6">
+            <div class="checkbox">
+              <label>
+                <?php if($this->action == 'add'){ ?>
+                  <input type="checkbox" name="trunk_disabled" id="trunk_disabled" value="trunk_disabled" <?php echo $this->trunk_disabled;?>/>
+                <?php }else{ ?>
+                  <input type="checkbox" disabled name="trunk_disabled" id="trunk_disabled" value="trunk_disabled" <?php echo $this->trunk_disabled;?>/>
+                <?php } ?>
+                
+                <?php echo $this->translate("Disabled");?>
+              </label>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Extension Mapping");?></label>
+        <div class="col-sm-6">
+          <div class="checkbox">
+            <label>
+              <input type="checkbox" name="map_extensions" value="map_extensions" <?php echo $this->map_extensions;?> />
+              <?php echo $this->translate("Enabled");?>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("DTMF dial mode");?></label>
+        <div class="col-sm-6">
+          <div class="checkbox">
+            <label>
+              <input type="checkbox" name="dtmf_dial" id="dtmf_dial" value="dtmf_dial" <?php echo $this->dtmf_dial;?>/>
+              <?php echo $this->translate("Enabled");?>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("DTMF dial mode number");?></label>
+        <div class="col-sm-6">
+          <input type="text" class="form-control" name="dtmf_dial_number" placeholder='<?php echo $this->translate("DTML dial mode number")?>' value='<?php echo $this->trunk['dtmf_dial_number'] ?>' />
+        </div>
+      </div>
+
+      <div class="form-group" data-intro='<?php echo $this->translate("You can define a total minute control to use this Trunk.<br>
+      After this amount of minutes the <i>Trunk</i> will return <i>CONGESTION</i> and follow the Routes Actions.");?>'>
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Minute Control");?></label>
+        <div class="col-sm-6">
+          <div class="checkbox">
+            <label>
+              <input type="checkbox" name="tempo" id="tempo" value="tempo" onChange="showMinuteControl();" <?php echo $this->tempo;?>/> <?php echo $this->translate("Enabled");?>
+            </label>
+          </div>
+        </div>
+      </div>
+
+      <div id="minute_control_div">
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Type of control")?></label>
+          <div class="col-sm-6">
+            <label class="radio-inline">
+              <input type="radio" name="time_chargeby" onchange="showMinuteControlRadio()" id="Y" value="Y" <?php echo $this->chargeby_Y;?> ><?php echo $this->translate("Anually");?>
+            </label>
+
+            <label class="radio-inline">
+              <input type="radio" name="time_chargeby" onchange="showMinuteControlRadio()" id="M" value="M" <?php echo $this->chargeby_M;?>><?php echo $this->translate("Monthly");?>
+            </label>
+
+            <label class="radio-inline">
+              <input type="radio" name="time_chargeby" onchange="showMinuteControlRadio()" id="D" value="D" <?php echo $this->chargeby_D;?>><?php echo $this->translate("Daily");?>
+            </label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Time total");?></label>
+          <div class="col-sm-2">
+            <input type="number" class="form-control" name="time_total" id="time_total" placeholder='<?php echo $this->translate("Minutes")?>' value='<?php echo $this->trunk['time_total'] ?>'/>
+          </div>
+        </div>
+
+        <div id="closing_date_div">
+          <div class="form-group">
+            <label class="col-sm-3 control-label"><?php echo $this->translate("Closing date");?></label>
+            <div class="col-sm-2">
+              <input type="number" class="form-control" name="time_initial_date" id="time_initial_date"  min="1" max="31" placeholder='<?php echo $this->translate("Day")?>' value='<?php echo $this->trunk['time_initial_date'] ?>'/>
+            </div>
+          </div>
+        </div>
+
+      </div>
+
+    </fieldset>
+
+    <div class="snep-body-footer-buttons">
+      <button type="submit" class="btn btn-add" name="save" value="save"><?php echo $this->translate("Save");?></button>
+      &nbsp;&nbsp;&nbsp;
+      <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+    </div>
+  </form>
+
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+window.onload = function(){
+  var div = "<?php echo $this->techType; ?>";
+  console.log(div);
+  showDiv(div);
+
+  jQuery("#minute_control_div").hide();
+  jQuery("#closing_date_div").hide();
+  var time = "<?php echo $this->tempo; ?>";
+  if(time == 'checked'){
+    jQuery("#minute_control_div").show();
+    var chargeby_M = "<?php echo $this->chargeby_M; ?>";
+    if(chargeby_M == 'checked'){
+      jQuery("#closing_date_div").show();
+    }
+  }
+}
+
+function showDiv(div){
+
+  document.getElementById("ip").className = "invisible";
+  document.getElementById("khomp").className = "invisible";
+  document.getElementById("virtual").className = "invisible";
+  document.getElementById("snepiax2").className = "invisible";
+  document.getElementById("disabled").className = "invisible";
+
+  if(div != 'iax2'){
+    document.getElementById("iax2").className = "invisible";
+  }
+
+
+  if(div == 'sip' || div == 'iax2'){
+
+    if(div == 'iax2'){
+      document.getElementById("iax2").className = "visible";
+    }
+    document.getElementById("codecs").className = "visible";
+    div = 'ip';
+
+    document.getElementById("disabled").className = "visible";
+
+  }else if(div == 'khomp' || div == 'virtual'){
+    document.getElementById("dtmfmode").className = "invisible";
+    document.getElementById("host").className = "invisible";
+    document.getElementById("nat").className = "invisible";
+  }
+
+  if(div == 'snepsip'){
+    document.getElementById("dtmfmode").className = "visible";
+    document.getElementById("host").className = "visible";
+    document.getElementById("codecs").className = "visible";
+    document.getElementById(div).className = "visible";
+    document.getElementById("disabled").className = "visible";
+  }else if(div == 'snepiax2'){
+    document.getElementById("dtmfmode").className = "visible";
+    document.getElementById("host").className = "visible";
+    document.getElementById("nat").className = "visible";
+    document.getElementById("codecs").className = "visible";
+    document.getElementById(div).className = "visible";
+    document.getElementById("disabled").className = "visible";
+  }else{
+    document.getElementById(div).className = "visible";
+  }
+}
+
+// show option
+function showMinuteControl(){
+  if(document.getElementById('tempo').checked) {
+    jQuery("#minute_control_div").show();
+  } else {
+    jQuery("#minute_control_div").hide();
+  }
+}
+
+function showMinuteControlRadio(){
+
+  var condition = jQuery('input:radio[name=time_chargeby]:checked').val();
+  if(condition == 'M'){
+    console.log(condition);
+    jQuery("#closing_date_div").show();
+  }else{
+    jQuery("#closing_date_div").hide();
+  }
+
+}
+
+jQuery(document).ready(function(){
+  jQuery('#defaultForm').validate({
+    rules: {
+      callerid: {
+        required: true,
+        minlength: 5,
+        maxlength: 30
+      },
+      board: {
+        required: true,
+      },
+      dtmfmode: {
+        required: true
+      },
+      identifier: {
+        required: function() {
+          return jQuery("#technology").val() == "snepiax2";
+        },
+
+      },
+      dtmf_dial_number: {
+        required: function() {
+          return jQuery("#dtmf_dial").is(":checked");
+        }
+      },
+      time_total: {
+        required: function() {
+          return jQuery("#tempo").is(":checked");
+        },
+        numbersOnly: true
+      }
+    },
+    messages: {
+      callerid: {
+        required: "<?php echo $this->translate('The name is required'); ?>",
+        minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
+        maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+        lettersAndNumbersOnly: "<?php echo $this->translate('Letters and numbers only please'); ?>"
+      },
+      board: {
+        required: "<?php echo $this->translate('The board is required'); ?>",
+      }
+    },
+    highlight: function(element) {
+      jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+    },
+    success: function(element) {
+      element
+      .text('OK!').addClass('valid')
+      .closest('.control-group').removeClass('error').addClass('success');
+    }
+  });
+});
+jQuery(function() {
+
+  jQuery('#secret').password().on('show.bs.password', function(e) {
+    jQuery('#methods').prop('checked', true);
+  }).on('hide.bs.password', function(e) {
+    jQuery('#methods').prop('checked', false);
+  });
+  jQuery('#methods').click(function() {
+    jQuery('#secret').password('toggle');
+  });
+});
+
+</script>

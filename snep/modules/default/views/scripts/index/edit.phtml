@@ -1,0 +1,44 @@
+<?
+$this->headScript()->appendFile($this->baseUrl() . '/includes/jquery-1.7.2.js');
+$this->headScript()->appendFile($this->baseUrl() . '/includes/ui/jquery.ui.core.js');
+$this->headScript()->appendFile($this->baseUrl() . '/includes/ui/jquery.ui.widget.js');
+$this->headScript()->appendFile($this->baseUrl() . '/includes/ui/jquery.ui.mouse.js');
+$this->headScript()->appendFile($this->baseUrl() . '/includes/ui/jquery.ui.sortable.js');
+$this->headLink()->appendStylesheet($this->baseUrl() . '/css/dashboard.css');
+
+$title = new Snep_Title("Dashboard");
+echo $title->getHtml();
+?>
+
+<script type="text/javascript">
+$(document).ready(function(e) {
+  $(".dashboard").sortable({ revert: 100, opacity: 0.9, tolerance:'pointer', scroll: false });
+  $(".dashboard").disableSelection();
+  $(".dashboard a .remover").click(function(){
+    $(this).parent().fadeOut(300, function(){$(this).remove()});
+  })
+  $("#editDashboard").submit(function(){
+    var input = "";
+    $(".dashboard a").each(function(){input += '|' + $(this).attr('class')});
+    $("#newDashboard").val(input);
+  });
+});
+</script>
+
+<div class="dashboard">
+  <?php
+  $dashboard = $this->dashboard;
+  foreach($dashboard as $valor){
+    echo "<a style='cursor:move' class='$valor[modelo]'><img src='".$this->baseUrl() . "/modules/".(isset($valor['module']) && $valor['module'] ? $valor['module'] : 'default')."/img/$valor[icone]' /><span>$valor[nome]</span><br/>$valor[descricao]<div class='remover'></div></a>";
+  }
+  ?>
+</div>
+<form id="editDashboard" method="post" action=""><input type="hidden" value="" name="dashboard" id="newDashboard"></form>
+
+<?php
+$buttons = new Snep_Buttons();
+$buttons->addOption('add', $this->baseUrl().'/index.php/index/add');
+$buttons->addOption('save', 'editDashboard', true);
+$buttons->addOption('cancel', $this->baseUrl().'/index.php/index/');
+echo $buttons->getHtml();
+?>

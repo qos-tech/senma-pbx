@@ -1,0 +1,161 @@
+<div class="row">
+                
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "expression-alias", "action" => $this->action), null, false); ?>" METHOD="post">
+
+        <div class="form-group">
+            <label class="col-sm-3 control-label"><?php echo $this->translate("Name");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="name" placeholder='<?php echo $this->translate("Name")?>' value='<?php echo $this->alias['name'];?>'/>
+            </div>
+        </div>
+        <?php if ($this->action == "add") {?>
+            <table id="tableExpr" class="order-list table">
+                <tbody>
+                    <tr>
+                        <td class="text-right col-sm-3">
+                            <label class="control-label">
+                                <?php echo $this->translate("Expression");?>
+                            </label>
+                        </td>
+                        <td class="text-right control-label col-sm-4">
+                            <input type="text" class="form-control col-sm-6" name="aliasbox[]" required placeholder="Expression" />
+                        </td>
+                        <td>
+                            <button type="button" class="boxadd add_field"></button>
+                            <button type="button" class="boxremove del_field" style="display: none;">
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        <?php } else {?>
+            <table id="tableExpr" class="order-list table">
+                <tbody>
+                    <?php 
+                        $number=count($this->expressions); 
+                        foreach($this->expressions as $key => $expression){?>
+                            <tr>
+                                <td class="text-right col-sm-3">
+                                    <label class="control-label">
+                                        <?php echo $this->translate("Expression");?>
+                                    </label>
+                                </td>
+                                <td class="text-right control-label col-sm-4">
+                                    <input class="form-control" type="text" name="aliasbox['<?php echo $key;?>']" required placeholder="<?php echo $this->translate('Expression')?>" value="<?php echo $expression; ?>"/>
+                                </td>
+                                <?php if ($key === 0 && $number === 1) { ?>
+                                    <td>
+                                        <button type="button" class="boxadd add_field"></button>
+                                        <button type="button" class="boxremove del_field" style="display: none;"></button>
+                                    </td>
+                                <?php } elseif (($key+1) === $number) { ?>
+                                    <td>
+                                        <button type="button" class="boxadd add_field"></button>
+                                        <button type="button" class="boxremove del_field"></button>
+                                    </td>
+                                <?php } else { ?>
+                                    <td><button type="button" class="boxadd add_field" style="display: none;"></button>
+                                        <button type="button" class="boxremove del_field"></button>
+                                    </td>
+                                <?php } ?>
+
+                            </tr>
+                        <?php } 
+                    ?>
+                </tbody>
+            </table>
+
+        <?php } ?>
+
+        <input type="hidden" name="id" value="<?php echo $this->id; ?>">
+
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="save"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+            <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+
+        
+    </form>
+</div>
+
+<script type="text/javascript">
+
+    jQuery.noConflict();
+
+
+    jQuery(document).ready(function(){ 
+        jQuery('#defaultForm').validate({
+            rules: {
+                name: {
+                    required: true,
+                    minlength: 5,
+                    maxlength: 30,
+                    lettersAndNumbersOnly: true 
+                },
+                aliasbox: {
+                    required: true
+                }
+            },
+            messages: {
+                name: {
+                    required: "<?php echo $this->translate('The name is required'); ?>",
+                    minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                    maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                    lettersAndNumbersOnly: "<?php echo $this->translate('Please enter letters and numbers only'); ?>"  
+                },
+                aliasbox: {
+                    required: "<?php echo $this->translate('The name is required'); ?>"
+                }
+            },
+            highlight: function(element) {
+                jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+            },
+            success: function(element) {
+                element
+                .text('OK!').addClass('valid')
+                .closest('.control-group').removeClass('error').addClass('success');
+            }
+        });
+
+        // Add lines
+        jQuery("table.order-list").on("click",".add_field", function(e){ //user click on remove text
+            //e.preventDefault();
+
+            jQuery(".add_field").hide(); // Hide ADD buton   
+            jQuery(".del_field").show();
+
+            // Mount new line
+            var newRow = jQuery("<tr>");
+            var cols = "";
+            cols += '<td class="text-right col-sm-3">';
+            cols += '  <label class="control-label">';
+            cols += '    <?php echo $this->translate("Expression");?>';
+            cols += '  </label>' ;
+            cols += '</td>' ;
+            cols += '<td class="text-right control-label col-sm-4">' ;
+            cols += '  <input type="text" class="form-control col-sm-6" name="aliasbox[]" placeholder="Expression" />';
+            cols += '</td>'
+            cols += '<td><button type="button" class="boxadd add_field"></button>';
+            cols += '<button type="button" class="boxremove del_field" /></button></td>'  ;
+
+            newRow.append(cols);
+            jQuery("table.order-list").append(newRow);
+
+        });
+        // Remove lines
+        jQuery("table.order-list").on("click",".del_field", function(e){ //user click on remove text
+            //e.preventDefault(); 
+            jQuery(this).closest("tr").remove();
+            jQuery('#tableExpr tr:last').find(".add_field").show();
+            if (jQuery("#tableExpr tr").length == 1) {
+                jQuery('#tableExpr tr:last').find(".del_field").hide();
+            }
+            
+        });
+
+    });   
+
+</script>
+
+
+

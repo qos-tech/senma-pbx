@@ -1,0 +1,117 @@
+<?php
+/**
+ *  This file is part of SNEP.
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ */
+?>
+<div class="row">
+	                
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "music-on-hold", "action" => "addfile"), null, true); ?>" method="post" enctype="multipart/form-data">
+
+        <div class="form-group">
+        <div class="col-sm-6 col-sm-offset-2">
+            <div class="alert alert-danger"><?php echo $this->translate("Warning: Maximum upload file size") . ' : '.ini_get('upload_max_filesize');?></div>
+        </div>
+        </div>
+        <div class="form-group">
+			<label class="col-sm-2 control-label" for="inputFile"><?php echo $this->translate("Sound File");?></label>
+            <div class="col-sm-6">
+				<input type="file" name="inputFile" id="inputFile" placeholder="xxxx">
+                
+            </div>
+		</div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Filename");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="filename" id="filename" placeholder='<?php echo $this->translate("Filename")?>' />
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Description");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="description" placeholder='<?php echo $this->translate("Description")?>' />
+            </div>
+        </div>
+
+        <!-- <div class="form-group">
+            <label class="col-sm-2 control-label"><?php //echo $this->translate("Converte to GSM")?></label>
+            <div class="col-sm-6">
+                <div class="checkbox">
+                    <label>
+                        <input type="checkbox" name="gsm" id="gsm"/><?php //echo $this->translate("Yes")?>
+                    </label>
+                </div>
+            </div>
+        </div> -->
+
+        <input type="hidden" name="section" value="<?php echo $this->section; ?>">
+
+        <br>
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="Save"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+        	<a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+    </form>
+
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(document).ready(function(){ 
+    jQuery('#defaultForm').validate({
+        rules: {
+            filename: {
+                required: true,
+                minlength: 5,
+                maxlength: 50,
+            },
+            description: {
+                required: true,
+                minlength: 5,
+                maxlength: 80,
+            }
+        },
+        messages: {
+            filename: {
+                required: "<?php echo $this->translate('The filename is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                lettersAndNumbersOnly: "<?php echo $this->translate('Please enter letters and numbers only'); ?>" 
+            },
+            description: {
+                required: "<?php echo $this->translate('The description is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                lettersAndNumbersOnly: "<?php echo $this->translate('Please enter letters and numbers only'); ?>" 
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+    jQuery('#inputFile').change(function() {
+        jQuery('#filename').val(document.getElementById("inputFile").files[0].name);
+    });
+}); 
+</script>

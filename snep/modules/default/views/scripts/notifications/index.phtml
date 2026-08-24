@@ -1,0 +1,66 @@
+<div class= "row">
+  <div class="tab-content">
+    <div class="tab-pane active" id="demo">
+      <?php if($this->options != 'all'){ ?>
+        <div id="carousel-notifications" class="carousel slide" data-ride="carousel" data-interval="false">
+          <div class='carousel-inner'>
+            <?php foreach($this->html as $key => $html):
+              echo $html;
+            endforeach; ?>
+          </div>
+        </div>
+      <?php }else{ ?>
+        <table class="table table-striped" id="listtable">
+          <thead>
+            <tr>
+              <th><?php echo $this->translate('Sender');?></th>
+              <th><?php echo $this->translate('Notification');?></th>
+              <th data-sort-ignore="true"><?php echo $this->translate('Date');?></th>
+              <th class="text-center"><?php echo $this->translate('Actions');?></th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php if( $this->notifications ) :
+              foreach ($this->notifications as $key => $notification):
+                if(!@$notification->id && $notification->_id){
+                  $notification->id = $notification->_id;
+                }?>
+                <tr>
+                  <?php if($notification->status == 'read'){?>
+                    <td> <?php echo $notification->from ?> </td>
+                    <td> <?php echo $notification->title ." - ". substr($notification->message, 0,30)."..." ?> </td>
+                    <td> <?php echo date("d/m/Y G:i:s", strtotime($notification->creation_date)) ?> </td>
+                  <?php }else{?>
+                    <td class="bold"> <?php echo $notification->from ?> </td>
+                    <td class="bold"> <?php echo $notification->title ." - ". substr($notification->message, 0,30)."..." ?> </td>
+                    <td class="bold"> <?php echo date("d/m/Y G:i:s", strtotime($notification->creation_date)) ?> </td>
+                  <?php } ?>
+                    <td class="text-center">
+                      <a class="btn btn-add btn-sm"  href="<?php echo $this->url ?>?id=<?php echo $notification->id ?>" role="button"><?php echo $this->translate('Click to visualize')?></a>
+                      <a class="btn btn-danger btn-sm" href="<?php echo $this->url ?>/remove/id/<?php echo $notification->id ?>" role="button"><?php echo $this->translate('Delete')?></a>
+                    </td>
+                  </tr>
+                <?php endforeach ?>
+              <?php endif?>
+            </tbody>
+          </table>
+        <?php } ?>
+        <br>
+      </div>
+    </div>
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+
+jQuery(document).ready(function() {
+  jQuery('#listtable').dataTable( {
+    "pageLength": <?php echo $this->lineNumber ?>,
+    "oLanguage": {
+      "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+    },
+    "bLengthChange": false,
+  });
+});
+</script>

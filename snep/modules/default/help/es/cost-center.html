@@ -1,0 +1,51 @@
+<!--
+
+Class containing help text of the cost center
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Opens Tecnologia <desenvolvimento@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Centro de Costo - Añadir / Cambiar</h2>
+
+        Esta rutina permite la inclusión / edición de un centro de coste.
+
+        <br>El Centro de costos son utilizados por Asterisk para establecer el 'accountcode' de cada conexión de salida, registrar esta información en la tabla cdr.
+
+        <br><br>Un centro de costos consta de los siguientes campos:
+        <br><strong>Código:</strong> El código puede ser de 1, 3 o 5 dígitos, siempre NÚMERO, y distribuidos en un máximo de 3 'casas', que determinan su herarquia.
+        Definición:
+
+        <br>9 - código de un dígito, se considera el código Padre. 
+        Debe haber sólo dos (2) códigos de PAI en el sistema - una para los insumos y una para SALIDAS.
+
+        <br>9.99 - código de tres dígitos, es considerado el hijo de código de primera generación
+        <br>9.99.99 - código de cinco dígitos, es considerado el hijo de código de segunda generación
+        <br>Ejemplo:
+        <br>1 - Conexiones de Entrada
+        <br>1.01 - Departamento Comercial
+        <br>1.01.01 - Director Comercial
+        <br>1.01.02 - Vendedores
+        <br>1.01.03 - Telemarketing
+
+        <br><strong>Nombre:</strong> Define un nombre para el centro de coste;
+        <br><strong>Descripción:</strong> Breve descripción de la finalidad del centro de coste
+        <br><strong>Tipo:</strong> Define qué tipo de conexión se aplicará el Centro de Costo: entrada o salida
+        <br>
+        <br><strong>Observación:</strong> No puede editar el código del centro de coste.
+        
+        <h2>Centro de Costo - CSV Exportación</h2>
+        Esta rutina salidas del centro de costos registradas de sistema en un archivo .csv. 
+        <br>
+
+    </body>
+</html>

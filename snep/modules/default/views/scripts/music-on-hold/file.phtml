@@ -1,0 +1,69 @@
+<?php
+$this->headScript()->appendFile($this->baseUrl() .  "/includes/javascript/snep.js");
+?>
+
+<div class= "row">
+  <div class="tab-content">
+    <div class="tab-pane active" id="demo">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <div class="snep-body-top-buttons">
+            <a class="btn btn-add" href="<?php echo $this->url.'/addfile/section/'.$this->section;?> " role="button"><?php echo $this->translate("Add File")?></a>
+          </div>
+        </div><br>
+
+        <?php if ($this->error_message) {
+          echo $this->action( 'sneperror', 'error', null, array( 'error_type' => 'alert','error_title' => $this->translate('Alert'), 'error_message' => $this->error_message, 'error_buttons' => False) );
+        } else { ?>
+          <table class="table table-striped" id="listtable">
+            <thead>
+              <tr>
+                <th class="text-center"> <?php echo $this->translate('Name') ?> </th>
+                <th class="text-center"> <?php echo $this->translate('Last update') ?> </th>
+                <th> <?php echo $this->translate('Description') ?> </th>
+                <th class="text-center"> <?php echo $this->translate('Class') ?> </th>
+                <th class="text-center"> <?php echo $this->translate('Actions') ?> </th>
+              </tr>
+            </thead>
+            <tbody>
+              <?php if($this->files):
+                foreach($this->files as $file ): ?>
+                  <tr>
+                    <td class="text-center"><?php echo $file['arquivo'] ?> </td>
+                    <td class="text-center"> <?php echo  ( $file['data'] ?  new Zend_Date( $file['data']) : '-' );  ?> </td>
+                    <td><?php echo $file['descricao'] ?> </td>
+                    <td class="text-center"><?php echo $file['secao'] ?> </td>
+                    <td class="text-center">
+                      <a class="btn btn-edit btn-sm"  href="<?php echo $this->url . '/editfile/file/'. $file['arquivo'].'/class/'.$file['secao'];?>" role="button"><?php echo $this->translate('Edit')?></a>
+                      <a class="btn btn-danger btn-sm"  href="<?php echo $this->url.'/removefile/file/'.$file['arquivo'].'/class/'.$file['secao'];?>" role="button"><?php echo $this->translate('Delete')?></a>
+                    </td>
+                  </tr>
+                <?php endforeach ?>
+              <?php endif ?>
+            </tbody>
+          </table>
+        <?php } ?>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+
+jQuery(document).ready(function() {
+  jQuery('#listtable').dataTable( {
+    "pageLength": <?php echo $this->lineNumber ?>,
+    "oLanguage": {
+      "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+    },
+    "bLengthChange": false,
+  });
+});
+</script>
+
+
+
+
+

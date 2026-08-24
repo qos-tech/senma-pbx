@@ -1,0 +1,33 @@
+<link href="/snep/css/login.css" rel="stylesheet">
+<link href="/snep/css/bootstrap.css" rel="stylesheet">
+<div class="row">
+    <?php if($this->message): ?>
+        <span class="<?php echo $this->msgclass; ?>"><?php echo $this->message; ?></span>
+    <?php endif; ?>
+
+
+    <form  action="<?php echo $this->url(array("controller" => "auth", "action" => "redefine"), null, true); ?>" METHOD="post">
+        <div id="login">
+            <dl id="login_form">
+                <div class="login_box">
+
+                    <div class="form_element">
+                        <span class="<?php echo $this->msgclass; ?>"><?php echo $this->translate("Enter your user to send a redefinition of the password to your registered email "); ?></span>
+                    </div>
+
+                    <br>
+
+                    <div class="form-group">
+                        <dt><?php echo $this->translate("Username"); ?>:</dt>
+                        <input class="form-control" name="username" type="text" autofocus>
+                    </div>
+
+                    <br />
+
+                    <input type="submit" class="btn btn-lg btn-primary btn-block snep-login" value="<?php echo $this->translate("Send"); ?>" />
+                    
+                </div>
+            </dl>
+        </div>
+    </form>
+</div>

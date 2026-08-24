@@ -1,0 +1,80 @@
+<!--
+
+Class containing help text of the route
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Regras de negócio - Incluir / Alterar</h2>
+
+        Esta rotina permite que uma regra de negócios seja cadastrada ou alterada.
+
+        <br><br><strong>Descrição:</strong> Nome de identificação da regra.
+        <br><strong>Origem/Destino:</strong> Origem/Destino da regra.
+        <br><strong>Opções de origem e destino:</strong>
+        <br><strong><u>Expressão Regular: </u></strong>Expressão no padrão "Dialplan Asterisk" 
+        que irá verificar se o número de origem da chamada "casa". Exemplos:0800X. ­> Números que iniciem com "0800"; [7­9]X. ­> Números que iniciem com “7, 8 ou 9” ;
+        <br><strong><u>Qualquer: </u></strong>Qualquer número.
+        <br><strong><u>Grupo de ramal: </u></strong>Um Grupo de Ramal entre os cadastrados no sistema.
+        <br><strong><u>Grupo de contato: </u></strong>Um grupo de contato entre os cadastrados no sistema.
+        <br><strong><u>Ramal: </u></strong>Define o número de um Ramal.
+        <br><strong><u>Aliás de expressão regular: </u></strong>Um Alias de Expressão cadastrado no sistema
+        <br><strong><u>Tronco:</u></strong> Permite escolher um tronco dentre os cadastrados no sistema
+        <br><br><strong>Dias da semana: </strong>Determina os dias da semana que a regra será válida.
+        <br><strong>Tempos válidos: </strong>Define os horários que a regra deve ser aplicada.
+        <br><strong>Gravação: </strong>Define se as chamadas que passarem pela regra deverão ser gravadas ou não.
+        <br><strong>Prioridade:</strong> Existem 6 níveis de prioridade(0 a 5). Quanto MAIOR o nível, MAIOR será a prioridade de execução.
+
+        <h4>Ações da regra</h4>
+
+        <strong>Defina Centro de custos:</strong> Define o centro de custos que será usado para gravar o registro da chamada para visualização no relatório.
+        <br><strong>Desviar para contexto:</strong> Envia a ligação para um contexto do dialplan do Asterisk. Essa opção é usada para a customização de algum comportamento em um nível mais baixo.Também é usada para a criação de URA/IVR.
+        <br><strong>Discar para ramal:</strong> Encaminha a ligação para um ramal cadastrado no SNEP.
+    <br><u>Ramal:</u> Define o número do ramal para o qual as chamadas serão destinadas.
+    <br><u>Dial timeout:</u> Tempo que o sistema tentará passar uma chamada para o Ramal, em caso de Não atender.
+    <br><u>Flags de controle:</u> w = permite solicitar gravação da chamada (*77) 
+    t = permite solicitar transferência da chamada
+    k = permite estacionamento da chamada.
+    <br><u>Diferenciar toque:</u> Diferencia o toque de chamadas internas e externas.
+    <br><u>Permitir voicemail:</u> Usa voiceMail para o ramal(desde que definido no cadastro do ramal).
+    <br><u>Não transbordar:</u> Não deixa chamada transbordar.
+    <br><strong>Discar para tronco: </strong>A ligação será direcionada para um tronco tentando alcançar o destino da ligação.
+    <br><u>Tronco:</u> Define o tronco para o qual as chamadas serão destinadas.
+    <br><u>Dial timeout:</u> Tempo que o sistema tentará passar uma chamada para o tronco.
+    <br><u>Flags de controle:</u> w = permite solicitar gravação da chamada (*77)
+    t = permite solicitar transferência da chamada.
+    <br><u>Omitir origem:</u> Em troncos GSM , omite o callerid que identifica a origem da chamada.
+    <br><u>Email de alerta:</u> E­mail que receberá alertas a cada vez que este tronco for usado.
+    <br><strong>Email: </strong>Envia e-mail toda vez que regra é utilizada.
+    <br><strong>Enviar para fila: </strong>Coloca a ligação em uma fila de chamadas.
+    <br><u>Fila:</u> Fila cadastrada no sistema.
+    <br><u>Timeout na fila:</u> Tempo que a chamada irá aguardar na Fila até que transborde para a próxima ação ou então seja cancelada.
+    <br><strong>Executar a aplicação:</strong> Executa uma aplicação do asterisk.
+    <br><strong>Loop: </strong>Gera um loop nas ações. Toda vez que essa ação for chamada ela direciona o fluxo da execução das ações para o índice da ação definido em sua configuração. Ela também pede que seja definido o número de vezes em que o loop será executado.
+    <br><strong>Pedir senha:</strong> Essa ação pede uma senha para o originador. Se não for definida na própria ação , a senha será obtida do cadastro do originador (ramal de origem) se ele for um ramal do SNEP.
+    Substitui o ramal de origem com o escolhido: Se ativado irá solicitar ao chamador o código e senha de um ramal previamente cadastrado.
+    <br><u>Senha Estática:</u> Define uma senha única para liberar chamadas que passarem por esta ação.
+    <br><strong>Reescrever pedido:</strong> Edita uma requisição sendo possível modificar a origem ou o destino da ligação. É possível "cortar" o número de origem/destino usando o "|" (pipe) para definir até que ponto o número será cortado. ex: 0XX|XX. será cortado o 0XX ficando somente os números a partir do terceiro carácter. Essa ação também permite adicionar um prefixo e sufixo ao numero original.
+    <br><u>Editar:</u> Define se será alterado o número de origem ou de destino.
+    <br><u>Cortar:</u> Define se haverá corte no número de origem ou destino. O corte é proporcionado pelo uso do pipe (“|”) em expressões regulares e permite que tudo o que estiver à esquerda deste caractere seja desprezado.
+    <br><u>Substituir:</u> Substitui a Origem ou Destino pelo conteúdo informado.
+    <br><u>Prefixo:</u> Anexa ao INÍCIO do Número de Origem ou Destino o conteúdo informado.
+    <br><u>Sufixo:</u> Anexa no FIM do Número de Origem ou Destino o conteúdo informado.
+    <br><strong>Restaurar pedido:</strong> Restaura a requisição aos seus valores inciais. Reverte as modificações das outras ações desse grupo.
+    <br><u>Restaurar origem:</u> Restaura o número de Origem alterado pela ação anterior (Reescrever).
+    <br><u>Restaurar destino:</u> Restaura o número de Destino alterado pela ação anterior (Reescrever).
+    <br><strong>Tocar áudio: </strong>Permite tocar um áudio que esteja na Lista.
+    <br>
+
+</body>
+</html>

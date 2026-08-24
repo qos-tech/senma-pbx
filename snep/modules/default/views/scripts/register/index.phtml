@@ -1,0 +1,113 @@
+<div class="row">           
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "register", "action" => "index"), null, false); ?>" METHOD="post">
+        
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Partner");?></label>
+            <div class="col-sm-5">
+                <input type="text" class="form-control" name="name" disabled value="<?php echo $this->data->details->partner_itc->name; ?>" />
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Email");?></label>
+            <div class="col-sm-5">
+                <input type="text" class="form-control" name="name" disabled value="<?php echo $this->data->details->email; ?>" />
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("First Name");?></label>
+            <div class="col-sm-5">
+                <input type="text" class="form-control" name="first_name" disabled value="<?php echo $this->data->details->first_name; ?>"/>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Last Name");?></label>
+            <div class="col-sm-5">
+                <input type="text" class="form-control" name="last_name" disabled value="<?php echo $this->data->details->last_name; ?>"/>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Client Key");?></label>
+            <div class="col-sm-7">
+                <input type="text" class="form-control" name="client_key" disabled value="<?php echo $this->client_key; ?>"/>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("API Key");?></label>
+            <div class="col-sm-7">
+                <input type="text" class="form-control" name="api_key" disabled value="<?php echo $this->api_key; ?>"/>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("UUID do Snep");?></label>
+            <div class="col-sm-7">
+                <input type="text" class="form-control" name="uuid" disabled value="<?php echo $this->uuid; ?>"/>
+            </div>
+        </div>
+        
+        <br>
+        <div class="snep-body-footer-buttons">
+                <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Back")?></a>
+        </div>
+    </form>
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(document).ready(function(){ 
+    jQuery('#defaultForm').validate({
+        rules: {
+            name: {
+                required: true,
+                minlength: 5,
+                maxlength: 30,
+                lettersOnly: true
+            },
+            password: {
+                required: true,
+                minlength: 5,
+                maxlength: 32,
+            },
+            email: {
+                required: true,
+                email: true
+            }
+        },
+        messages: {
+            name: {
+                required: "<?php echo $this->translate('The username is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                lettersOnly: "<?php echo $this->translate('Letters only please'); ?>" 
+            },
+            password: {
+                required: "<?php echo $this->translate('The password is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>"
+            },
+            email: {
+                required: "<?php echo $this->translate('The e-mail is required'); ?>",
+                email: "<?php echo $this->translate('Your email address must be in the format of name@domain.com'); ?>"
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+}); 
+</script>
+
+
+
+

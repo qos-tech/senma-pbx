@@ -1,0 +1,97 @@
+<div class="row">
+  <div class="tab-content">
+    <div class="tab-pane active" id="demo">
+      <div class="snep-body-top-buttons">
+        <div class="snep-body-search">
+          <?php  if($this->key)
+          echo "" ;
+          { ?>
+            <a class='sn-dash-add' style="margin-right: 15px;" href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>">
+            </a>
+            <?php } ?>
+          </div>
+        </div>
+      </div>
+    </div>
+    <form id="defaultForm" method="post" class="form-horizontal" style="margin-top: 20px;" action="<?php echo $this->url(array("controller" => "khomp-links", "action" => "index"), null, true); ?>" METHOD="post">
+
+      <div class="form-group">
+        <label class="col-sm-4 control-label"><?php echo $this->translate("Boards")?></label>
+        <div class="col-sm-6">
+          <div class="checkbox">
+
+            <?php foreach($this->placas as $key => $board){ ?>
+              <label>
+                <input type="checkbox" name="<?php echo 'boards['.$key.']';?>"  />
+                <?php echo $board;?>
+              </label>
+              <?php } ?>
+            </div>
+
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-4 control-label"><?php echo $this->translate("Report Type")?></label>
+          <div class="col-sm-6">
+            <label class="radio-inline">
+              <input type="radio" name="view" id="analitic" value="analitic" checked><?php echo $this->translate("Analytic");?>
+            </label>
+
+            <label class="radio-inline">
+              <input type="radio" name="view" id="synthetic" value="synthetic"><?php echo $this->translate("Synthetic");?>
+            </label>
+          </div>
+        </div>
+
+
+        <div class="form-group">
+          <label class="col-sm-4 control-label"><?php echo $this->translate("View status of the channel?")?></label>
+          <div class="col-sm-6">
+            <label class="radio-inline">
+              <input type="radio" name="status" id="yes" value="yes" checked><?php echo $this->translate("Yes");?>
+            </label>
+
+            <label class="radio-inline">
+              <input type="radio" name="status" id="no" value="no"><?php echo $this->translate("No");?>
+            </label>
+          </div>
+
+        </div>
+
+
+        <div class="snep-body-footer-buttons">
+          <button type="submit" class="btn btn-add" name="save" value="save"><?php echo $this->translate("Display");?></button>
+          &nbsp;&nbsp;&nbsp;
+          <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+
+      </form>
+    </div>
+    <script type="text/javascript">
+
+    jQuery.noConflict();
+    jQuery(document).ready(function(){
+      jQuery('#defaultForm').validate({
+        rules: {
+          'boards[]': {
+            required: true,
+            minlength: 1
+          }
+        },
+        messages: {
+          'boards[]': {
+            required: "<?php echo $this->translate('Select one board.'); ?>"
+          }
+        },
+        highlight: function(element) {
+          jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+          element
+          .text('OK!').addClass('valid')
+          .closest('.control-group').removeClass('error').addClass('success');
+        }
+      });
+    });
+    </script>

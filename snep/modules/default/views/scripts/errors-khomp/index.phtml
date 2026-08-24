@@ -1,0 +1,89 @@
+<div class="row">
+    <div class="tab-content">
+        <div class="tab-pane active" id="demo">
+            <div class="snep-body-top-buttons">
+                <div class="snep-body-search">
+                    <?php  if($this->key)
+                        echo "" ;
+                    { ?>
+                        <a class='sn-dash-add' style="margin-right: 15px;" href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>">
+                        </a>   
+                    <?php } ?>
+                </div>
+            </div>
+        </div>
+    </div>
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "errors-khomp", "action" => "index"), null, true); ?>" METHOD="post">
+        
+        <?php foreach ($this->status as $board => $errors) { ?>
+
+            <div class="col-xs-6">
+                <div class="panel panel-orange">
+                    <div class="panel-orange panel-heading">
+                        <?php echo $this->translate('Board : ') . $this->canais[$board];?>
+                    </div>
+                    <div class="panel-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped table-bordered snep-table-linkskhomp">
+                                <thead>
+                                    
+                                    <?php $board_links = count($this->status[$board]) ;
+                                    if ($board_links > 1) {?>
+                                        <tr>
+                                            <th rowspan="2"><?php echo $this->translate('Error type') ?></th>
+                                            <th colspan="<?php echo $board_links;?>" class="text-center">
+                                                <?php echo $this->translate('Number');?>
+                                            </th>
+                                        </tr>
+                                        <tr>
+                                            <?php for ($i=1; $i <= $board_links ; $i++ ) { ?>
+                                                <th class="text-center"><?php echo $this->translate('Link').": ".($i-1) ?></th>
+                                            <?php } ?>
+                                        </tr>
+                                    <?php } else { ?>
+                                        <tr>
+                                            <th><?php echo $this->translate('Error type');?></th>
+                                            <th class="text-center"><?php echo $this->translate('Number');?></th>
+                                        </tr>
+                                    <?php } ?>
+                                    
+                                </thead>
+                                <tbody>
+                                    <?php if ($errors[0]) {
+                                        foreach ($errors[0] as $key => $val) {  ?>
+                                            <tr>
+                                                <?php if ($board_links > 1) { ?>
+
+                                                    <td><?php echo $key;?></td>
+                                                    <?php for ($lin=1; $lin <= $board_links ; $lin++ ) {?>
+                                                        <td><?php echo $errors[$lin-1][$key];?></td>
+                                                    <?php } ?>
+
+                                                <?php } else {?>
+
+                                                    <td><?php echo $key;?></td>
+                                                    <td><?php echo $errors[0][$key];?></td>
+
+                                                <?php }?>
+                                            </tr> 
+                                        <?php } 
+                                    } else {
+                                        echo "<tr> <td colspan=2>".$this->translate('No links in this board')."</td></tr>";
+                                    }?>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        <?php } ?>
+    
+
+        <div class="snep-body-footer-buttons">
+
+            <button type="submit" class="btn btn-add" name="reset" value="reset"><?php echo $this->translate("Reset Counters");?></button>
+            &nbsp;&nbsp;&nbsp;
+            <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+    </form>
+</div>

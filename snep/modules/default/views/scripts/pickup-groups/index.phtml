@@ -1,0 +1,62 @@
+<div class= "row">
+  <div class="tab-content">
+    <div class="tab-pane active" id="demo">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <div class="snep-body-top-buttons">
+            <a class="btn btn-add" href="<?php echo $this->url ?>/add/ " role="button"><?php echo $this->translate("Add Pickup Group")?></a>
+            <div class="snep-body-search">
+              <?php if($this->key){ ?>
+                <a class='sn-dash-add' href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>"></a>
+              <?php } ?>
+            </div>
+          </div>
+        </div><br>
+
+        <table class="table table-striped" id="listtable">
+          <thead>
+            <tr>
+              <th class="text-center"><?php echo $this->translate('Code');?></th>
+              <th class="text-center"><?php echo $this->translate('Name');?></th>
+              <th class="text-center"><?php echo $this->translate('Peers in');?></th>
+              <th class="text-center"><?php echo $this->translate('Actions');?></th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php if($this->pickupgroups):
+              foreach($this->pickupgroups as $id => $pickupGroup ): ?>
+                <tr>
+                  <td class="text-center"> <?php echo $pickupGroup['cod_grupo'] ?> </td>
+                  <td class="text-center"> <?php echo $pickupGroup['nome'] ?> </td>
+                  <td class="text-center"><label class="label label-info"><?php echo $pickupGroup['members'] ?></label></td>
+                  <?php ($pickupGroup['cod_grupo'] == 1) ? $disabled= "disabled" : $disabled = ""; ?>
+                  <td class="text-center">
+                    <a class="btn btn-edit btn-sm <?php echo $disabled ?>"  href="<?php echo $this->url ?>/edit/id/<?php echo $pickupGroup['cod_grupo'] ?>" role="button"><?php echo $this->translate('Edit')?></a>
+                    <a class="btn btn-danger btn-sm <?php echo $disabled ?>"  href="<?php echo $this->url ?>/remove/id/<?php echo $pickupGroup['cod_grupo'] ?>" role="button"><?php echo $this->translate('Delete')?></a>
+                  </td>
+                </tr>
+              <?php endforeach ?>
+            <?php endif ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+
+jQuery(document).ready(function() {
+  jQuery('#listtable').dataTable( {
+    "pageLength": <?php echo $this->lineNumber ?>,
+    "oLanguage": {
+      "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+    },
+    "bLengthChange": false,
+  });
+});
+</script>
+
+

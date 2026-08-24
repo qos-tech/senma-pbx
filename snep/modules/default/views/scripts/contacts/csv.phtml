@@ -1,0 +1,90 @@
+<?php
+/*
+ *  This file is part of SNEP.
+ *  Para território Brasileiro leia LICENCA_BR.txt
+ *  All other countries read the following disclaimer
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ */
+?>
+<script type="text/javascript" src="/snep/includes/javascript/formValidation.js"></script>
+<script type="text/javascript" src="/snep/includes/javascript/form/bootstrap.min.js"></script>
+    
+<div class="row">
+    <?php  if( isset( $this->error ) ): ?>
+
+        <div class="col-lg-4">
+            <div class="panel panel-red">
+                <div class="panel-heading">
+                    <?php echo $this->translate("Error!");?>
+                </div>
+                <div class="panel-body">
+                    <pre><?php echo $this->error;?></pre>
+                </div>
+            </div>
+        </div>
+
+    <?php endif ?>
+
+    <?php if($this->invalid){ ?>
+    
+        <div class="col-lg-4">
+            <div class="panel panel-red">
+                <div class="panel-heading">
+                    <?php echo $this->translate("Error!");?>
+                </div>
+                <div class="panel-body">
+                    <h2><?php echo $this->translate("Invalid File") ?></h2>
+                </div>
+            </div>
+        </div>
+
+        <br>
+        <div class="form-group">
+            <div class="col-lg-4" align="center">
+                <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+            
+            </div>
+        </div>
+
+    <?php }else{ ?>
+        
+        <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "contacts", "action" => "csv"), null, true); ?>" METHOD="post">
+        
+
+            <div class="col-lg-4">
+                <div class="panel panel-green">
+                    <div class="panel-heading">
+                        <?php echo $this->translate("Export Contacts");?>
+                    </div>
+                    <div class="panel-body" align="center">
+                        <p><?php echo $this->message;?></p>
+                        <br>
+                        <div class="form-group">
+                            <label class="col-sm-4 control-label" for="file"><?php echo $this->translate("Input File");?></label>
+                            <input type="file" id="file" name="file">
+                        </div>
+                    </div>
+                </div>
+            </div>   
+            
+            <br>
+            <div class="snep-body-footer-buttons">
+                <button type="submit" class="btn btn-add" name="save" value="save"><?php echo $this->translate("Save");?></button>
+                &nbsp;&nbsp;&nbsp;
+                <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+            </div>
+        </form>
+    <?php } ?>
+</div>

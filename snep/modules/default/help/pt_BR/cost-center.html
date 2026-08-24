@@ -1,0 +1,56 @@
+<!--
+
+Class containing help text of the cost center
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Centro de Custos - Incluir / Alterar</h2>
+
+        Esta rotina permite a inclusão/edição de um centro de custo.
+
+        <br>Os Centro de Custos são usados pelo Asterisk 
+        para definir o 'Accountcode' de cada ligação de saída, gravando esta 
+        informação na tabela cdr.
+
+        <br><br>Um Centro de Custos é composto dos seguintes campos:
+        <br><strong>Código:</strong> O código pode ser de 1, 3 ou 5 digitos, sempre 
+        NUMÉRICOS, e distribuidos em até 3 'casas', que determinam sua herarquia. 
+        Definição:
+
+        <br>9 - código com 1 dígito, é considerado o código PAI. 
+        Devem existir apenas 2 (dois) códigos PAI no sistema - um para 
+        ENTRADAs e um para SAÌDAS.
+
+        <br>9.99 - código com 3 dígitos, é considerado o código Filho de 1a. Geração
+        <br>9.99.99 - código com 5 dígitos, é considerado o código Filho de 2a. Geração
+        <br>Exemplo:
+        <br>1 - Ligações de Entrada
+        <br>1.01 - Departamento Comercial
+        <br>1.01.01 - Diretor Comercial
+        <br>1.01.02 - Vendedores
+        <br>1.01.03 - Telemarketing
+
+        <br><strong>Nome:</strong> Define um nome para o centro de custos;
+        <br><strong>Descrição:</strong> Breve descrição do objetivo do centro de custos
+        <br><strong>Tipo:</strong> Define em que tipo de ligação o Centro de 
+        Custos será aplicado: de Entrada ou de Saída
+        <br>
+        <br><strong>OBS:</strong> Não é possível editar o código do centro de custos.
+        
+        <h2>Centro de Custos - Exportar CSV</h2>
+        Esta rotina exporta os centro de custos cadastrado no sistema para um arquivo .csv. 
+        <br>
+
+    </body>
+</html>

@@ -1,0 +1,99 @@
+<?php
+/**
+ *  This file is part of SNEP.
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ */
+ $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/bootstrap-duallistbox.css" );
+?>
+<script type="text/javascript" src="/snep/includes/javascript/jquery.bootstrap-duallistbox.js"></script>
+
+<div class="row">
+
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "extensions-groups", "action" => $this->action), null, false); ?>" METHOD="post">
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Name");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="name" value="<?php echo $this->group['name'] ?>" />
+            </div>
+        </div>
+
+        <select multiple="multiple" size="10" name="duallistbox_group[]" id="select">
+      	    <?php foreach($this->noGroupExtensions as $extension){ ?>
+      	    	<option value="<?php echo $extension['peer_id'];?>">
+                    <?php echo $extension['name'] . ' ( ' . $extension['group_name'] . ' )';?>
+                </option>
+      	    <?php }?>
+
+      	    <?php foreach($this->groupExtensions as $extension){?>
+      		    <option value="<?php echo $extension['peer_id'];?>" selected="selected">
+                    <?php echo $extension['name'] . $extension['group_name']  ;?>
+                </option>
+      	    <?php } ?>
+        </select>
+
+        <br>
+        <div class="snep-body-footer-buttons">
+                <button type="submit" class="btn btn-add" name="save" value="Save"><?php echo $this->translate("Save");?></button>
+                &nbsp;&nbsp;&nbsp;
+            	<a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+
+        </div>
+    </form>
+</div>
+</html>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(document).ready(function(){
+    jQuery('#defaultForm').validate({
+        rules: {
+            name: {
+                required: true,
+                minlength: 5,
+                maxlength: 30,
+                lettersAndNumbersOnly: true
+            }
+        },
+        messages: {
+            name: {
+                required: "<?php echo $this->translate('The name is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                lettersAndNumbersOnly: "<?php echo $this->translate('Please enter letters and numbers only.'); ?>"
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+});
+
+var profile = jQuery('select[name="duallistbox_group[]"]').bootstrapDualListbox({
+    selectedListLabel: "<?php echo $this->translate('In group extensions'); ?>" ,
+    nonSelectedListLabel: "<?php echo $this->translate('Available extensions'); ?>",
+    infoText: "<?php echo $this->translate('Showing all '); ?> {0}"
+    });
+jQuery("#defaultForm").submit(function() {
+    return true;
+});
+
+</script>

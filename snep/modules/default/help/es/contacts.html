@@ -1,0 +1,49 @@
+<!--
+
+Class containing help text of the contacts
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Opens Tecnologia <desenvolvimento@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Contatos - Añadir / Editar </h2>
+
+        Rellene el formulario correctamente con la información de contacto. Los campos <strong>nombre y teléfono</strong> se requieren.
+        <br><br><strong>Código:</strong> Identificar el registro del contacto. El sistema se llena un código automáticamente.
+        <br><strong>Nombre:</strong> Contacto nombre identificador.
+        <br><strong>Grupo:</strong>  Contactar grupo pertenecerá.
+        <br><strong>Dirección, Ciudad, Estado y Código Postal:</strong> Los datos de la dirección de contacto.
+        <br><strong>Teléfono:</strong> Identifica el teléfono de contacto. Se pueden registrar varios números de usuario.
+        <br>
+
+        <h2>Contactos - CSV Importació  n</h2>
+
+        Esta rutina permite a partir de un archivo en formato .csv, una lista de contactos se pueden importar en el sistema. Después de seleccionar el archivo y haga clic en "Enviar", se mostrará una pantalla con los campos detectados en el archivo .csv. Es necesario relacionar cada campo con dicho campo de contacto maestro. La primera línea se llama la "línea de cabecera" que identifica a cada columna del archivo y los otros son las líneas de datos. La coma separa cada campo e incluso si hay datos a la misma, debe estar presente.
+        <br><strong>Ejemplo:</strong> nombre,código postal,ciudad,estado,teléfono 
+        <br>Pedro da Silva,80123333,Curitiba,PR,041991122234 
+        <br>Carlos Fagundes,,Criciuma,SC,04878900012
+
+        <h2>Contactos - CSV Exportación</h2>
+        Esta rutina exportar contactos a un archivo .csv. Puede exportar todos los contactos o específicamente para un grupo particular.
+
+        <h2>Contactos - Quitar múltiple</h2>
+        Esta rutina elimina todos los contactos del grupo seleccionado.
+        <br>
+        
+        <h2>Contactos - Acceso directo en los enlaces</h2>
+            El Snep tiene una característica enlaces a contactos. Al marcar * 12 + código de contacto se realiza la conexión con el primer número vinculado a este contacto.
+        <br><strong>Por ejemplo:</strong> Hay un contacto A, que tiene el código 1 y tiene en los teléfonos de archivos
+        4899999999 y 4899888888. Al marcar el teléfono * 121 se realiza la conexión con el número 4899999999.
+        <br>
+        
+    </body>
+</html>

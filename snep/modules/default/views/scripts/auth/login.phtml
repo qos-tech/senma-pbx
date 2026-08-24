@@ -1,0 +1,37 @@
+<link href="/snep/css/login.css" rel="stylesheet">
+<link href="/snep/css/bootstrap.css" rel="stylesheet">
+<div class="row">
+    <?php if($this->message): ?>
+        <span class="<?php echo $this->msgclass; ?>"><?php echo $this->message; ?></span>
+    <?php endif; ?>
+
+
+
+    <form  action="<?php echo $this->url(array("controller" => "auth", "action" => "login"), null, true); ?>" METHOD="post">
+        <div id="login">
+            <dl id="login_form">
+                <div class="login_box">
+
+                    <div class="form-group">
+                        <input class="email" name="user" type="text" placeholder="<?php echo $this->translate('Username');?>" required="" autofocus>
+                        </div>
+                    <div class="form-group">
+                        <input class="password" name="password" placeholder="<?php echo $this->translate('Password');?>" type="password" value="">
+                    </div>
+
+
+                    <br />
+
+                    <div class="submit">
+                      <input type="submit" value="LOGIN"/><br>
+                    </div>
+
+                    <?php //$password_recovery = $this->translate("Forgot Password?"); ?>
+
+                    <?php //echo "<a class='login_password' href=\"{$this->PAGE}\">$password_recovery<a/>"; ?>
+
+                </div>
+            </dl>
+        </div>
+    </form>
+</div>

@@ -1,0 +1,8 @@
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "docs", "action" => "index"), null, false); ?>" autocomplete="off">
+ 
+        <button type="submit" class="btn btn-lg btn-add" name="changelog" value="changelog">Changelog</button>
+        <button type="submit" class="btn btn-lg btn-warning" name="practical_guide" value="practical_guide">Guia Prático</button>
+    
+    </form><br><hr>
+
+	<?php echo $this->doc; ?>		

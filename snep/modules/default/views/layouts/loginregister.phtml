@@ -1,0 +1,107 @@
+<?php 
+echo $this->doctype(); 
+?>
+<html>    
+    <head>    	
+    	<link href="/snep/css/font-awesome.min.css" rel="stylesheet">
+		<link href="/snep/css/bootstrap.css" rel="stylesheet">
+		<link href="/snep/css/snep.css" rel="stylesheet">
+		<link href="/snep/css/register.css" rel="stylesheet">
+		<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+
+		<script src="/snep/includes/javascript/jquery.min.js"></script>
+		<script src="/snep/includes/javascript/validate/jquery.validate.js"></script>
+		<script src="/snep/includes/javascript/validate/validate-snep.js"></script>
+    </head>
+
+    <body class="registerbody">
+        <div id="registerLayout">
+            <div class="logoregister"></div>
+
+				<div id="login">
+
+					<form id="loginForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "register", "action" => "index"), null, true); ?>" METHOD="post">
+						<br><br>
+
+						<div class="register">
+        				
+	        				<br>
+				            <h3><b><?php echo $this->translate("We found recently that his key API has been updated")?></b></h3><br>
+
+				            <?php echo $this->translate("To proceed you need to log in to your account again.")?>
+				            <br>
+
+			        	</div>
+
+			        	<br><br>
+
+						<div class="col-xs-12">
+				            
+				            <div class="row" align="center">
+				                <div class="col-xs-12 col-sm-12">
+				                    <input type="text" class="form-control" name="email" placeholder='<?php echo $this->translate("Email")?>' />
+				                </div>
+				            </div>
+				        </div>
+				        <br><br>
+				        <div class="col-xs-12">
+				            
+				            <div class="row">
+				                <div class="col-xs-12 col-sm-12">
+				                    <input type="password" class="form-control" name="password" placeholder='<?php echo $this->translate("Password")?>' />
+				                </div>
+				            </div>
+				        </div>
+				        <br>
+				        <br>
+				        <div class="snep-body-footer-buttons">
+				            <button type="submit" class="btn btn-add" name="save" value="login"><?php echo $this->translate("Sign in");?></button>
+				        </div>
+				        <br>
+				    </form>
+
+				</div>
+	</body>
+</html>
+<script type="text/javascript">
+	jQuery("form :input").attr("autocomplete", "off");
+	jQuery(document).ready(function(){ 
+		jQuery('#loginForm').validate({
+	        rules: {
+	            email: {
+	                required: true,
+	                email: true,
+	            },
+	            password: {
+	                required: true,
+	                minlength: 6,
+	                maxlength: 20
+	            }
+	        },
+	        messages: {
+	            email: {
+	                required: "<?php echo $this->translate('The email is required'); ?>",
+	                email: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>" 
+	            },
+	            password: {
+	                required: "<?php echo $this->translate('The password is required'); ?>",
+	                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+	                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>"
+	            }
+	        },
+	        highlight: function(element) {
+	            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+	        },
+	        success: function(element) {
+	            element
+	            .closest('.control-group').removeClass('error');
+	        }
+	    });
+	}); 
+
+</script>
+
+
+
+
+

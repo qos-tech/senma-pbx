@@ -1,0 +1,151 @@
+/*
+ *  This file is part of SNEP.
+ *  Para território Brasileiro leia LICENCA_BR.txt
+ *  All other countries read the following disclaimer
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  CSS File for login (modules/default/views/scripts/auth)
+ *                     (modules/default/views/layouts)
+ */
+root{
+    display: block;
+    height: 100%;
+}
+
+html{
+    height: 100%;
+}
+
+body{
+    font-family: "segoe ui", tahoma, geneva, kalimati, sans-serif;
+    height: 100%;
+    margin: 0;
+    border: 0;
+    padding: 0;
+    background-position: center center;
+
+}
+
+a{
+    color: #fff;
+}
+
+a:hover{
+    color: #ccc;
+}
+
+.login_password{
+    color: #FFF;
+}
+
+.login_password:hover{
+    color: #FFF;
+}
+
+
+#loginLayout{
+    height: 100%;
+    border-right: 2px solid rgba(255, 255, 255, 0.6);
+    color: #fff;
+    width: 400px;
+    float: left;
+    margin: 0;
+    background: rgba(0, 0, 0, 0.6);
+    -moz-box-shadow:    5px 0 20px rgba(0, 0, 0, 0.5);
+    -webkit-box-shadow: 5px 0 20px rgba(0, 0, 0, 0.5);
+    box-shadow:         5px 0 20px rgba(0, 0, 0, 0.5);
+}
+
+div#wrapper{
+
+    width: 300px;
+    margin: 0 0 0 50px;
+
+}
+
+div.logo{
+    width: 400px;
+    height: 91px;
+    background: url(../images/snep-logo-login.png) transparent no-repeat;
+    margin: 20px 10px 30px 50px;
+}
+
+#content{
+    height: 100%;
+    border-right: 2px solid rgba(255, 255, 255, 0.6);
+    color: #fff;
+    width: 600px;
+    float: center;
+    margin: 10;
+    margin-top: 10;
+    background: rgba(0, 0, 0, 0.6);
+    -moz-box-shadow:    5px 0 20px rgba(0, 0, 0, 0.5);
+    -webkit-box-shadow: 5px 0 20px rgba(0, 0, 0, 0.5);
+    box-shadow:         5px 0 20px rgba(0, 0, 0, 0.5);
+}
+
+div.form_element{
+    margin-top: 20px;
+}
+
+.form_element dt{
+    font-size: 20px;
+}
+
+.form_element dd{
+    margin: 5px 0;
+}
+
+.form_element input[type="text"], .form_element input[type="password"]{
+    border-radius: 5px;
+    background-color: #fff;
+    border: 1px solid #666;
+    height: 25px;
+    padding: 5px;
+    font-size: 16px;
+    width: 250px;
+    color: #666;
+    -moz-box-shadow:    inset 1px 1px 5px #666;
+    -webkit-box-shadow: inset 1px 1px 5px #666;
+    box-shadow:         inset 1px 1px 5px #666;
+}
+
+.snep-login {
+   background-color: #f26c45 !important ;
+   border-color: #f26c45 !important ;
+}
+.snep-login > input {
+    background-color: transparent;
+    border: 0px;
+}
+
+#powered{
+    font-size: 13px;
+    display: table;
+    width: 100%;
+    margin-top: 50px;
+    text-align: center;
+    color: #fff;
+}
+
+.powered-icon {
+    text-align: center;
+}
+.announce-login{
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}

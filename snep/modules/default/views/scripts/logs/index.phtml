@@ -1,0 +1,165 @@
+<?php
+    $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/bootstrap-datetimepicker.css" );
+    $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/bootstrap.css" );
+?>
+<script src="/snep/includes/javascript/moment-with-locales.min.js" type="text/javascript" ></script>
+<script src="/snep/includes/javascript/bootstrap-datetimepicker.min.js" type="text/javascript"></script>
+
+<div class="row">
+    <div class="tab-content">
+        <div class="tab-pane active" id="demo">
+            <div class="snep-body-top-buttons">
+                <div class="snep-body-search">
+                    <?php  if($this->key)
+                        echo "" ;
+                    { ?>
+                        <a class='sn-dash-add' href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>">
+                        </a>   
+                    <?php } ?>
+                </div>
+            </div>
+        </div>
+    </div>
+	<form id="defaultForm" method="post" class="form-horizontal" style="margin-top: 0px;" action="<?php echo $this->url(array("controller" => "logs", "action" => "index"), null, true); ?>" METHOD="post">
+		
+        <fieldset>
+            <legend><?php echo $this->translate("Type");?></legend>
+            <div class="form-group">
+                <label class="col-sm-2 control-label"><?php echo $this->translate("Real Time")?></label>
+                <label class="radio-inline">
+                    <input type="radio" name="real_time" id="real_time_yes" value="yes"><?php echo $this->translate("Yes");?>
+                </label>
+            
+                <label class="radio-inline">
+                    <input type="radio" name="real_time" id="real_time_no" value="no" checked><?php echo $this->translate("No");?>
+                </label>
+            </div>
+        </fieldset>
+		<fieldset>
+			<legend><?php echo $this->translate("Period");?></legend>
+			
+			<div class="form-group">
+	            <label class="col-sm-2 control-label"><?php echo $this->translate("From");?></label>
+                <div class="col-sm-3">
+                    <div class='input-group'>
+                        <input type='text' class="snep-datetimepicker form-control" id='init_day' name="init_day" />
+                        <div class="input-group-addon">
+                            <span class="glyphicon glyphicon-calendar"></span>
+                        </div>
+                        
+                    </div>
+                </div>
+	        </div>
+	         
+	        <div class="form-group">
+	            <label class="col-sm-2 control-label"><?php echo $this->translate("To");?></label>
+	            <div class="col-sm-3">
+	                <div class='input-group'>
+                        <input type='text' class="snep-datetimepicker form-control" id='end_day' name="end_day" />
+                        <div class="input-group-addon">
+                            <span class="glyphicon glyphicon-calendar"></span>
+                        </div>
+                        
+                    </div>
+	            </div>
+	        </div>
+
+		</fieldset>
+		
+		<fieldset>
+			
+			<legend><?php echo $this->translate("Filter");?></legend>
+
+
+            <div class="form-group">
+	            <label class="col-sm-2 control-label"><?php echo $this->translate("Parameters");?></label>
+	            <div class="col-sm-4">
+	                <input type="text" class="form-control" name="others" id="others" placeholder='<?php echo $this->translate("Parameters")?>' />
+	            </div>
+	        </div>
+	       		
+             <div class="form-group">
+                <label class="col-sm-2 control-label"><?php echo $this->translate("Verbose");?></label>
+                <div class="col-sm-4">
+                    <input type="text" class="form-control" name="verbose" id="verbose" placeholder='<?php echo $this->translate("Verbose (only numbers)")?>' />
+                </div>
+            </div>
+
+	        <div class="snep-body-footer-buttons">
+                <button type="submit" class="btn btn-add" name="showreport" value="showreport">
+                    <?php echo $this->translate("Show Logs");?>
+                </button>
+	        </div>
+
+	    </fieldset>
+			
+	</form>
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(function () {
+    
+    jQuery('#init_day,#end_day').datetimepicker({
+        locale: "<?php echo $this->datepicker_locale; ?>",
+        sideBySide: true,
+        showClear: true,
+        showClose: true
+    });
+
+    jQuery("#init_day").on("dp.change",function (e) {
+        jQuery('#end_day').data("DateTimePicker").minDate(e.date);
+    });
+
+    jQuery("#end_day").on("dp.change",function (e) {
+        jQuery('#init_day').data("DateTimePicker").maxDate(e.date);
+    });
+});
+</script>
+
+ <script type="text/javascript">
+ 
+jQuery.noConflict();
+jQuery(document).ready(function(){ 
+
+    jQuery('#defaultForm').validate({
+        
+        rules: {
+            init_day: {
+                required: function() {
+                        return jQuery("#real_time_no").is(":checked");
+                }
+                
+            },
+            end_day: {
+                required: function() {
+                        return jQuery("#real_time_no").is(":checked");
+                }
+            }
+        },
+        messages: {
+            init_day: {
+                required: "<?php echo $this->translate('The date is required'); ?>",
+                
+            },
+            end_day: {
+                required: "<?php echo $this->translate('The date is required'); ?>",
+                
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+}); 
+
+</script>
+
+
+ 

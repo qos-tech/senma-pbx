@@ -1,0 +1,44 @@
+<!--
+
+Class containing help text of the carrier
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Operadoras - Incluir / Editar</h2>
+
+        Esta rotina permite que uma operadora seja cadastrada/editada no sistema
+
+        <br><br><strong>Nome:</strong> Define o nome que identificará a operadora.
+        <br><strong>Tempo de Arranque:</strong> Define o tempo em SEGUNDOS que a 
+        operadora cobra a tarifa de saída. Normalmente as operadoras cobram o 
+        primeiro minuto cheio (60 segundos) de uma chamada , independente da duração 
+        desta.
+        <br><strong>Valor controle de qualidade:</strong> Define o tempo em SEGUNDOS 
+        das frações seguintes de incidência da tarifa. Exemplo: o valor é tarifado a 
+        cada 6 segundos em 1/10, ou seja, se a tarifa for de R$ 0,50 por minuto, 
+        a cada 6 segundos de duração , será cobrado R$ 0,05.
+        <br><strong>Tarifa para fixo:</strong> Define o valor da tarifa padrão para 
+        chamadas a telefones fixos.
+        <br><strong>Tarifa para celular:</strong> Define o valor da tarifa padrão para
+        chamadas a telefones celulares.
+        <br><strong>Centro de custos:</strong> Define o(s) Centro(s) de Custo(s) que 
+        fazem parte da Operadora. Quando uma chamada é efetuada, um Centro de Custos é 
+        definido para esta. Baseado no Centro de Custo defiunido para cada registro 
+        de chamada efetuada, o sistema irá encontrar a Operadora e consequentemente 
+        o valor da Tarifa.
+        <br>
+
+    </body>
+</html>
+

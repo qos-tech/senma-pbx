@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<default>
+	<string label="Hour"></string>
+   <string label="Minutes"></string>
+   <string label="Unix timestamp"></string>
+   <string label="Year"></string>
+   <string label="Month"></string>
+   <string label="Minute"></string>
+   <string label="Destinity"></string>
+   <string label="User defined"></string>
+   <string label="User defined string"></string>
+   <string label="Composition of the name of the recording file"></string>
+   <string label="Userfield result"></string>
+   <string label="Example"></string>
+   <string label="ITC/Snep host notification"></string>
+</default>

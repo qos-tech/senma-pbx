@@ -1,0 +1,386 @@
+<?php
+$controller = Zend_Controller_Front::getInstance()->getRequest()->getControllerName();
+$module = Zend_Controller_Front::getInstance()->getRequest()->getModuleName();
+
+if($controller != 'auth'){
+    $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/geral.js", 'text/javascript');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/jquery.min.js');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/notifications.js');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/bootstrap.min.js');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/metisMenu.min.js');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/sb-admin-2.js');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/jquery.cookie.js');
+
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/validate/jquery.validate.js');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/validate/validate-snep.js');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/bootstrap-toggle.min.js');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/validate/jquery.maskedinput.js');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/daterangepicker/moment.js');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/daterangepicker/daterangepicker.js');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/datatables/media/js/jquery.dataTables.js');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/datatables/media/js/dataTables.bootstrap.js');
+
+
+    // Guide Help
+    $this->headLink()->appendStylesheet($this->baseUrl() . '/css/introjs.css');
+    $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/intro.js');
+
+    $this->headLink()->appendStylesheet($this->baseUrl() . '/css/bootstrap.css');
+    $this->headLink()->appendStylesheet($this->baseUrl() . '/css/bootstrap-toggle.min.css');
+    $this->headLink()->appendStylesheet($this->baseUrl() . '/css/metisMenu.min.css');
+    $this->headLink()->appendStylesheet($this->baseUrl() . '/includes/javascript/daterangepicker/daterangepicker.css');
+    $this->headLink()->appendStylesheet($this->baseUrl() . '/css/snep.css');
+    $this->headLink()->appendStylesheet($this->baseUrl() . '/css/morris.css');
+    $this->headLink()->appendStylesheet($this->baseUrl() . '/css/font-awesome.min.css');
+    $this->headLink()->appendStylesheet($this->baseUrl() . '/css/timeline.css');
+    $this->headLink()->appendStylesheet($this->baseUrl() . '/includes/javascript/datatables/media/css/dataTables.bootstrap.css');
+    $this->headLink()->appendStylesheet($this->baseUrl() . '/css/sb-admin-2.css');
+
+
+}
+
+?>
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="">
+  <meta name="author" content="">
+  <?php echo $this->doctype(); ?>
+  <?php echo $this->headTitle() . "\n"; ?>
+  <?php echo $this->headLink() . "\n"; ?>
+  <?php echo $this->headMeta(); ?>
+  <?php echo $this->headScript() . "\n"; ?>
+  <?php
+  $configs = Snep_Config::getConfiguration('default','host_notification');
+  $notification_url = $configs["config_value"];
+  ?>
+  <script type="text/javascript">
+  var controller = "<?php echo Zend_Controller_Front::getInstance()->getRequest()->getControllerName(); ?>";
+  var session = {
+    uuid: "<?php echo $_SESSION['uuid'];?>",
+    active_user: "<?php echo $_SESSION['active_user'];?>",
+    name_user: "<?php echo $_SESSION['name_user'];?>"
+  }
+  var notification_url = "<?php echo $notification_url; ?>";
+
+  </script>
+</head>
+
+<body>
+  <header>
+    <!-- Navigation -->
+    <nav id="step1" class="navbar navbar-default navbar-fixed-top" role="navigation" style="margin-bottom: 0">
+      <div class="navbar-header">
+        <button type="button" class="navbar-toggle" data-toggle="collapse" data-target=".navbar-collapse">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </button>
+
+        <a href="<?php echo Zend_Registry::get('config')->system->path->web; ?>/index.php/">
+          <img id="snep-logo" src="<?php echo $this->baseUrl(); ?>/images/snep-main-logo.png">
+          <img src="<?php echo $this->baseUrl(); ?>/images/powered-opens.png">
+        </a>
+
+        <div class="menu-toggler sidebar-toggler">
+          <span class="sr-only">Toggle navigation</span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+          <span class="icon-bar"></span>
+        </div>
+
+        <ul class="nav navbar-top-links navbar-right">
+          <span class="badge badge-danger"><?php echo Zend_Registry::get('config')->ambiente->emp_nome; ?></span>
+          <li id="version_div" class="dropdown hidden">
+              <a id="version" class="dropdown-toggle"  href="<?php echo $this->baseUrl()."/index.php/newversion";?>"><?php echo $this->new_version; ?>
+              <i class="fa fa-fw"></i>
+            </a>
+          </li>
+          <li class="dropdown">
+            <a href="#" onclick="startIntro();">
+            <i id="help" class="fa fa-question-circle fa-fw"></i>
+            <?php echo $this->translate("Help"); ?>
+            </a>
+          </li>
+          <li class="dropdown">
+            <?php $noView = Snep_Notifications::getNoView();
+
+            if($noView){?>
+              <a class="dropdown-toggle new-notification"  href="<?php echo $this->baseUrl()."/index.php/notifications?id=all";?>"><?php echo count($noView)?>
+            <?php }else{?>
+              <a class="dropdown-toggle" href="<?php echo $this->baseUrl()."/index.php/notifications?id=all" ?>" >
+            <?php } ?>
+              <i class="fa fa-envelope fa-fw"></i>
+            </a>
+          </li>
+
+          <li class="dropdown">
+            <a class="dropdown-toggle" data-toggle="dropdown" href="#">
+              <i class="fa fa-language fa-fw"></i>  <i class="fa fa-caret-down"></i>
+            </a>
+            <ul class="dropdown-menu dropdown-language">
+              <li>
+                <a href="<?php echo $this->baseUrl(); ?>/index.php/default/parameters/language?language=en">
+                  <div>
+                    <i></i>
+                    <img class="img-circle" src="/snep/images/Eua.png" title="Click to change language to english">
+                  </div>
+                </a>
+              </li>
+              <li class="divider"></li>
+              <li>
+                <a href="<?php echo $this->baseUrl(); ?>/index.php/default/parameters/language?language=pt_BR">
+                  <div>
+                    <i></i>
+                    <img class="img-circle" src="/snep/images/Brazil.png" title="Clique para mudar o idioma para português">
+                  </div>
+                </a>
+              </li>
+              <li class="divider"></li>
+              <li>
+                <a href="<?php echo $this->baseUrl(); ?>/index.php/default/parameters/language?language=es">
+                  <div>
+                    <i></i><img class="img-circle" src="/snep/images/es.png" title="Haga clic para cambiar el idioma a español">
+                  </div>
+                </a>
+              </li>
+
+
+            </ul>
+          </li>
+
+          <li class="dropdown">
+            <a class="dropdown-toggle" data-toggle="dropdown" href="#">
+              <i class="fa fa-user fa-fw"></i>  <i class="fa fa-caret-down"></i>
+            </a>
+
+            <ul class="dropdown-menu dropdown-user">
+              <li>
+                <a href="<?php echo $this->baseUrl(); ?>/index.php/default/parameters">
+                  <i class="fa fa-gear fa-fw"></i>
+                  <?php echo $this->translate("Settings"); ?>
+                </a>
+              </li>
+
+
+              <li class="divider"></li>
+              <li>
+                <a href="<?php echo $this->baseUrl(); ?>/index.php/default/docs">
+                  <i id="help" class="fa fa-book fa-fw"></i>
+                  <?php echo $this->translate("Documentation"); ?>
+                </a>
+              </li>
+
+              <li class="divider"></li>
+              <li>
+                <a href="<?php echo $this->baseUrl(); ?>/index.php/default/information">
+                  <i class="fa fa-info-circle fa-fw"></i>
+                  <?php echo $this->translate("Information"); ?>
+                </a>
+              </li>
+
+              <li class="divider"></li>
+              <li>
+                <a href="<?php echo $this->baseUrl(); ?>/index.php/default/register">
+                  <i class="fa fa-check-square fa-fw"></i>
+                  <?php echo $this->translate("Cloud Server Informations"); ?>
+                </a>
+              </li>
+
+              <li class="divider"></li>
+              <li>
+                <a href="<?php echo $this->baseUrl(); ?>/index.php/default/auth/logout">
+                  <i class="fa fa-sign-out fa-fw"></i>
+                  <?php echo $this->translate("Logout"); ?>
+                </a>
+              </li>
+            </ul>
+          </li>
+        </ul>
+      </div>
+    </nav>
+  </header>
+
+  <div id="wrapper">
+    <nav role="navigation" style="margin-bottom: 0; margin-top: -1px;">
+      <div class="navbar-default sidebar" role="navigation">
+        <div class="sidebar-nav navbar-collapse" id="sidebar-area">
+          <ul class="nav" id="sidebar">
+            <?php echo Snep_Menu::getMasterInstance()->renderChildren(); ?>
+            <?php if(Snep_Menu::getMasterInstance()->renderChildrenModule()): ?>
+              <li>
+                <a href="#" class="dropdown-collapse"><i class="sn-modulos fa-fw"></i><span class="side-menu-title"><?php echo " ".$this->translate("Modules"); ?></span><span class="fa arrow"></span>
+                </a>
+
+                <ul class="nav nav-second-level">
+                  <?php echo Snep_Menu::getMasterInstance()->renderChildrenModule(); ?>
+                </ul>
+              </li>
+            <?php endif; ?>
+          </ul>
+        </div>
+      </div>
+    </nav>
+
+    <div id="page-wrapper">
+      <ol class="breadcrumb">
+        <span><?php echo $this->breadcrumb; ?></span>
+      </ol>
+
+      <div class="col-sm-12">
+        <!-- Status Bar -->
+        <div id="statusbar">
+          <div id="statusbar_content"></div>
+        </div>
+
+        <!-- Content -->
+        <div id="content">
+          <div class="content-body">
+            <?php echo $this->layout()->content; ?>
+            <br>
+          </div>
+        </div>
+      </div>
+
+    </div> <!-- /#page-wrapper -->
+  </div> <!-- /#wrapper -->
+  <script type="text/javascript">
+  
+  var steps = [
+    {
+      element: '.navbar-header',
+      intro: "<?php echo $this->translate('Welcome to SNEP. <br>\
+      Your IP Telephony Plataform.<br>Click Next to understand the basic steps to use SNEP.');?>"
+    },
+    {
+      element: '.snep-body-dashboard',
+      intro: "<?php echo $this->translate('This is your Dashboard. <br>\
+      You can customize it as you want, adding, moving or removing elements.');?>"
+    },
+    {
+      element: '#default_status',
+      intro: "<?php echo $this->translate('Here you can access the Status of Peers, Trunks, Board and System in general.');?>",
+      position: 'right'
+    },
+    {
+      element: '#default_manage',
+      intro: "<?php echo $this->translate('Add Peers, Trunks, Contacts and more.');?>",
+      position: 'right'
+    },
+    {
+      element: '#default_manage_extensions',
+      intro: "<?php echo $this->translate('The first think you need is Add your Extensions and their Groups.');?>",
+      position: 'right'
+    },
+    {
+      element: '#default_manage_trunks',
+      intro: "<?php echo $this->translate('Add your External Trunks to make external Calls.');?>",
+      position: 'right'
+    },
+    {
+      element: '#sub-default_routing',
+      intro: "<?php echo $this->translate('The SNEP work if Routes to determine what to do with any call. <br>\
+      Here you can manager this routes.');?>",
+      position: 'top'
+    }
+  ]
+
+  function startFirstIntro(option){
+    if(!option) var option = "no";
+    var page = location.pathname.split("/").slice(-1);
+    var intro = introJs();
+    console.log("Starting intro.js on page: %s and controller: %s", page, controller);
+    if(controller == "index"){
+      console.log("Setting options");
+        intro.setOptions({
+          steps: steps,
+          overlayOpacity: 0.1
+        });
+    }
+    intro.onbeforechange(function(element) {
+        if (this._currentStep === 3) {
+            jQuery("#default_manage").addClass("active");
+            jQuery("#sub-default_manage").addClass("in");
+        }
+        if (this._currentStep === 5) {
+            jQuery("#default_routing").addClass("active");
+            jQuery("#sub-default_routing").addClass("in");
+        }
+      });
+            // add a flag when we're done
+      intro.oncomplete(function() {
+        console.log('First Tour Done');
+        localStorage.setItem('firstTour', 'yes');
+      });
+
+      // add a flag when we exit
+      intro.onexit(function() {
+        console.log('First Tour Exit');
+        localStorage.setItem('firstTour', 'yes');
+      });
+
+      // and check for it when deciding whether to start.
+      window.addEventListener('load', function() {
+        var doneTour = localStorage.getItem('firstTour') === 'yes';
+        if (doneTour) return;
+        intro.start();
+      });
+
+    var doneTour = localStorage.getItem('firstTour') === 'yes';
+    if (doneTour && option !== "force") return;
+    intro.start()
+  }
+
+  function startIntro(){
+    var page = location.pathname.split("/").slice(-1);
+    var intro = introJs();
+    console.log("Starting intro.js on page: %s and controller: %s", page, controller);
+    if(controller == "index"){
+      console.log("Setting options");
+        intro.setOptions({
+          steps: steps,
+          overlayOpacity: 0.1
+        });
+    }
+    intro.onbeforechange(function(element) {
+        
+        if (this._currentStep === 3) {
+            jQuery("#default_manage").addClass("active");
+            jQuery("#sub-default_manage").addClass("in");
+        }
+        if (this._currentStep === 5) {
+            jQuery("#default_routing").addClass("active");
+            jQuery("#sub-default_routing").addClass("in");
+        }
+      });
+
+    intro.start()
+  }
+
+
+  </script>
+  <?php
+  $config = Zend_Registry::get('config');
+  if($config->system->show_help == true && $config->system->show_help == "true"){
+    ?>
+    <script type="text/javascript">
+    startFirstIntro("force");
+    </script>
+    <?php
+    //Snep_Parameters_Manager::change("system","show_help",false);
+  }else{
+    ?>
+    <script type="text/javascript">
+    startFirstIntro();
+    </script>
+    <?php
+  }
+  ?>
+
+</body>
+</html>

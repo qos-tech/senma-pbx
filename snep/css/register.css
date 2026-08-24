@@ -1,0 +1,68 @@
+/* 
+ *  This file is part of SNEP.
+ *  Para território Brasileiro leia LICENCA_BR.txt
+ *  All other countries read the following disclaimer
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  CSS File for register (modules/default/views/layouts)
+ */
+
+#registerLayout {
+  width: 60%;
+  margin: 0 auto;
+  background-color: #EEEEEE;
+  color: #7D7D7D;
+  border-radius: 10px;
+  margin-top: 5%;
+  padding-top: 10px;
+}
+
+#noregister{
+    color: #7D7D7D;
+}
+
+div.logoregister{
+    width: 100%;
+    height: 100px;
+    background: url(../images/snep-logo.png) transparent no-repeat top center;
+    position: relative ;
+}
+
+div.register{
+    text-align: center;
+    padding-left: 20%;
+    padding-right: 20%;
+}
+
+.iconregister{
+    color: #f26c45;
+}
+
+.registerbody{
+    background: url(../images/register.jpg) ;
+}
+.noregister {
+    text-align: center;
+}
+.noregister{
+    background-color: #EEEEEE;
+    color:  #7D7D7D;
+}
+
+.noregister:hover{
+    background-color: #EEEEEE;
+    color:  #f26c45;
+
+}

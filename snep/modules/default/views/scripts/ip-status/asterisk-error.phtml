@@ -1,0 +1,19 @@
+<?php
+$this->headLink()->appendStylesheet($this->baseUrl() . "/css/index.css");
+?>
+
+<table>
+    <thead>
+        <tr>
+
+            <th class="failure"><h3> <?php echo $this->translate("Error! Failed to connect to server Asterisk"); ?></h3> </th>
+</tr>
+</thead>
+</table>    
+
+<dl id="login_form">
+    <div class="form_element">
+        <dt></dt>
+        <dd><input type="submit" class="voltar" onclick="javascript: history.go(-1)" name="submit" id="submit" title="<?php echo $this->translate("Back"); ?>" value=<?php echo $this->translate("Back"); ?> /></dd>
+    </div>
+</dl>

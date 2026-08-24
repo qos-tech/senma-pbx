@@ -1,0 +1,50 @@
+<!--
+
+Class containing help text of the profiles
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Perfil</h2>
+
+        Essa rotina é usada para criação/edição de um perfil de usuários no Snep.
+        Todo usuário pertence unicamente a um perfil, onde o mesmo herda suas permissões. 
+        Não possui limite de membros por perfil, ou seja, cada perfil poderá conter quantos usuários possíveis. 
+        Caso haja exclusão de Perfil, seus membros são herdados para o perfil Default.
+        <br>
+
+        <h2>Perfil - Permissões</h2>
+
+        Existem dois tipos de permissões(leitura e escrita) no Snep. As permissões
+        podem ser dadas ao perfil, sendo que todos os usuários vinculados a ele 
+        possuirão estas permissões. Caso algum usuário vinculado ao perfil
+        precise ter alguma permissão diferente, é possível edita-las nas permissões
+        individuais do usuário(Menu usuário).
+        <br>Por exemplo: O perfil A que possui 3 usuários vinculados a ele, possui 
+        permissão de leitura e escrita de centro de custos. É possível nas permissões do 
+        usuário(menu usuário) acrescentar permissões ou retirar uma destas duas permissões 
+        somente ao usuário escolhido. Onde todos os usuários do perfil terão as permissões escolhidas
+        no perfil e somente este usuário possuirá permissões diferentes do grupo.
+        <br>Nas permissões do usuário(menu usuário) é possível ver um comparativo de permissões do perfil e
+        do usuário.
+
+        <h2>Perfil - Membros</h2>
+
+        Nesta rotina é possível vincular os usuários ao perfil cadastrado.
+        <br><strong>IMPORTANTE: </strong>Caso usuário possua permissões individuais, o mesmo não será listado 
+        nos perfis que ele não pertence em caso de adição/edição, pois ele não poderá 
+        herdar permissões de outro perfil. É possível modificar o perfil somente 
+        pela edição do usuário.        
+        <br>
+    </body>
+</html>

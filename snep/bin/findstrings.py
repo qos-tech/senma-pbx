@@ -1,0 +1,107 @@
+#! /usr/bin/python
+# -*- coding: utf-8 -*-
+#  This file is part of SNEP.
+#  Para território Brasileiro leia LICENCA_BR.txt
+# All other countries read the following disclaimer
+#
+#  SNEP is free software: you can redistribute it and/or modify
+#  it under the terms of the GNU General Public License as published by
+#  the Free Software Foundation, either version 3 of the License, or
+#  (at your option) any later version.
+#
+#  SNEP is distributed in the hope that it will be useful,
+#  but WITHOUT ANY WARRANTY; without even the implied warranty of
+#  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+#  GNU General Public License for more details.
+#
+#  You should have received a copy of the GNU General Public License
+#  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+#
+# This app is designed to find all the translatable strings in the snep code and
+# generate a .po for translation.
+#
+# This uses xgettext for php parsing and implements parsing of xml files.
+
+__author__="Henrique Grolli Bassotto <henrique@opens.com.br>"
+__date__ ="$20/04/2011 10:44:53$"
+
+import sys
+import getopt
+import os
+
+from xml.etree.ElementTree import ElementTree
+
+def usage():
+    print("usage: %s -s source_root_dir" % sys.argv[0])
+
+def escape(string):
+    return string.replace("\\", "\\\\").replace("\"", "\\\"").strip().replace("\n", "\\n");
+
+def parse(file):
+    """Parses XML files for what we need"""
+    file = os.path.realpath(file)
+    tree = ElementTree()
+    tree.parse(file)
+
+    def _parse(element):
+        for child in element:
+            if child.text != None and len(child.text.strip()) > 0:
+                print("#: %s" % file)
+                print('msgid "%s"\nmsgstr ""' % escape(child.text))
+                print('')
+            if "label" in child.attrib:
+                print("#: %s" % file)
+                print('msgid "%s"\nmsgstr ""' % escape(child.attrib['label']))
+                print('')
+            if "desc" in child.attrib:
+                print("#: %s" % file)
+                print('msgid "%s"\nmsgstr ""' % escape(child.attrib['label']))
+                print('')
+            _parse(child)
+
+    _parse(tree.getroot())
+    
+
+def main():
+    try:
+        opts, args = getopt.getopt(sys.argv[1:], "s:f:", ["source=","file="])
+    except getopt.GetoptError, err:
+        # print help information and exit:
+        print str(err) # will print something like "option -a not recognized"
+        usage()
+        sys.exit(2)
+
+    root_dir = None
+    source_file = None
+
+    for o, a in opts:
+        if o in ("-s", "--source"):
+            if not os.path.isdir(a):
+                usage()
+                sys.exit(1)
+            else:
+                root_dir = a
+        elif o in ("-f", "--file"):
+            if not os.path.isfile(a):
+                usage()
+                sys.exit(1)
+            else:
+                source_file = a
+        else:
+            assert False, "unhandled option"
+
+    if root_dir == None and source_file == None:
+        usage()
+        sys.exit(1)
+
+    if root_dir != None:
+        for root, dirs, files in os.walk(root_dir):
+            for file in files:
+                print file
+                if file[-4:] == ".xml":
+                    parse("%s/%s" % (root.strip('/'), file))
+    else:
+        parse("%s" % source_file)
+
+if __name__ == '__main__':
+    main()

@@ -1,0 +1,116 @@
+<?php
+/**
+ *  This file is part of SNEP.
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ */
+?>
+<div class="row">	                
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "music-on-hold", "action" => $this->action), null, false); ?>" METHOD="post">
+
+        <div class="form-group">
+            <label class="col-sm-3 control-label"><?php echo $this->translate("Name");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="nome" id="nome" placeholder='<?php echo $this->translate("Name")?>' value='<?php echo $this->file['name'];?>' />
+            </div>
+        </div>
+
+        <div class="form-group">
+        	<label class="col-sm-3 control-label"><?php echo $this->translate("Mode");?></label>
+        	<div class="col-sm-6">
+        		<select class="form-control" name="mode" id="mode">
+        			<?php echo $this->modes;?></option>
+			    </select>
+			</div>
+		</div>
+
+		<div class="form-group">
+            <label class="col-sm-3 control-label"><?php echo $this->translate("Default path");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" value='<?php echo $this->path_base ?>' disabled/>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-3 control-label"><?php echo $this->translate("Directory name");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="directory" id="directory" value='<?php echo $this->directoryName;?>' <?php echo $this->disabled;?>/>
+            </div>
+        </div>
+        <!-- input type="hidden" name="folder" value='<?php echo $this->directoryName;; ?>' /> -->
+        <!-- <input type="hidden" name="name" value="<?php echo $this->file['name'];?>" /> -->
+        <input type="hidden" name=" base" value='<?php echo $this->path_base;?>'  />
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="signup" value="Sign up"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+        	<a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+    </form>
+</div>
+
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(document).ready(function(){ 
+    jQuery.validator.addMethod("lettersonly", function(value, element) {
+        return this.optional(element) || /^[a-z]+$/i.test(value);
+        }, "<?php echo $this->translate('Please enter letters only'); ?>" ); 
+    jQuery('#defaultForm').validate({
+        rules: {
+            name: {
+                required: true,
+                minlength: 1,
+                maxlength: 30,
+                lettersAndNumbersOnly: true
+            },
+
+            directory: {
+                required: true,
+                minlength: 3,
+                maxlength: 30,
+                lettersonly: true
+            }
+        },
+        messages: {
+            name: {
+                required: "<?php echo $this->translate('The name is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                lettersAndNumbersOnly: "<?php echo $this->translate('Please enter letters and numbers only'); ?>" 
+            },
+            directory: {
+                required: "<?php echo $this->translate('The directory name is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                lettersonly: "<?php echo $this->translate('Please enter letters only'); ?>" 
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+}); 
+</script>
+
+
+
+
+
+

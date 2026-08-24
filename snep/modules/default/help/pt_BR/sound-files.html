@@ -1,0 +1,59 @@
+<!--
+
+Class containing help text of the sound files
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Arquivos de Sons - Incluir / Alterar</h2>
+
+        Esta rotina permite cadastro e edição dos arquivos de som.
+
+        <br><br><strong>Cadastro de novo Arquivo de Som:</strong>
+
+        Se for um novo arquivo a ser inserido, selecione o arquivo a partir do 
+        botão [Escolher Arquivo], preencha o campo "Descrição" e defina se é um 
+        arquivo do Asterisk ou de uma URA (Unidade de resposta Audível). Informe 
+        se o arquivo deve ou não ser convertido para o formato GSM.
+        Cadastro de um arquivo disponivel de som:
+
+        <br>Na opção INCLUIR, o sistema apresenta sempre uma lista de todos os arquivos
+        existente no diretório padrão de sons do Asterisk (/var/ lib/asterisk/sounds/br) 
+        e que ainda não foram cadastrados.
+        Cadastre o arquivo de som clicando sobre ele e preenchendo o campo "Descrição" e definindo se é um arquivo do Asterisk ou de uma URA (Unidade de resposta Audível).
+
+        <br><strong>Substituição de arquivo de som:</strong>
+        Neste caso, selecione o arquivo a partir do botão [Escolher Arquivo], 
+        preencha o campo "Descrição" e defina se o arquivo deve ou não ser 
+        convertido para o formato GSM.
+
+        <br><br><strong>Alterar um Arquivo de Som:</strong>
+
+        Selecione o arquivo a partir do botão [Escolher/Selecionar Arquivo], ajuste 
+        o campo "Descrição" e defina se é um arquivo do Asterisk ou de uma URA 
+        (Unidade de resposta Audível). Informe se o arquivo deve ou não ser convertido 
+        para o formato GSM.
+        <br>
+
+        <h2>Arquivos de Sons - Sincronizar</h2>
+
+        Esta rotina efetua a sincronia dos arquivos de som, e tem por finalidade informar os 
+        arquivos de sons cadastrados no banco de dados que não existem nos diretórios
+        (/var/lib/asterisk/sounds e /var/lib/asterisk/moh) ou os 
+        arquivos existentes nos diretórios e não cadastrados no sistema. 
+        Há uma listagem dos arquivos e a opção de sincroniza-los. Esta opção 
+        deleta do banco dados os arquivos inexistentes nos diretórios e cadastra 
+        os arquivos existentes.
+        <br>
+    </body>
+</html>

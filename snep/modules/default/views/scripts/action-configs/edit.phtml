@@ -1,0 +1,100 @@
+<div class="row">                            
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "action-configs", "action" => "edit"), null, false); ?>" METHOD="post">
+
+        <?php if($this->idAction == "DiscarRamal"){?>
+
+            <div class="form-group">
+                <label class="col-sm-2 control-label"><?php echo $this->translate("Dial Timeout");?></label>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control" name="dial_timeout" placeholder='<?php echo $this->translate("in seconds")?>' value="<?php echo $this->dialtimeout; ?>" />
+                </div>
+            </div>
+
+        <?php }else{ ?>
+
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Seconds left to alert");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="play_warning" placeholder='<?php echo $this->translate("in milliseconds")?>' value="<?php echo $this->values['play_warning']; ?>"/>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Alert repetition rate");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="warning_freq" placeholder='<?php echo $this->translate("in milliseconds")?>' value="<?php echo $this->values['warning_freq']; ?>"/>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Alert sound");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="warning_sound" placeholder='<?php echo $this->translate("in milliseconds")?>' value="<?php echo $this->values['warning_sound']; ?>"/>
+            </div>
+        </div>
+
+        <?php } ?>
+        
+        <div class="form-group">
+            <div class="col-sm-12 col-sm-offset-5">
+                <button type="submit" class="btn btn-add" name="signup" value="Sign up"><?php echo $this->translate("Save");?></button>
+                <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+            
+            </div>
+        </div>
+    </form>
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(document).ready(function(){ 
+    jQuery('#defaultForm').validate({
+        rules: {
+            dial_timeout: {
+                numbersOnly: true
+            },
+            play_warning: {
+                numbersOnly: true
+            },
+            warning_freq: {
+                numbersOnly: true
+            },
+            warning_sound: {
+                lettersOnly: true
+            }
+        },
+        messages: {
+            dial_timeout: {
+                required: "<?php echo $this->translate('Please enter numbers only'); ?>", 
+            },
+            play_warning: {
+                required: "<?php echo $this->translate('Please enter numbers only'); ?>", 
+            },
+            warning_freq: {
+                required: "<?php echo $this->translate('Please enter numbers only'); ?>", 
+            },
+            warning_sound: {
+                required: "<?php echo $this->translate('Please enter letters only'); ?>", 
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+}); 
+</script>
+
+
+
+
+
+
+
+

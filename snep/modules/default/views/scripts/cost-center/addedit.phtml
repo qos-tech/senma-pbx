@@ -1,0 +1,111 @@
+<?php
+$this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/scriptaculous/lib/prototype.js');
+$this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/maskCostCenter.js');
+?>
+
+<div class="row">
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "cost-center", "action" => $this->action), null, false); ?>" METHOD="post">
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Code");?></label>
+            <div class="col-sm-4">
+                <input type="text" class="form-control" name="id" id="id" placeholder='<?php echo $this->translate("Numbers separated by ( . ). EX: 5.04")?>' value="<?php echo trim($this->costcenter['codigo'])?>" <?php echo $this->disable;?>/>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Name");?></label>
+            <div class="col-sm-4">
+                <input type="text" class="form-control" name="name" placeholder='<?php echo $this->translate("Name")?>' value="<?php echo $this->costcenter['nome']?> " />
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Description");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="description" placeholder='<?php echo $this->translate("Description")?>' value="<?php echo $this->costcenter['descricao']?> "/>
+            </div>
+        </div>
+
+        <div class="form-group">
+        	<label class="col-sm-2 control-label"><?php echo $this->translate("Type ");?></label>
+            <div class="col-sm-6">
+    			<label class="radio-inline">
+    				<input type="radio" name="type" id="E" value="E" <?php echo $this->E;?>><?php echo $this->translate("Incoming");?>
+    			</label>
+
+    			<label class="radio-inline">
+    				<input type="radio" name="type" id="S" value="S" <?php echo $this->S;?>><?php echo $this->translate("Outgoing");?>
+    			</label>
+
+    			<label class="radio-inline">
+    				<input type="radio" name="type" id="O" value="O" <?php echo $this->O;?>><?php echo $this->translate("Other");?>
+    			</label>
+            </div>
+        </div>
+
+
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="signup" value="Sign up"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+        	<a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+    </form>
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(document).ready(function(){ 
+    jQuery('#defaultForm').validate({
+        rules: {
+            id: {
+                required: true,
+                minlength: 1,
+                maxlength: 7,
+                regexCostCenter: /^(([0-9]\.?)+)$/ 
+            },
+            name: {
+                required: true,
+                minlength: 5,
+                maxlength: 40
+            },
+            type: {
+                required: true
+            }
+        },
+        messages: {
+            id: {
+                required: "<?php echo $this->translate('The code is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                regexCostCenter: "<?php echo $this->translate('Please enter with code valid'); ?>"  
+            },
+            name: {
+                required: "<?php echo $this->translate('The name is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>"
+            },
+            type: {
+                required: "<?php echo $this->translate('The type is required'); ?>"
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+}); 
+
+Event.observe(window, 'load', init, false);
+function init() {
+    mask = new maskCostCenter('id');
+} 
+</script>
+
+
+

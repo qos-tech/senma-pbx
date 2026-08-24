@@ -1,0 +1,25 @@
+CREATE TABLE `cel` (
+  `id` BIGINT(20) UNSIGNED NOT NULL AUTO_INCREMENT,
+  `eventtype` VARCHAR(30) COLLATE utf8_unicode_ci NOT NULL,
+  `eventtime` TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+   ON UPDATE CURRENT_TIMESTAMP,
+  `userdeftype` VARCHAR(255) COLLATE utf8_unicode_ci NOT NULL,
+  `cid_name` VARCHAR(80) COLLATE utf8_unicode_ci NOT NULL,
+  `cid_num` VARCHAR(80) COLLATE utf8_unicode_ci NOT NULL,
+  `cid_ani` VARCHAR(80) COLLATE utf8_unicode_ci NOT NULL,
+  `cid_rdnis` VARCHAR(80) COLLATE utf8_unicode_ci NOT NULL,
+  `cid_dnid` VARCHAR(80) COLLATE utf8_unicode_ci NOT NULL,
+  `exten` VARCHAR(80) COLLATE utf8_unicode_ci NOT NULL,
+  `context` VARCHAR(80) COLLATE utf8_unicode_ci NOT NULL,
+  `channame` VARCHAR(80) COLLATE utf8_unicode_ci NOT NULL,
+  `appname` VARCHAR(80) COLLATE utf8_unicode_ci NOT NULL,
+  `appdata` VARCHAR(80) COLLATE utf8_unicode_ci NOT NULL,
+  `amaflags` INT(11) NOT NULL,
+  `accountcode` VARCHAR(20) COLLATE utf8_unicode_ci NOT NULL,
+  `peeraccount` VARCHAR(20) COLLATE utf8_unicode_ci NOT NULL,
+  `uniqueid` VARCHAR(150) COLLATE utf8_unicode_ci NOT NULL,
+  `linkedid` VARCHAR(150) COLLATE utf8_unicode_ci NOT NULL,
+  `userfield` VARCHAR(255) COLLATE utf8_unicode_ci NOT NULL,
+  `peer` VARCHAR(80) COLLATE utf8_unicode_ci NOT NULL,
+  UNIQUE KEY `id` (`id`)
+) ENGINE=INNODB DEFAULT CHARSET=utf8 COLLATE=utf8_unicode_ci;

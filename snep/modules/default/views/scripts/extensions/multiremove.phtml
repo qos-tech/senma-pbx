@@ -1,0 +1,85 @@
+<?php  if($this->id){?> 
+    
+    <div class="row">
+    
+        <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "extensions", "action" => "multiremove"), null, true); ?>" METHOD="post">
+            
+            <?php
+            
+            echo $this->action( 'sneperror', 'error', null, array('error_message' => $this->remove_message, 'error_type' => 'alert', 'error_title' => $this->remove_title, 'error_buttons' => False) );
+            ?>
+
+            <input type="hidden" name="id" value="<?php echo $this->id; ?>">
+
+            <?php if(isset($this->name)){?>
+                <input type="hidden" name="name" value="<?php echo $this->name; ?>">
+            <?php } ?>
+
+            <br>
+            <div class="snep-body-footer-buttons">
+                <button type="submit" class="btn btn-add" name="delete" value="Delete"><?php echo $this->translate("Delete");?></button>
+                &nbsp;&nbsp;&nbsp;
+                <a class="btn btn-outline btn-add" href="javascript:window.history.go(-2)" role="button"><?php echo $this->translate("Cancel")?></a>
+            </div>   
+           
+            <br>
+        </form>
+    </div>
+<?php } else { ?>
+    <div class="row">
+
+        <form id="defaultForm" method="post" class="form-horizontal" style="margin-top: 20px;" action="<?php echo $this->url(array("controller" => "extensions", "action" => "multiremove"), null, true); ?>" METHOD="post">
+                    
+            <fieldset>
+                <legend><?php echo $this->translate('Extension');?></legend>    
+                    
+                <div class="form-group">
+                    <label class="col-sm-2 control-label"><?php echo $this->translate("Extensions Range");?></label>
+                    <div class="col-sm-6">
+                        <input type="text" class="form-control" name="exten" placeholder='<?php echo $this->translate("Ex: 1000-1050;1060;1063;1070-1100")?>' />
+                    </div>
+                </div>
+
+            </fieldset>
+
+            <br>
+             <div class="snep-body-footer-buttons">
+                <button type="submit" class="btn btn-add" name="remove" value="remove"><?php echo $this->translate("Remove");?></button>
+                &nbsp;&nbsp;&nbsp;
+                <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>               
+            </div>
+        </form>
+    </div>
+
+<?php }?>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(document).ready(function(){ 
+    jQuery('#defaultForm').validate({
+        rules: {
+            exten: {
+                required: true,
+                minlength: 8,
+                regexExten: /^(([0-9]\-?\;?)+)$/ 
+            }
+        },
+        messages: {
+            exten: {
+                required: "<?php echo $this->translate('The range extension is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                regexExten: "<?php echo $this->translate('Please enter with range valid'); ?>" 
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+}); 
+</script>

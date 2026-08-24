@@ -1,0 +1,191 @@
+<?php
+/*
+ *  This file is part of SNEP.
+ *  Para território Brasileiro leia LICENCA_BR.txt
+ *  All other countries read the following disclaimer
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ */
+ $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/debugger.css" );
+ $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/bootstrap-datetimepicker.css" );
+?>
+<script type="text/javascript" src="/snep/includes/javascript/formValidation.js"></script>
+<script type="text/javascript" src="/snep/includes/javascript/form/bootstrap.min.js"></script>
+<script src="/snep/includes/javascript/moment-with-locales.min.js" type="text/javascript" ></script>
+<script src="/snep/includes/javascript/bootstrap-datetimepicker.min.js" type="text/javascript"></script>
+<div class="row">
+    <div class="tab-content">
+        <div class="tab-pane active" id="demo">
+            <?php if($this->key){ ?>
+                <div class="snep-body-top-buttons">
+                    <div class="snep-body-search">
+                        <?php if($this->key){
+                            echo "";
+                            ?>
+                            <a class='sn-dash-add' href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>"></a>
+                        <?php } ?>
+                    </div>
+                </div>
+            <?php } ?>
+        </div>
+    </div>
+    <form id="defaultForm" method="post" class="form-inline" style="margin-top: 0px;" action="<?php echo $this->url(array("controller" => "simulator", "action" => "index"), null, true); ?>" METHOD="post">
+
+        <input type="hidden" name="acao" value="simulate" />
+
+        <fieldset>
+
+            <div class="form-group">
+                <label for="srcType"><?php echo $this->translate("Source");?></label>
+                <select class="form-control" name="srcType" id="srcType" onChange="showDiv(this.value);">
+                    <option <?php echo isset($_REQUEST['srcType']) && $_REQUEST['srcType'] == 'exten' ? "selected" : "" ?> value="exten"><?php echo $this->translate("Extension"); ?></option>
+                    <option  <?php echo isset($_REQUEST['srcType']) && $_REQUEST['srcType'] == 'trunk' ? "selected" : "" ?> value="trunk"><?php echo $this->translate("Trunk"); ?></option>
+                    <option  <?php echo isset($_REQUEST['srcType']) && $_REQUEST['srcType'] == 'undefined' ? "selected" : "" ?> value="undefined"><?php echo $this->translate("Undefined"); ?></option>
+                </select>
+                <select id="trunk" name="trunk" style="<?php echo isset($_REQUEST['srcType']) && $_REQUEST['srcType'] == 'trunk' ? "" : "display:none;" ?>">
+                    <?php
+                    foreach ($this->trunks as $key => $value) {
+                        echo "<option value='$key' > $value </option>";
+                    }
+                    ?>
+                </select>
+            </div>
+
+            <!-- Trunks -->
+            <div id="trunks" class="invisible">
+                <div class="form-group">
+                    <select class="form-control" name="trunk" id="trunk">
+                        <?php foreach ($this->trunks as $key => $value) {
+                            echo "<option value='$key' > $value </option>";
+                        } ?>
+                    </select>
+                </div>
+            </div>
+            <!-- /Trunks -->
+
+            <div id="extension" class="form-group">
+
+                <div class="form-group">
+                    <input type="text" class="form-control" name="caller" id="caller"  placeholder="<?php echo $this->translate("Source");?>" value="<?php echo isset($_REQUEST['caller']) ? $_REQUEST['caller'] : ""; ?>"/>
+                </div>
+
+            </div>
+
+            <div class="form-group">
+                <label for="srcType"><?php echo $this->translate("For");?></label>
+                <input type="text" class="form-control" name="dst" id="dst"  placeholder="<?php echo $this->translate("Destiny");?>" value="<?php echo isset($_REQUEST['dst']) ? $_REQUEST['dst'] : ""; ?>"/>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Date and Time");?></label>
+                <div class="col-sm-7">
+                    <div class="input-group">
+                        <input type='text' class="snep-datetimepicker form-control" id='ruleDay' name="ruleDay"/>
+                        <div class="input-group-addon">
+                            <span class="glyphicon glyphicon-calendar"></span>
+                        </div>
+
+                    </div>
+                </div>
+            </div>
+
+            <br><br>
+
+            <?php if ($this->result){ ?>
+                <tr>
+                    <td>
+                        <ul id="input">
+                            <li><strong><?php echo $this->translate('Source') ?>:</strong> <?php echo $this->input['caller'] ?></li>
+                            <li><strong><?php echo $this->translate('Destiny') ?>:</strong> <?php echo $this->input['dst']  ?></li>
+                            <li><strong><?php echo $this->translate('Hour') ?>:</strong> <?php echo $this->input['time'] ?></li>
+                            <li><strong><?php echo $this->translate('Date') ?>:</strong> <?php echo date('d/m/Y', strtotime($this->input['date'])) ?></li>
+                        </ul>
+                    </td>
+                </tr>
+                <tr>
+                    <td style="text-align:left;">
+                        <ul id="results">
+                           <?php foreach ($this->result as $key => $value) { ?>
+                            <li class="rule <?php echo $value['state'] ?>">
+                                <ul class="info">
+                                    <li class="execute"><strong><?php echo $this->translate('Actions to execute') ?>:</strong>
+                                        <ul>
+                                            <?php
+                                            foreach ($value["actions"] as $key2 => $valueAct) { ?>
+                                            <li><?php echo $valueAct ?></li>
+                                            <?php } ?>
+                                        </ul>
+                                    </li>
+                                    <li class="desc"><?php echo $this->translate("Rule: %s %s", $value['id'], $value['desc']); ?></li>
+                                    <li class="caller"><?php echo $this->translate('Source: %s', $value['caller']);?></li>
+                                    <li class="dst"><?php echo $this->translate('Destiny: %s', $value['dst']);?></li>
+                                    <li class="valid"><?php echo $this->translate('Validity: %s', $value['valid']);?></li>
+                                    <li class="valid">
+                                        <?php foreach ($value['days'] as $key => $day) {
+                                            echo $day." "; 
+                                        }?>
+                                    </li>
+                                </ul>
+                            <li>
+                                <?php } ?>
+                        </ul>
+                    </td>
+                </tr>
+
+                <tr>
+                    <td>
+                        <ul id="legenda">
+                            <li class="torun"><?php echo $this->translate('Rule that will be executed')?></li>
+                            <li class="outdated"><?php echo $this->translate('Rule invalid because of date and time')?></li>
+                            <li class="ignored"><?php echo $this->translate('Rule ignored by priority')?></li>
+                            <li class="inactive"><?php echo $this->translate('Rule Inactive')?></li>
+                        </ul>
+                    </td>
+                </tr>
+            <?php } ?>
+
+            <div class="snep-body-footer-buttons">
+                <button type="submit" class="btn btn-add" name="simulate" value="simulate"><?php echo $this->translate("Simulate");?></button>
+                &nbsp;&nbsp;&nbsp;
+                <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Back")?></a>
+            </div>
+        </fieldset>
+    </form>
+</div>
+
+<script type="text/javascript">
+jQuery.noConflict();
+jQuery(function () {
+
+    jQuery('#ruleDay').datetimepicker({
+        locale: 'pt-BR',
+        sideBySide: true,
+        format: 'YYYY-MM-DD HH:mm',
+        showClear: true,
+        showClose: true
+    });
+  });
+
+function showDiv(div){
+
+    if(div == 'trunk'){
+        document.getElementById("trunks").className = "form-group visible";
+        document.getElementById("extension").className = "invisible";
+    }else{
+        document.getElementById("trunks").className = "invisible";
+        document.getElementById("extension").className = "form-group visible";
+    }
+}
+
+</script>

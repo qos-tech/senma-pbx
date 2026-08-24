@@ -1,0 +1,44 @@
+<?php
+$this->headLink()->appendStylesheet( $this->baseUrl() . "/css/bootstrap-duallistbox.css" );
+?>
+
+<script type="text/javascript" src="/snep/includes/javascript/jquery.bootstrap-duallistbox.js"></script>
+  
+<div class="row">
+
+    <form id="selectboxform" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "queues", "action" => "members"), null, false); ?>" METHOD="post">
+
+        <select multiple="multiple" size="10" name="duallistbox_group[]" id="select">
+      	   
+      	    <?php foreach($this->notMembers as $y => $noMember){ ?>      
+      	    	<option value="<?php echo $y;?>"><?php echo $noMember;?></option>
+      	    <?php }?>
+      	    
+      	    <?php foreach($this->members as $x => $member){?>
+      		    <option value="<?php echo $x;?>" selected="selected"><?php echo $member;?></option>
+      	    <?php } ?>
+        </select>
+
+        <br>
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="save"><?php echo $this->translate("Save");?></button>
+              &nbsp;&nbsp;&nbsp;
+          	 <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+    </form>
+</div>
+
+
+<script>
+jQuery.noConflict();
+        
+jQuery("#selectboxform").submit(function() {
+    return true;
+});
+
+var profile = jQuery('select[name="duallistbox_group[]"]').bootstrapDualListbox({
+    selectedListLabel: "<?php echo $this->translate('Selected'); ?>" ,
+    nonSelectedListLabel: "<?php echo $this->translate('Available'); ?>",
+    infoText: "<?php echo $this->translate('Showing all '); ?> {0}"
+    });
+</script>

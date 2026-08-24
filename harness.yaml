@@ -1,0 +1,42 @@
+version: "1"
+
+metadata:
+  name: mag-pbx
+  description: Development harness for the MAG PBX modernization project.
+
+instructions:
+  operational:
+    files:
+      - CLAUDE.md
+  identity:
+    text: >
+      You are working on MAG PBX, a GPL-3.0-or-later modernization of SNEP 3.07.
+      Preserve behavior and licensing provenance while evolving the project incrementally.
+  behavioral:
+    text: >
+      Prefer minimal, reviewable changes. Validate Docker work by running the environment,
+      not merely by building images. Do not mix modernization phases without necessity.
+
+environment:
+  required:
+    - git
+    - docker
+  optional:
+    - make
+
+permissions:
+  filesystem:
+    read: true
+    write: true
+  shell:
+    enabled: true
+  network:
+    enabled: true
+
+governance:
+  protected_paths:
+    - LICENSE*
+  rules:
+    - Do not remove original copyright notices from inherited source files.
+    - Do not commit secrets.
+    - Do not perform destructive database resets unless the task explicitly requires it.

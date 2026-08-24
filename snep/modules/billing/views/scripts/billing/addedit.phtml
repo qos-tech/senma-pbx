@@ -1,0 +1,105 @@
+<div class="row">
+
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("module" => "billing", "controller" => "billing", "action" => $this->action), null, false); ?>" METHOD="post">
+        <input type="hidden" class="form-control" name="id" value="<?php echo $this->bill['id'];?>" />
+      <fieldset>
+            <legend><?php echo $this->translate("Telco");?></legend>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Telco");?></label>
+                <div class="col-sm-4">
+                    <select class="form-control" name="telco" id="telco">
+                        <?php foreach($this->telcos as $telco){ ?>
+                            <option value="<?php echo $telco['id']; ?>"
+                              <?php
+                            if($telco['id'] === $this->bill['telcoid']){
+                              echo " selected";
+                            }
+                            ?>><?php echo $telco['name'];?></option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+
+      </fieldset>
+      <fieldset>
+            <legend><?php echo $this->translate("Type");?></legend>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Bill Type");?></label>
+                <div class="col-sm-4">
+                    <select class="form-control" name="billtype" id="billtype">
+                        <?php foreach($this->bill_type as $billtype){ ?>
+                            <option value="<?php echo $billtype['id']; ?>"
+                            <?php
+
+                            if($billtype['id'] === $this->bill['billtypeid']){
+                              echo " selected";
+                            }
+                            ?>><?php echo $billtype['name'];?></option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+
+      </fieldset>
+      <fieldset>
+        <legend><?php echo $this->translate("Details");?></legend>
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Area Code");?></label>
+            <div class="col-sm-1">
+                <input type="text" class="form-control" name="area" value="<?php echo $this->bill['area'];?>" />
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Price");?></label>
+            <div class="col-sm-1">
+                <input type="text" class="form-control" name="price" value="<?php echo $this->bill['price'];?>" />
+            </div>
+        </div>
+      </fieldset>
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="Save"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+        	<a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+
+        </div>
+    </form>
+
+
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(document).ready(function(){
+    jQuery('#defaultForm').validate({
+        rules: {
+            group: {
+                required: true,
+                minlength: 5,
+                maxlength: 50,
+                lettersAndNumbersOnly: true
+            }
+        },
+        messages: {
+            group: {
+                required: "<?php echo $this->translate('The name is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                lettersAndNumbersOnly: "<?php echo $this->translate('Please enter letters and numbers only.'); ?>"
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+});
+
+
+</script>

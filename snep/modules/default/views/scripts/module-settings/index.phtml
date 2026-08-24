@@ -1,0 +1,292 @@
+<!-- <link href="/snep/css/snep.css" rel="stylesheet"> -->
+<!-- <link href="/snep/css/bootstrap-theme.min.css" rel="stylesheet"> -->
+
+<div class="row">
+    <div class="tab-content">
+        <div class="tab-pane active" id="demo">
+            <?php if($this->key){ ?>
+                <div class="snep-body-top-buttons">
+                    <div class="snep-body-search">
+                        <?php if($this->key){
+                            echo "";
+                            ?>
+                            <a class='sn-dash-add' href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>"></a>
+                        <?php } ?>
+                    </div>
+                </div>
+            <?php } ?>
+        </div>
+    </div>
+
+    <?php
+    if ($this->error_message) {
+        echo $this->action( 'sneperror', 'error', null, array( 'error_type' => 'alert',
+            'error_title' => $this->translate('Alert'), 'error_message' => $this->error_message, 'error_buttons' => False) );
+    } else { ?>
+
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "module-settings", "action" => "index"), null, true); ?>" METHOD="post">
+
+        <div class="col-md-12">
+            <?php foreach($this->data as $module => $data){?>
+
+                <div class="panel-group" id="accordion">
+                    <div class="panel panel-default">
+                        <div class="panel-heading ip-status">
+                            <h4>
+                                <a data-toggle="collapse" data-parent="#accordion" href="<?php echo "#collapse".$data['name']?>">
+                                <button type="button" class="boxadd add_field" id="<?php echo $data['name']?>" style="background-color:transparent !important;"><?php echo "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;".$data["name"]?></button>
+                                </a>
+                            </h4>
+                        </div>
+
+                        <div id="<?php echo "collapse".$data['name']?>" class="panel-collapse collapse ip-status"  style="background-color: #fff !important">
+                            <div class="panel-body">
+
+                                <?php
+                                foreach($data["view"] as $x => $form){
+
+                                    switch ($form['type']) {
+                                        case 'text':  //form in input text ?>
+
+                                            <div class="form-group" <?php if($form['data_intro']) echo 'data-intro="' . $form['data_intro'] . '"';?>>
+                                                <label class="col-sm-5 control-label"><?php echo $this->translate($form["label"]);?></label>
+                                                <div class="col-sm-6">
+                                                    <?php if(isset($form["value"])){ ?>
+                                                        <input type="text" class="form-control" placeholder="<?php echo $form['placeholder'];?>" name=<?php echo $form['key']; ?> value="<?php echo $form['value']; ?>" />
+                                                    <?php }else{ ?>
+                                                        <input type="text" class="form-control" placeholder="<?php echo $form['placeholder'];?>" name=<?php echo $form['key']; ?>  />
+                                                    <?php }?>
+                                                </div>
+                                            </div>
+                                            <?php
+                                            break ;
+
+                                         case 'text_ro':  //form in input text read only ?>
+
+                                            <div class="form-group" <?php if($form['data_intro']) echo 'data-intro="' . $form['data_intro'] . '"';?>>
+                                                <label class="col-sm-5 control-label"><?php echo $this->translate($form["label"]);?></label>
+                                                <div class="col-sm-6">
+                                                    <input type="text" class="form-control" placeholder="<?php echo $form['placeholder'];?>" name=<?php echo $form['key']; ?> value="<?php echo $form['value']; ?>" id=<?php echo $form['key']; ?> readonly />
+                                                </div>
+                                            </div>
+                                            <?php
+                                            break ;
+
+                                        case 'password' : //form in input password ?>
+
+                                            <div class="form-group" <?php if($form['data_intro']) echo 'data-intro="' . $form['data_intro'] . '"';?>>
+                                                <label class="col-sm-5 control-label"><?php echo $this->translate($form["label"]);?></label>
+                                                <div class="col-sm-6">
+
+                                                    <?php if(isset($form["value"])){ ?>
+                                                        <input type="password" class="form-control" placeholder="<?php echo $form['placeholder'];?>" name=<?php echo $form['key']; ?> value=<?php echo $form['value']; ?> />
+                                                    <?php }else{ ?>
+                                                        <input type="password" class="form-control" placeholder="<?php echo $form['placeholder'];?>" name=<?php echo $form['key']; ?>  />
+                                                    <?php }?>
+                                                </div>
+                                            </div>
+                                            <?php
+                                            break ;
+                                        case 'checkbox' : // form in input checkbox ?>
+
+                                            <div class="form-group" <?php if($form['data_intro']) echo 'data-intro="' . $form['data_intro'] . '"';?>>
+                                                <label class="col-sm-5 control-label"><?php echo $this->translate($form['label'])?></label>
+                                                <div class="col-sm-6">
+                                                    <div class="checkbox">
+                                                        <label>
+
+                                                        <?php if(isset($form["checked"])){?>
+                                                            <input type="checkbox"  checked name=<?php echo $form['key']; ?> id=<?php echo $form['key']; ?> />
+                                                        <?php }else{?>
+                                                            <input type="checkbox" name=<?php echo $form['key']; ?> id=<?php echo $form['key']; ?> />
+                                                        <?php } ?>
+                                                        <?php echo $this->translate($form['placeholder'])?>
+                                                        </label>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <?php
+                                            break ;
+
+                                        case 'select' :  // form in input selectbox ?>
+
+                                            <div class="form-group" <?php if($form['data_intro']) echo 'data-intro="' . $form['data_intro'] . '"';?>>
+                                                <label class="col-sm-5 control-label"><?php echo $form['label'];?></label>
+                                                <div class="col-sm-6">
+                                                    <select class="form-control" name=<?php echo $form['key']; ?> id=<?php echo $form['key']; ?>>
+
+                                                        <?php foreach($form["select"] as $key => $value){
+                                                            if($value["key"] == $form["selected"]){?>
+                                                                <option value='<?php echo $value["key"];?>' selected><?php echo $value["label"];?></option>
+                                                            <?php }else{?>
+                                                                <option value='<?php echo $value["key"];?>'><?php echo $value["label"];?></option>
+                                                            <?php } ?>
+                                                        <?php } ?>
+                                                    </select>
+                                                </div>
+                                            </div>
+                                            <?php
+                                            break ;
+
+                                        case 'multi_checkbox' : // form in input multiples selectbox ?>
+
+                                            <div class="form-group" <?php if($form['data_intro']) echo 'data-intro="' . $form['data_intro'] . '"';?>>
+                                                <label class="col-sm-5 control-label"><?php echo $form['label'];?></label>
+                                                <div class="col-sm-6">
+                                                    <div class="checkbox">
+                                                        <fieldset id="<?php echo $form['fieldset'];?>">
+                                                            <?php foreach($form["checkbox"] as $key => $value){ ?>
+
+                                                                <label>
+                                                                    <?php if($value["checked"] === "true"){?>
+                                                                        <input type="checkbox"  checked name="<?php echo $form['fieldset'].'[]'; ?>" value=<?php echo $value['key'];?>  id=<?php echo $value['key']; ?> />
+                                                                    <?php } else {?>
+                                                                        <input type="checkbox" name="<?php echo $form['fieldset'].'[]'; ?>" value=<?php echo $value['key'];?> id=<?php echo $value['key']; ?> />
+                                                                    <?php } ?>
+                                                                    <?php
+                                                                        echo $this->translate($value['label']) ;
+                                                                        echo "&nbsp;&nbsp;";
+                                                                    ?>
+
+                                                                </label>
+                                                            <?php } ?>
+                                                        </fieldset>
+                                                    </div>
+                                                </div>
+                                            </div>
+                                            <?php
+                                            break ;
+
+                                        case 'button_add_rm' : // form in input buttons add/remove ?>
+                                            <div class="form-group" <?php if($form['data_intro']) echo 'data-intro="' . $form['data_intro'] . '"';?>>
+                                                <label class="col-sm-5 control-label"><?php echo $this->translate($form["label"]);?></label>
+                                                <div class="col-sm-6">
+                                                     <button type="button" id="add_<?php echo $form['key'];?>" class="boxadd add_field" ></button>
+                                                     <button type="button" id="del_<?php echo $form['key'];?>" class="boxremove del_field" ></button>
+                                                </div>
+                                            </div>
+                                            <?php
+                                            break ;
+
+                                        case 'separator' : // form in input separator ?>
+                                            <br><legend></legend>
+                                            <?php
+                                            break ;
+                                    } // End switch
+                                } // End foreach ?>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            <?php } ?>
+        </div>
+
+            <br>
+            <div class="snep-body-footer-buttons">
+                <button type="submit" class="btn btn-add" name="signup" value="Sign up"><?php echo $this->translate("Save");?></button>
+                &nbsp;&nbsp;&nbsp;
+                <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+            </div>
+
+        </form>
+
+    <?php } ?>
+</div> <!-- /.row -->
+
+
+<script type="text/javascript">
+
+    jQuery.noConflict();
+
+    jQuery( document ).ready(function() {
+
+        formata_userfield_example() ;
+
+        // Changle the icon of panel titles when clicked
+        var allModules = "<?php echo $this->allModules ?>";
+        jQuery(allModules).click(function() {
+
+            // Toggle clicked element
+            if(jQuery(this).hasClass('add_field')) {
+                jQuery(this).removeClass('boxadd add_field').addClass('boxremove del_field') ;
+            } else {
+                jQuery(this).removeClass('boxremove del_field').addClass('boxadd add_field') ;
+            }
+            // Togle other elements
+            var sel=jQuery(this).attr('id') ;
+            var arr = [allModules] ;
+            var list = arr.splice(arr.indexOf(sel),1);
+            jQuery.each(arr,function(index,value){
+                var pid = jQuery('#'+value).parent().attr('href') ;
+                var flag = false ;
+                if (jQuery(pid).hasClass('in')) {
+                    flag = true ;
+                }
+                if(flag) {
+                    if (jQuery('#'+value).hasClass('del_field')) {
+                        jQuery('#'+value).removeClass('boxremove del_field').addClass('boxadd add_field') ;
+                    } else {
+                        jQuery('#'+value).removeClass('boxadd add_field').addClass('boxremove del_field') ;
+                    }
+                }
+            });
+        });
+        // Start - Compose userfield name
+        // IMPORTANT - verify:
+        // - agi/snep.php
+        // - lib/Snep/ModuleSettings/Manager.php
+        // - modules/default/controllers/ModuleSettingsController.php
+
+        // Constants controller
+        jQuery("input[name='usrfld[]']").change(function(){
+            if (jQuery(this).is(':checked')) {
+                jQuery('input[name="default_x_userfield"]').val(jQuery('input[name="default_x_userfield"]').val()+jQuery(this).val());
+            } else {
+                var replit = jQuery('input[name="default_x_userfield"]').val().replace(jQuery(this).val(),"");
+                jQuery('input[name="default_x_userfield"]').val(replit);
+            }
+            // Example result
+            formata_userfield_example() ;
+        });
+        //Hifem and Underline controllers
+        jQuery("#add_default_x_hifem").click(function(){
+            jQuery('input[name="default_x_userfield"]').val(jQuery('input[name="default_x_userfield"]').val()+"-");
+        });
+        jQuery("#del_default_x_hifem").click(function(){
+            var str=jQuery('input[name="default_x_userfield"]').val();
+            str = str.replace(/-([^-]*)$/,'$1');
+            jQuery('input[name="default_x_userfield"]').val(str);
+        });
+        jQuery("#add_default_x_underline").click(function() {
+            jQuery('input[name="default_x_userfield"]').val(jQuery('input[name="default_x_userfield"]').val()+"_");
+        });
+        jQuery("#del_default_x_underline").click(function(){
+            var str=jQuery('input[name="default_x_userfield"]').val();
+            str = str.replace(/_([^_]*)$/,'$1');
+            jQuery('input[name="default_x_userfield"]').val(str);
+        });
+
+        function formata_userfield_example() {
+            // Example result
+            var d = new Date();
+            var arr = { TS : Date.now(),
+                AA : d.getFullYear(),
+                MM : ("0" + (d.getMonth() + 1)).slice(-2),
+                DD : d.getDate(),
+                HH : d.getHours(),
+                ii : d.getMinutes(),
+                SR : "1001",
+                DS : "4839548000",
+                UD : jQuery('input[name=default_x_userfield_ud]').val(),
+            } ;
+            var result = jQuery('input[name="default_x_userfield"]').val();
+
+            jQuery.each(arr, function (index, value) {
+                result = result.replace(index,value) ;
+            });
+            jQuery('input[name="default_x_userfield_example"]').val(result);
+        }
+        // End - Compose userfield name
+    });
+
+</script>

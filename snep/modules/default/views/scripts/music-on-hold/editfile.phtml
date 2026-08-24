@@ -1,0 +1,84 @@
+<div class="row">	                
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "music-on-hold", "action" => "editfile"), null, true); ?>" METHOD="post">
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Filename");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="filename" placeholder='<?php echo $this->translate("Filename")?>' value='<?php echo $this->file['arquivo'];?>' readonly />
+            </div>
+        </div> 
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Session");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="section" value='<?php echo $this->file['secao'];?>' readonly />
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Last Update");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="section" value='<?php echo $this->file['data'];?>' readonly />
+            </div>
+        </div>        
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Description");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="descricao" placeholder='<?php echo $this->translate("Description")?>' value='<?php echo $this->file['descricao'];?>' />
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Converte to GSM")?></label>
+            <div class="col-sm-6">
+                <div class="checkbox">
+                    <label>
+                        <input type="checkbox" name="gsm" id="gsm"/><?php echo $this->translate("Yes")?>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <input type="hidden" name="secao" value="<?php echo $this->file['secao']; ?>">
+        <input type="hidden" name="arquivo" value="<?php echo $this->file['arquivo']; ?>">
+        <br>
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="Save"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+        	<a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+    </form>
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(document).ready(function(){ 
+    jQuery('#defaultForm').validate({
+        rules: {
+            description: {
+                required: true,
+                minlength: 5,
+                maxlength: 80            }
+        },
+        messages: {
+            
+            description: {
+                required: "<?php echo $this->translate('The description is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                lettersAndNumbersOnly: "<?php echo $this->translate('Please enter letters and numbers only'); ?>" 
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+}); 
+</script>

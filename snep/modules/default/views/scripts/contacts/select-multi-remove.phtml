@@ -1,0 +1,58 @@
+<?php
+/*
+*  This file is part of SNEP.
+*  Para território Brasileiro leia LICENCA_BR.txt
+*  All other countries read the following disclaimer
+*
+*  SNEP is free software: you can redistribute it and/or modify
+*  it under the terms of the GNU General Public License as published by
+*  the Free Software Foundation, either version 3 of the License, or
+*  (at your option) any later version.
+*
+*  SNEP is distributed in the hope that it will be useful,
+*  but WITHOUT ANY WARRANTY; without even the implied warranty of
+*  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+*  GNU General Public License for more details.
+*
+*  You should have received a copy of the GNU General Public License
+*  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+*/
+?>
+<script type="text/javascript" src="/snep/includes/javascript/formValidation.js"></script>
+<script type="text/javascript" src="/snep/includes/javascript/form/bootstrap.min.js"></script>
+
+<div class="row">
+
+	<form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "contacts", "action" => "multiremove"), null, false); ?>" METHOD="post">
+
+		<div class="col-lg-12">
+			<div class="panel panel-green">
+				<div class="panel-heading">
+					<?php echo $this->translate("Remove multiples Contacts");?>
+				</div>
+				<div class="panel-body" align="center">
+
+					<div class="form-group">
+						<label class="col-sm-4 control-label"><?php echo $this->translate("Select a contact group to remove your contacts");?></label>
+						<div class="col-sm-4">
+							<select class="form-control" name="group" id="group">
+								<?php foreach($this->groups as $key => $group){ ?>
+									<option value='<?php echo $key;?>'><?php echo $group;?></option>
+									<?php } ?>
+
+								</select>
+							</div>
+						</div>
+
+					</div>
+				</div>
+			</div>
+
+			<br>
+			<div class="snep-body-footer-buttons">
+				<button type="submit" class="btn btn-add" name="remove" value="remove"><?php echo $this->translate("Remove");?></button>
+				&nbsp;&nbsp;&nbsp;
+				<a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+			</div>
+		</form>
+	</div>

@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+  Descritor IVR Module.
+ 
+  @category  Snep
+  @copyright Copyright (c) 2016 OpenS Tecnologia
+  @author    Douglas Conrad
+
+-->
+
+<module>
+    <name>IVR</name>
+    <description>IVR Module for SNEP</description>
+    <version>1.0</version>
+    <author>OpenS Tecnologia</author>
+    <website>www.sneppbx.com</website>
+</module>

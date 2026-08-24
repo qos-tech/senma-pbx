@@ -1,0 +1,130 @@
+<?php
+
+/*
+ *  This file is part of SNEP.
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ */
+?>
+
+<div class="row">
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "users", "action" => "permission"), null, false); ?>">
+        <input type="hidden" name="user" value=<?php echo $this->id ?>>
+        <div class="table-responsive">
+            <table class="table table-striped" id="listtable">
+                <thead>
+                    <tr>
+                        <th><?php echo $this->translate("Routine") ?></th>
+                        <th class="text-center"><?php echo $this->translate("Group permission") ?></th>
+                        <th class="text-center"><?php echo $this->translate("User permission") ?></th>
+                        <th class="text-center"><?php echo $this->translate("User permission") ?>
+                        <label class="container-check" title="<?php echo $this->translate('Check All') ?>">
+                            <input type="checkbox" id="checkAll">
+                            <span class="checkmark"></span>
+                        </label>
+                        </th>
+                    </tr>
+                </thead>
+                <tbody>
+                    <?php
+
+                    if ($this->modules) {
+                        foreach ($this->modules as $item => $module) { ?>
+                            <tr>
+                                <td> <?php echo $module['name'] ?> </td>
+                                <?php if (isset($module['group'])) { ?>
+                                    <td class="text-center"><label class="label label-success"><?php echo $this->translate("Allowed") ?></label></td>
+                                <?php } else { ?>
+                                    <td class="text-center"><label class="label label-danger"><?php echo $this->translate("Not allowed") ?></label></td>
+                                <?php } ?>
+
+                                <?php if ($this->user == false) { ?>
+                                    <?php if (isset($module['group'])) { ?>
+                                        <td class="text-center"><label class="label label-success"><?php echo $this->translate("Allowed") ?></label></td>
+                                        <td class="text-center">
+                                            <label class="container-check">
+                                                <input type="checkbox" checked name=<?php echo $module['id_permission'] ?>>
+                                                <span class="checkmark"></span>
+                                            </label>
+                                        </td>
+                                    <?php } else { ?>
+                                        <td class="text-center"><label class="label label-danger"><?php echo $this->translate("Not allowed") ?></label></td>
+                                        <td class="text-center">
+                                            <label class="container-check">
+                                                <input type="checkbox" name=<?php echo $module['id_permission'] ?>>
+                                                <span class="checkmark"></span>
+                                            </label>
+                                        </td>
+                                    <?php } ?>
+                                <?php } else { ?>
+                                    <?php if (isset($module['user']) === true && $module['allow'] == true) { ?>
+                                        <td class="text-center"><label class="label label-success"><?php echo $this->translate("Allowed") ?></label></td>
+                                        <td class="text-center">
+                                            <label class="container-check">
+                                                <input type="checkbox" checked name=<?php echo $module['id_permission'] ?>>
+                                                <span class="checkmark"></span>
+                                            </label>
+                                        </td>
+                                    <?php } else if (isset($module['group']) == true && isset($module['user']) == false) { ?>
+                                        <td class="text-center"><label class="label label-success"><?php echo $this->translate("Allowed") ?></label></td>
+                                        <td class="text-center">
+                                            <label class="container-check">
+                                                <input type="checkbox" checked name=<?php echo $module['id_permission'] ?>>
+                                                <span class="checkmark"></span>
+                                            </label>
+                                        </td>
+                                    <?php } else { ?>
+                                        <td class="text-center"><label class="label label-danger"><?php echo $this->translate("Not allowed") ?></label></td>
+                                        <td class="text-center">
+                                            <label class="container-check">
+                                                <input type="checkbox" name=<?php echo $module['id_permission'] ?>>
+                                                <span class="checkmark"></span>
+                                            </label>
+                                        </td>
+                                    <?php } ?>
+                                <?php } ?>
+                            </tr>
+                        <?php } ?>
+                    <?php } ?>
+                </tbody>
+            </table>
+        </div>
+
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+            <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+
+    </form>
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+
+jQuery(document).ready(function() {
+  jQuery('#checkAll').click(function () {    
+    jQuery('input:checkbox').prop('checked', this.checked);    
+  });
+  jQuery('#listtable').dataTable( {
+    "pageLength": 100,
+    "oLanguage": {
+      "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+    },
+    "bLengthChange": false,
+    "ordering": false
+  });
+});
+</script>

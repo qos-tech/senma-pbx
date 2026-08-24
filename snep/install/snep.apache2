@@ -1,0 +1,14 @@
+### OPENS ###
+Alias /snep "/var/www/html/snep"
+<Directory "/var/www/html/snep">
+          Options Indexes FollowSymLinks
+          AllowOverride All
+          Order deny,allow
+          Allow from 127.0.0.0/255.0.0.0 192.168.0.0/255.255.0.0 201.47.74.147/255.255.255.255
+          Deny from all
+          php_value output_buffering 4096
+          php_value memory_limit 128M
+          php_value upload_max_filesize 5M
+          php_value max_execution_time 90
+</Directory>
+

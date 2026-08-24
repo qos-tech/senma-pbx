@@ -1,0 +1,75 @@
+##################################################################################################
+#
+# ********************** C H A N G E L O G
+#
+##################################################################################################
+#
+# Versao 1.1
+#
+# * Implementacao do Changelog
+# * Inicio do versionamento do script
+# * Ajustado instrucoes de uso
+# * Ajustado mensagens de ajuda durante o script
+# * Alterado o dump MySQL para backup completo - anteriormente, o CDR nao era salvo
+# * Removido caracteres especiais das instrucoes
+# * Corrigido a identacao do codigo
+#
+#          Contribuicoes: Anderson Freitas | Data: 12 Dez 2016
+##################################################################################################
+#
+# Versao 1.2
+#
+# * Implentado as opcoes -a, -v, -r, -h e -bkp
+# * Adicionado variavel para marcar a versao do script (bkp_version)
+# * Alterado forma de execucao - Se executado sem parametro, exibe opcoes
+# * Corrigido bug de identacao dos processos que usam for in
+# * Removido ($patch_cd) e utilizado (cd) diretamente para acessar um diretorio
+# * Corrigido funcionalidades -h e -bkp
+# * Corrigido funcao para rotatividade de arquivos (faltava um hifen a frente do numero)
+# * Feito testes de backup e confirmado o funcionamento
+# * Feito testes de rotatividade e confirmado o funcionamento 
+# * Alterado parametro -r com as instrucoes da crontab
+#
+#          Contribuicoes: Anderson Freitas | Data 13 Dez 2016
+##################################################################################################
+#
+# Versao 2.0
+#
+# * Removido backup dos arquivos de audio do Snep - Para evitar que o backup fique extenso demais
+# * Inserido o path_mv
+# * Inserido o path_mysql
+# * Variaveis foram migradas para arquivo separado - variables.sh
+# * Funcionalidade autor em arquivo separado - author.sh
+# * Funcionalidade de versao em arquivo separado - version.sh
+# * Funcionalidade de recomendacao em arquivo separado - recommended.sh
+# * Configuracoes de usuario e senha do banco e quantidade de arquivos a serem armazenados, ficam agora em info.config
+# * Opcoes do script separadas no arquivo options.sh
+# * Variaveis de diretorio separadas para o arquivo directories.sh
+# * Funcionalidade de backup foi movida para o arquivo bkp.sh
+# * Implementado a funcionalidade de restauracao de backup - arquivo rev.sh
+# * Ajustado tela de opcoes, informando agora sobre a restauracao do backup -rev e informando para ler o README
+# * Arquivo de changelog separado do codigo
+# * Criado arquivo de README
+# * Corrigido informacao sobre a crontab em recomendacoes
+#
+#          Contribuicoes: Anderson Freitas | Data 13 Dez 2016
+#                         Daian Conrad     | Data 13 Dez 2016
+##################################################################################################
+#
+# Versao 2.1
+#
+# * Adicionado a váriavel $BASEDIR no script backup-2.1.sh, permitindo que o scrip seja executado de qualquer diretorio e encontre as dependecias
+# * Alterado nome do script de backup-X.sh para backup.sh
+# * Corrigido informação de uso da crontab devido ao nome do script
+#
+#          Contribuicoes: Anderson Freitas | Data 27 Dez 2016
+##################################################################################################
+#
+# Versao 3.0
+#
+# * Removido arquivos auxiliares
+# * Ajuste de parametros
+# * Ajuste de grafia/interpretacao
+#
+#          Contribuicoes: Anderson Freitas | Data 31 Jan 2017
+##################################################################################################

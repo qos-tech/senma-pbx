@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+    Document   : resources.xml
+    Created on : 9 de Novembro de 2011, 13:43
+    Author     : Rafael Bozzetti <rafael@opens.com.br>
+    Description:
+        Purpose of the document follows.
+-->
+
+<module>
+    <name>Callback Module</name>
+    <description>Call back functionality for SNEP.</description>
+    <author>Opens Tecnology</author>
+    <version>2.1</version>
+    <website>www.sneppbx.com</website>
+</module>

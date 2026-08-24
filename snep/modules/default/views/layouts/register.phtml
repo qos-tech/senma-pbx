@@ -1,0 +1,431 @@
+<?php
+echo $this->doctype();
+?>
+<html>
+    <head>
+    	<link href="/snep/css/font-awesome.min.css" rel="stylesheet">
+		<link href="/snep/css/bootstrap.css" rel="stylesheet">
+		<link href="/snep/css/snep.css" rel="stylesheet">
+		<link href="/snep/css/register.css" rel="stylesheet">
+		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+
+		<script src="/snep/includes/javascript/jquery.min.js"></script>
+		<script src="/snep/includes/javascript/validate/jquery.validate.js"></script>
+		<script src="/snep/includes/javascript/validate/validate-snep.js"></script>
+    </head>
+
+    <body class="registerbody">
+        <div id="registerLayout">
+            <div class="logoregister"></div>
+
+        	<?php if($this->confirm){?>
+
+        		<form id="hashForm" method="post" class="form-horizontal" autocomplete="off" action="<?php echo $this->url(array("controller" => "index", "action" => "index"), null, true); ?>" METHOD="post">
+
+            		<div class="register">
+
+        				<br>
+			            <h3><b><?php echo $this->translate("We're almost ending")?></b></h3><br>
+
+			            <?php echo $this->translate("To confirm your registration, an email was sent with the confirmation key.")?>
+			            <br>
+
+		        	</div><br>
+
+		        	<br>
+		            <div class="col-xs-12">
+			            <div class="row">
+			                <div class="col-xs-12 col-sm-12">
+			                    <input type="text" class="form-control" name="confirm_hash" placeholder='<?php echo $this->translate("Enter confirmation key")?>' />
+			                </div>
+			            </div>
+			        </div>
+		            <br>
+
+		        	<br>
+			        <div class="snep-body-footer-buttons">
+			            <button type="submit" class="btn btn-add" name="save" value="confirm"><?php echo $this->translate("Confirm");?></button>
+			        </div>
+			        <br>
+
+		        </form>
+
+		    <?php }elseif($this->registerd){?>
+
+		    	<form id="registerForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "index", "action" => "index"), null, true); ?>" METHOD="post">
+
+            		<div class="register">
+
+        				<br>
+			            <h3><b><?php echo $this->translate("Congratulations")?></b></h3><br>
+
+			            <?php echo $this->translate("Your registration is complete, welcome to Snep.")?>
+			            <br>
+
+		        	</div>
+
+		        	<br><br>
+
+			        <div class="snep-body-footer-buttons">
+			            <button type="submit" class="btn btn-add" name="save" value="opensnep"><?php echo $this->translate("Go to Snep");?></button>
+			        </div>
+			        <br>
+
+		        </form>
+
+        	<?php }else{?>
+
+            	<?php if(!isset($this->error)){?>
+
+                	<!-- init -->
+        			<div id="init" >
+
+                		<div class="register">Powered By <a href="http://www.opens.com.br">Opens Tecnology</a>
+
+            				<br>
+				            <h3><b><?php echo $this->translate("Join to the Opens Network")?></b></h3><br>
+
+				            <?php echo $this->translate("Within seconds you register your Snep and join, a freer network, intelligent and humane communication.")?>
+
+				            <br><br>
+
+				            <h4><b><?php echo $this->translate("Some Advantages")?></b></h4>
+
+			        	</div><br>
+
+			            <table align="center">
+                    <tr>
+			            		<td> <i class="fa fa-angle-double-right iconregister"></i>&nbsp;<?php echo $this->translate("A Business Support Program")?></td>
+			            		<td>&nbsp;&nbsp;&nbsp;&nbsp;<i class="fa fa-angle-double-right iconregister"></i>&nbsp;<?php echo $this->translate("Exclusive Partnership Program")?></td>
+			            	</tr>
+			            	<tr>
+			            		<td> <i class="fa fa-angle-double-right iconregister"></i>&nbsp;<?php echo $this->translate("Exclusive modules")?></td>
+			            		<td>&nbsp;&nbsp;&nbsp;&nbsp;<i class="fa fa-angle-double-right iconregister"> </i>&nbsp;<?php echo $this->translate("Constant technological innovation")?></td>
+			            	</tr>
+                    <tr>
+			            		<td> <i class="fa fa-angle-double-right iconregister"></i>&nbsp;<?php echo $this->translate("Notifications in real time for yours SNEP")?></td>
+			            		<td>&nbsp;&nbsp;&nbsp;&nbsp;<i class="fa fa-angle-double-right iconregister"></i>&nbsp;<?php echo $this->translate("High quality support")?></td>
+			            	</tr>
+			            </table>
+
+			            <br>
+					    <div class="snep-body-footer-buttons">
+
+					        <button type="button" class="btn btn-add" name="login" value="login" onclick='showDiv(this.value)'><?php echo $this->translate("I am already registered");?></button>
+					        &nbsp;&nbsp;&nbsp;
+					        <button type="button" class="btn btn-add" name="register" value="register" onclick='showDiv(this.value)' ><?php echo $this->translate("I want to register");?></button>
+					    </div>
+
+					    <?php if($this->viewnoregister){?>
+						    <form id="noregisterForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "index", "action" => "index"), null, true); ?>" METHOD="post">
+						    	<div class="noregister">
+							    	<button type="submit" class="btn noregister-button "  name="save" value="noregister">
+							    		<?php echo $this->translate("Would not Like Me registering at this time");?>
+							    	</button>
+							    	<br>
+						    	</div>
+						    </form>
+					    <?php } ?>
+					</div>
+
+					<!-- /init -->
+
+					<!-- register -->
+        			<div id="register" class="invisible">
+
+        				<form id="registerForm" method="post" class="form-horizontal" autocomplete="off" action="<?php echo $this->url(array("controller" => "index", "action" => "index"), null, true); ?>" METHOD="post">
+
+        				<br>
+
+        				<fieldset>
+				        	<div class="col-xs-12">
+        						<legend align="center"><?php echo $this->translate('Register');?></legend>
+							</div>
+				        	<div class="col-xs-12 form-group">
+				            	<div class="row">
+				                	<div class="col-xs-12 col-sm-6">
+				                    	<input type="text" class="form-control" name="email" placeholder='<?php echo $this->translate("Email")?>' />
+				                	</div>
+				            	</div>
+				        	</div>
+
+				        	<div class="col-xs-12 form-group">
+				            	<div class="row">
+				                	<div class="col-xs-12 col-sm-6">
+				                    	<input type="password" class="form-control" name="password" placeholder='<?php echo $this->translate("Password")?>' />
+				               	 	</div>
+				            	</div>
+				        	</div>
+
+				        	<div class="col-xs-12 form-group">
+				            	<div class="row">
+				                	<div class="col-xs-12 col-sm-6">
+				                    	<input type="text" class="form-control" name="first_name" placeholder='<?php echo $this->translate("First Name")?>' />
+				                	</div>
+                          <div class="col-xs-12 col-sm-6">
+				                    	<input type="text" class="form-control" name="last_name" placeholder='<?php echo $this->translate("Last Name")?>' />
+				                	</div>
+				            	</div>
+				        	</div>
+				        	<div class="snep-body-footer-buttons">
+				            	<button type="submit" class="btn btn-add" name="save" value="register"><?php echo $this->translate("Register");?></button>
+				        	</div>
+						</fieldset>
+					</form>
+				    </div>
+				    <!-- /register -->
+
+				    <!-- login -->
+        			<div id="login" class="invisible">
+
+        				<form id="loginForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "index", "action" => "index"), null, true); ?>" METHOD="post">
+        					<br><br>
+
+        					<fieldset>
+            					<div class="col-xs-12">
+        							<legend align="center"><?php echo $this->translate('Login');?></legend>
+								</div>
+            					<div class="col-xs-12">
+
+					            	<div class="row" align="center">
+					                	<div class="col-xs-12 col-sm-12">
+					                    	<input type="text" class="form-control" name="email" placeholder='<?php echo $this->translate("Email")?>' />
+					                	</div>
+					            	</div>
+					        	</div>
+					        	<div class="col-xs-12" style="padding-top: 10px;">
+
+					            	<div class="row">
+					                	<div class="col-xs-12 col-sm-12">
+					                    	<input type="password" class="form-control" name="password" placeholder='<?php echo $this->translate("Password")?>' />
+					                	</div>
+					            	</div>
+					        	</div>
+					        	<br>
+					        	<br>
+					        	<div class="snep-body-footer-buttons">
+					            	<button type="submit" class="btn btn-add" name="save" value="login"><?php echo $this->translate("Sign in");?></button>
+					        	</div>
+							</fieldset>
+					    </form>
+
+        			</div>
+				    <!-- /login -->
+
+				    <!-- noregister -->
+        			<div id="noregister" class="invisible">
+        				<br>
+				        <div class="snep-body-footer-buttons">
+				            <button type="submit" class="btn btn-add" name="save" value="save"><?php echo $this->translate("Sign in");?></button>
+				        </div>
+
+        			</div>
+				    <!-- /noregister -->
+                	<br>
+
+            	<?php }else{?>
+            		<!-- Error -->
+            		<form id="registerForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "index", "action" => "index"), null, true); ?>" METHOD="post">
+
+            		<div class="register">
+
+        				<br>
+			            <h3><b><?php echo $this->translate("You'Re Welcome")?></b></h3><br>
+
+			            <?php echo $this->error;?>
+
+			            <br>
+
+		        	</div><br>
+
+		        	<br>
+
+		        	<div class="snep-body-footer-buttons">
+
+				        <button type="submit" class="btn btn-add" name="save" value="error" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Retry");?></button>
+				    </div>
+
+			        <?php if($this->viewnoregister){?>
+					    <form id="noregisterForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "index", "action" => "index"), null, true); ?>" METHOD="post">
+					    	<div class="noregister">
+					    		<button class="btn noregister" type="submit"  name="save" value="noregister"><?php echo $this->translate("Would not Like Me registering at this time");?></button>
+					    	</div>
+					    </form>
+				    <?php } ?>
+
+				    <br>
+		        </form>
+
+            	<?php } ?>
+            <?php } ?>
+
+		</div>
+    </body>
+</html>
+<script type="text/javascript">
+	//jQuery("form :input").attr("autocomplete", "off");
+	jQuery("form").attr('autocomplete', 'off');
+
+	function showDiv(div) {
+		document.getElementById("init").className = "invisible";
+		document.getElementById("register").className = "invisible";
+		document.getElementById("login").className = "invisible";
+		document.getElementById("noregister").className = "invisible";
+
+		if(div){
+			document.getElementById(div).className = "visible";
+		}
+	}
+
+	function postform( )
+	{
+	  document.getElementById('noregisterForm').submit() ;
+	}
+
+	function carregaCidade(idstate){
+
+		jQuery.noConflict();
+		jQuery('#city').load('/snep/includes/cidades.php?estado='+idstate );
+	};
+	function carregaEstado(idcountry){
+
+		jQuery.noConflict();
+		jQuery('#state').load('/snep/includes/estados.php?pais='+idcountry );
+		// Temporary because not exist State/City tables in database for all countrys
+		if (idcountry != "1") {
+			carregaCidade(28) ;
+		} else {
+			carregaCidade(1) ;
+		}
+	};
+
+	jQuery.noConflict();
+	jQuery(document).ready(function(){
+	    jQuery('#registerForm').validate({
+	        rules: {
+	            email: {
+	                required: true,
+	                email: true,
+	            },
+	            password: {
+	                required: true,
+	                minlength: 6,
+	                maxlength: 20
+	            },
+	            first_name: {
+	                required: true,
+	                maxlength: 40,
+	                lettersOnly: true
+	            },
+	            last_name: {
+	                required: true,
+	                maxlength: 40,
+	                lettersOnly: true
+	            },
+	            state: {
+	                min: 0,
+	            },
+	            city: {
+	                min: 0,
+	            }
+	        },
+	        messages: {
+	            email: {
+	                required: "<?php echo $this->translate('The email is required'); ?>",
+	                email: "<?php echo $this->translate('Please enter a valide e-mail.'); ?>"
+	            },
+	            password: {
+	                required: "<?php echo $this->translate('The password is required'); ?>",
+	                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
+	                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>"
+	            },
+	            first_name: {
+	                required: "<?php echo $this->translate('The first name is required'); ?>",
+	                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+	                lettersOnly: "<?php echo $this->translate('Letters only please'); ?>"
+
+	            },
+	            last_name: {
+	                required: "<?php echo $this->translate('The last name is required'); ?>",
+	                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+	                lettersOnly: "<?php echo $this->translate('Letters only please'); ?>"
+
+	            },
+	            state: {
+	                min: "<?php echo $this->translate('Select a state'); ?>"
+	            },
+	            city: {
+	                min: "<?php echo $this->translate('Select a city'); ?>"
+	            }
+	        },
+	        highlight: function(element) {
+	            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+	        },
+	        success: function(element) {
+	            jQuery(element).closest('.control-group').removeClass('error');
+	        }
+	    });
+	});
+
+	jQuery(document).ready(function(){
+		jQuery('#loginForm').validate({
+	        rules: {
+	            email: {
+	                required: true,
+	                email: true,
+	            },
+	            password: {
+	                required: true,
+	                minlength: 6,
+	                maxlength: 20
+	            }
+	        },
+	        messages: {
+	            email: {
+	                required: "<?php echo $this->translate('The email is required'); ?>",
+	                email: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>"
+	            },
+	            password: {
+	                required: "<?php echo $this->translate('The password is required'); ?>",
+	                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
+	                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>"
+	            }
+	        },
+	        highlight: function(element) {
+	            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+	        },
+	        success: function(element) {
+	            element
+	            .closest('.control-group').removeClass('error');
+	        }
+	    });
+	});
+
+	jQuery(document).ready(function(){
+		jQuery('#hashForm').validate({
+	        rules: {
+	            confirm_hash: {
+	                required: true,
+	                minlength: 36,
+	                maxlength: 36
+	            }
+	        },
+	        messages: {
+	            confirm_hash: {
+	                required: "<?php echo $this->translate('The hash is required'); ?>",
+	                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
+	                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>"
+	            }
+	        },
+	        highlight: function(element) {
+	            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+	        },
+	        success: function(element) {
+	            element
+	            .closest('.control-group').removeClass('error');
+	        }
+	    });
+	});
+
+
+</script>

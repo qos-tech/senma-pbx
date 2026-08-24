@@ -1,0 +1,86 @@
+<?php
+/**
+ *  This file is part of SNEP.
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ */
+?>
+
+<div class="row">
+
+    <?php if ($this->message): ?>
+
+        <div class="col-lg-12">
+            <div class="panel panel-orange">
+                <div class="panel-heading">
+                    
+                </div>
+                <div class="panel-body">
+                    <pre><?php echo $this->message; ?></pre>
+                </div>
+            </div>
+        </div>
+
+        <div class="snep-body-footer-buttons">
+            <input type="submit" class="btn btn-add" value="<?php echo $this->translate("Back"); ?>" onClick="location.href='../'" />
+        </div>
+               
+    <?php endif; ?>
+
+    <form  action="<?php echo $this->url(array("controller" => "sound-files", "action" => "synchronize"), null, true); ?>" METHOD="post">
+    
+    <?php if ($this->submit) { ?>
+
+        <?php  if ($this->dadosdb) { ?>
+
+                <div class="col-lg-12">
+                    <div class="panel panel-red">
+                        <div class="panel-heading">
+                            <?php echo $this->messagedb;?>
+                        </div>
+                        <div class="panel-body">
+                            <pre><?php echo $this->dadosdb;?></pre>
+                        </div>
+                    </div>
+                </div>
+
+        <?php } ?>
+
+        <?php  if ($this->messagedir) { ?>
+
+                <div class="col-lg-12">
+                    <div class="panel panel-green">
+                        <div class="panel-heading">
+                            <?php echo $this->messagedir;?>
+                        </div>
+                        <div class="panel-body">
+                            <pre><?php echo $this->dadosdir;?></pre>
+                        </div>
+                    </div>
+                </div>
+
+        <?php } ?>
+
+        <div class="snep-body-footer-buttons">
+            <input type="submit" class="btn btn-add" value="<?php echo $this->translate("Synchronize"); ?>" />
+            &nbsp;&nbsp;&nbsp;
+            <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+
+    <?php } ?>
+                
+</div> <!-- /.row -->
+
+

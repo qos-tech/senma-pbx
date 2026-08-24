@@ -1,0 +1,6 @@
+[submodule "modules/ivr"]
+	path = modules/ivr
+	url = git@bitbucket.org:snepdev/ivr.git
+[submodule "modules/billing"]
+	path = modules/billing
+	url = git@bitbucket.org:snepdev/billing.git

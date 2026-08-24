@@ -1,0 +1,269 @@
+<div class="row">
+
+    <form id="defaultForm" method="post" class="form-horizontal" style="margin-top: 20px;" action="<?php echo $this->url(array("controller" => "extensions", "action" => "multiadd"), null, true); ?>" METHOD="post">
+
+        <div class="alert alert-info"><?php echo $this->translate("To ensure the security of your extensions your passwords will be created in random ways."); ?></div>
+        <fieldset>
+            <legend><?php echo $this->translate('Extension');?></legend>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Extensions");?></label>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control" name="exten" placeholder='<?php echo $this->translate("Ex: 1000-1050;1060;1063;1070-1100")?>' />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Extensions Group");?></label>
+                <div class="col-sm-6">
+                    <select multiple size=3 class="form-control" name="exten_group[]" id="exten_group">
+                        <?php foreach($this->extenGroups as $key => $val){
+                            if(array_key_exists($val['id'], $this->extenInGroup)){?>
+                                <option value="<?php echo $val['id'];?>" selected><?php echo $val['name'];?></option>
+                            <?php }else{ ?>
+                                <option  value="<?php echo $val['id']; ?>"><?php echo $val['name'];?></option>
+                            <?php } ?>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Pickup Group");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="pickup_group" id="pickup_group">
+                        <?php foreach($this->pickupGroups as $key => $pickupGroup){ ?>
+                            <option><?php echo $pickupGroup;?></option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+
+        </fieldset>
+
+        <fieldset>
+            <legend><?php echo $this->translate('Interface Technology');?></legend>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Type");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="technology" id="technology" onChange="showDiv(this.value);">
+                        <option value="sip"><?php echo $this->translate("SIP");?></option>
+                        <option value="iax2"><?php echo $this->translate("IAX2");?></option>
+                        <option value="virtual"><?php echo $this->translate("Virtual");?></option>
+                    </select>
+                </div>
+            </div>
+
+        <!-- SIP / IAX2 -->
+        <div id="sipiax" class="visible">
+            <div id="siponly">
+                <div class="form-group">
+                    <label class="col-sm-3 control-label"><?php echo $this->translate("NAT")?></label>
+                    <div class="col-sm-7">
+                        <div class="checkbox">
+                            <label>
+                                <input type="checkbox" name="nat_no" checked/>
+                                no
+                            </label>
+                            &nbsp;&nbsp;
+                            <label>
+                                <input type="checkbox" name="nat_force_rport" />
+                                force-rport
+                            </label>
+                            &nbsp;&nbsp;
+                            <label>
+                                <input type="checkbox" name="nat_comedia" />
+                                comedia
+                            </label>
+                            &nbsp;&nbsp;
+                            <label>
+                                <input type="checkbox" name="nat_auto_force_rport" />
+                                auto-force-rport
+                            </label>
+                            &nbsp;&nbsp;
+                            <label >
+                                <input type="checkbox" name="nat_auto_comedia"/>
+                                auto-comedia
+                            </label>
+                        </div>
+                    </div>
+                </div>
+                <div class="form-group">
+                    <label class="col-sm-3 control-label"><?php echo $this->translate("Direct Media")?></label>
+                    <div class="col-sm-6">
+                        <label class="radio-inline">
+                            <input type="radio" name="directmedia" id="yes" value="yes" checked="checked" />
+                            yes
+                        </label>
+
+                        <label class="radio-inline">
+                            <input type="radio" name="directmedia" id="no" value="no">
+                            no
+                        </label>
+                        <label class="radio-inline">
+                            <input type="radio" name="directmedia" id="update" value="update">
+                            update
+                        </label>
+                        <label class="radio-inline">
+                            <input type="radio" name="directmedia" id="outgoing" value="outgoing">
+                            outgoing
+                        </label>
+                    </div>
+
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Qualify")?></label>
+                <div class="col-sm-6">
+                    <div class="checkbox">
+                        <label>
+                            <input type="checkbox" name="qualify" id="qualify" checked />
+                            <?php echo $this->translate("Enable delay qualification")?>
+                        </label>
+                    </div>
+                </div>
+            </div>
+
+
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("DTMF Mode")?></label>
+                <div class="col-sm-6">
+                    <label class="radio-inline">
+                        <input type="radio" name="dtmf" id="rfc2833" value="rfc2833" checked><?php echo $this->translate("RFC-2833");?>
+                    </label>
+
+                    <label class="radio-inline">
+                        <input type="radio" name="dtmf" id="inband" value="inband"><?php echo $this->translate("Inband");?>
+                    </label>
+
+                    <label class="radio-inline">
+                        <input type="radio" name="dtmf" id="info" value="info"><?php echo $this->translate("Info");?>
+                    </label>
+                </div>
+            </div>
+
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Codec 1");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="codec" id="codec">
+                        <?php echo $this->codec1;?>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Codec 2");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="codec1" id="codec1">
+                        <?php echo $this->codec2;?>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Codec 3");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="codec2" id="codec2">
+                        <?php echo $this->codec3;?>
+                    </select>
+                </div>
+            </div>
+
+        </div>
+        <!-- /SIPIAX2 -->
+
+
+
+        <!-- Virtual -->
+        <div id="virtual" class="invisible">
+
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Trunk");?></label>
+                <div class="col-sm-6">
+
+                    <select class="form-control" name="board" id="board">
+                        <?php foreach($this->trunks as $key => $trunk){?>
+                            <option value="<?php echo $trunk['id']?>"><?php echo $trunk['callerid'];?></option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+
+        </div>
+        <!-- /virtual -->
+
+        </fieldset>
+
+         <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="signup" value="Sign up"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+            <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+    </form>
+</div>
+
+<script type="text/javascript">
+
+    jQuery.noConflict();
+    jQuery(document).ready(function(){
+        jQuery('#defaultForm').validate({
+            rules: {
+                "exten_group[]" : {
+                    required: true,
+                },
+                exten: {
+                    required: true,
+                    minlength: 6,
+                    regexExten: /^(([0-9]\-?\;?)+)$/
+                },
+                board: {
+                    required: true,
+                }
+            },
+            messages: {
+                "exten_group[]" : {
+                    required: "<?php echo $this->translate('The extension group is required'); ?>",
+                },
+                exten: {
+                    required: "<?php echo $this->translate('The extension is required'); ?>",
+                    minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
+                    regexExten: "<?php echo $this->translate('Please enter with range valid'); ?>"
+                },
+                board: {
+                    required: "<?php echo $this->translate('The trunk is required'); ?>",
+                }
+            },
+            highlight: function(element) {
+                jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+            },
+            success: function(element) {
+                element
+                .text('OK!').addClass('valid')
+                .closest('.control-group').removeClass('error').addClass('success');
+            }
+        });
+    });
+
+
+    function showDiv(div){
+
+        document.getElementById("sipiax").className = "invisible";
+        document.getElementById("virtual").className = "invisible";
+        document.getElementById("siponly").className = "invisible";
+        if (div) {
+            if (div == 'sip') {
+                document.getElementById('siponly').className = "visible";
+            }
+            if (div == "sip" || div == 'iax2') {
+                div = "sipiax"
+            }
+            document.getElementById(div).className = "visible";
+        }
+    }
+
+
+</script>

@@ -1,0 +1,268 @@
+<?php
+$this->headLink()->appendStylesheet($this->baseUrl() . '/css/route.css');
+?>
+
+<div class='row"'>
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "contacts", "action" => $this->action), null, false); ?>" METHOD="post">
+
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Code");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="id" id="id" value='<?php echo $this->contact_id;?>' disabled>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Name");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="name" placeholder='<?php echo $this->translate("Name")?>' value='<?php echo $this->contact['name'];?>'/>
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Email");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="email" placeholder='<?php echo $this->translate("Email")?>' value='<?php echo $this->contact['email'];?>'/>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Group");?></label>
+            <div class="col-sm-6">
+                <select class="form-control" name="group" id="group" value="<?php echo $this->contact['group']; ?>">
+
+                    <?php foreach($this->contact_groups as $group){ ?>
+
+                        <option value="<?php echo $group['id'];?>" <?php echo $group['selected'];?>>
+                            <?php echo $group['name'];?>
+                        </option>
+                    <?php } ?>
+                </select>
+
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Address");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="address" placeholder='<?php echo $this->translate("Address")?>' value='<?php echo $this->contact['address'];?>'/>
+            </div>
+        </div>
+
+        <?php if($this->action == 'add' || $this->null == true){?>
+
+            <div class="form-group">
+                <label class="col-sm-2 control-label"><?php echo $this->translate("State");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="state" id="state" onchange="carregaCidade(this.value)">
+                        <option value="0"><?php echo $this->translate("Select state");?></option>
+                        <?php foreach($this->states as $key => $state){ ?>
+                            <option value="<?php echo $state['id']?>"><?php echo $state['name'];?></option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-2 control-label"><?php echo $this->translate("City");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="city" id="city">
+                        <option value="0"><?php echo $this->translate("Select city")?></option>
+                    </select>
+                </div>
+            </div>
+
+        <?php }else{?>
+
+            <div class="form-group">
+                <label class="col-sm-2 control-label"><?php echo $this->translate("State");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="state" id="state" onchange="carregaCidade(this.value)">
+                        <?php echo $this->states;?>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-2 control-label"><?php echo $this->translate("City");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="city" id="city">
+                        <?php echo $this->citys;?>
+                    </select>
+                </div>
+            </div>
+
+        <?php }?>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Zip Code");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="zipcode" id="zipcode" placeholder='<?php echo $this->translate("Zip Code")?>' value='<?php echo $this->zipcode;?>' />
+            </div>
+        </div>
+
+        <?php if($this->action == 'add'){ ?>
+            <table id="tablePhone" class="order-list table">
+                <tbody>
+                    <tr>
+                        <td class="text-right col-sm-2">
+                            <label class="control-label">
+                                <?php echo $this->translate("Phone");?>
+                            </label>
+                        </td>
+                        <td class="text-right control-label col-sm-4">
+                            <input class="form-control" type="text" name="phonebox[]" required placeholder="<?php echo $this->translate('DDD + Number') ?>"/>
+                        </td>
+                        <td>
+                            <button type="button" class="boxadd add_field"></button>
+                            <button type="button" class="boxremove del_field" style="display: none;"></button>
+                        </td>
+                    </tr>
+                </tbody>
+            </table>
+        <?php }else{ ?>
+            <table id="tablePhone" class="order-list table">
+                <tbody>
+                    <?php
+                        $number=count($this->phones);
+                        foreach($this->phones as $key => $phone){?>
+                            <tr>
+                                <td class="text-right col-sm-2">
+                                    <label class="control-label">
+                                        <?php echo $this->translate("Phone");?>
+                                    </label>
+                                </td>
+                                <td class="text-right control-label col-sm-4">
+                                    <input class="form-control" type="text" name="phonebox['<?php echo $key;?>']" required placeholder="DDD + Number" value="<?php echo $phone['phone']; ?>"/>
+                                </td>
+                                <?php if ($key === 0 && $number === 1) { ?>
+                                    <td><button type="button" class="boxadd add_field"></button>
+                                        <button type="button" class="boxremove del_field" style="display: none;"></button>
+                                    </td>
+                                <?php } elseif (($key+1) === $number) { ?>
+                                    <td><button type="button" class="boxadd add_field"></button>
+                                        <button type="button" class="boxremove del_field"></button>
+                                    </td>
+                                <?php } else { ?>
+                                    <td>
+                                        <button type="button" class="boxadd add_field" style="display: none;"></button>
+                                        <button type="button" class="boxremove del_field"></button>
+                                    </td>
+                                <?php } ?>
+
+                            </tr>
+                        <?php }
+                    ?>
+                </tbody>
+            </table>
+        <?php } ?>
+
+
+         <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="save"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+            <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+
+    </form>
+</div>
+
+<script type="text/javascript">
+
+    jQuery.noConflict();
+    jQuery(document).ready(function(){
+
+        // Add lines - phone contact
+        jQuery("table.order-list").on("click",".add_field", function(e){ //user click on remove text
+            e.preventDefault();
+
+            jQuery(".add_field").hide();
+            jQuery(".del_field").show();
+
+            // Mount new line
+            var newRow = jQuery("<tr>");
+            var cols = "";
+            cols += '<td class="text-right col-sm-2">';
+            cols += '  <label class="control-label">';
+            cols += '    <?php echo $this->translate("Phone");?>';
+            cols += '  </label>' ;
+            cols += '</td>' ;
+            cols += '<td class="text-right control-label col-sm-4">' ;
+            cols += '  <input type="text" class="form-control col-sm-6" name="phonebox[]" placeholder="DDD + Number" />';
+            cols += '</td>'
+            cols += '<td><button type="button" class="boxadd add_field"></button>';
+            cols += '<button type="button" class="boxremove del_field" /></button></td>'  ;
+
+            newRow.append(cols);
+            jQuery("table.order-list").append(newRow);
+
+        });
+        // Remove lines - phone contact
+        jQuery("table.order-list").on("click",".del_field", function(e){ //user click on remove text
+            e.preventDefault();
+            jQuery(this).closest("tr").remove();
+            jQuery('#tablePhone tr:last').find(".add_field").show();
+            if (jQuery("#tablePhone tr").length == 1) {
+                jQuery('#tablePhone tr:last').find(".del_field").hide();
+            }
+
+        });
+
+
+        jQuery('#defaultForm').validate({
+            rules: {
+                name: {
+                    required: true,
+                    minlength: 5,
+                    maxlength: 30
+                },
+                email: {
+                  regex: /^.+@.+\.[a-z0-9]+.+$/
+                },
+                phonebox: {
+                    required: true,
+                    minlength: 8,
+                    maxlength: 30,
+                    numbersOnly: true
+                }
+            },
+            messages: {
+                name: {
+                    required: "<?php echo $this->translate('The name is required'); ?>",
+                    minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
+                    maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                    lettersAndNumbersOnly: "<?php echo $this->translate('Letters and numbers only please'); ?>"
+                },
+                email: {
+                    regex: "<?php echo $this->translate('Please enter a valid email.'); ?>"
+                },
+                phonebox: {
+                    required: "<?php echo $this->translate('The phone is required'); ?>",
+                    minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
+                    maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                    numbersOnly: "<?php echo $this->translate('Numbers only please'); ?>"
+                }
+            },
+            highlight: function(element) {
+                jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+            },
+            success: function(element) {
+                element
+                .text('OK!').addClass('valid')
+                .closest('.control-group').removeClass('error').addClass('success');
+            }
+        });
+    });
+
+    jQuery(function(jQuery){
+       jQuery("#zipcode").mask("99.999-999",{placeholder:"<?php echo $this->translate('XX.XXX-XXX') ?>"});
+    });
+
+    function carregaCidade(idstate){
+
+        jQuery.noConflict();
+        jQuery('#city').load('/snep/includes/cidades.php?estado='+idstate );
+    };
+
+
+</script>

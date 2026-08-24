@@ -1,0 +1,17 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+    Document   : resources.xml
+    Created on : 2017 08 of August, 13:43
+    Author     : Douglas Conrad <conrad@opens.com.br>
+    Description:
+        Module for billing.
+-->
+
+<module>
+    <name>Billing Module for SNEP</name>
+    <description>This module make the billing of calls putting price based on trunks and time.</description>
+    <author>Opens Tecnology</author>
+    <version>1.0</version>
+    <website>www.opens.com.br</website>
+</module>

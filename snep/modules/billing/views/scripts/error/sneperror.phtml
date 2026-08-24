@@ -1,0 +1,45 @@
+<!-- 
+Parameters: 
+ - error_type : Define css class (error or alert)
+ - error_title: Define Panel Title
+ - error_message: Define Panel Message
+ - error_buttons: Define if show or not button
+
+PS: More information in controller 
+-->
+<?php
+
+    if (!isset($this->error_type)) {
+        $this->error_type = "error";
+    }
+    if (!isset($this->error_title)) {
+        $this->error_title = $this->translate("Error");
+    }
+    if (!isset($this->error_buttons)) {
+        $this->error_buttons = True ;
+    }
+
+    if ( $this->error_type === 'alert' ) {
+        $this->class = 'class="panel panel-orange"' ;
+    } elseif ( $this->error_type === 'error' ) {
+        $this->class = 'class="panel panel-red"';
+    }
+?>
+<div class="row>">
+    <div class="col-lg-12">
+        <div <?php echo $this->class?>>
+            <div class="panel-heading">
+                <?php echo $this->error_title;?>
+            </div>
+            <div class="panel-body">
+                <?php echo $this->error_message; ?>
+            </div>
+        </div>
+    </div>
+    <?php
+    if ( $this->error_buttons ) { ?>
+        <div class="snep-body-footer-buttons">
+            <button type="button" class="btn btn-add btn-primary" onclick="javascript: history.go(-1)" name="submit"><?php echo $this->translate("Back"); ?></button>
+        </div>
+    <?php } ?>
+</div>

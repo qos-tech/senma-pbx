@@ -1,0 +1,266 @@
+/*
+ *  This file is part of SNEP.
+ *  Para território Brasileiro leia LICENCA_BR.txt
+ *  All other countries read the following disclaimer
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  CSS File for System Status
+ */
+
+root {
+    display: block;
+}
+
+
+div#statusbar{
+    float: right !important;
+    display: table ;
+    left: -1000;
+    position: fixed;
+    z-index: 10;
+    width: 900px;
+    height: 80%;
+}
+.statusbar-indicator {
+    font-size: 30px;
+    width: 100%;
+    text-align: center
+}
+#statusbar_content {
+    margin-left: auto;
+    margin-right: auto;
+    width: 970px;
+    height: 330px;
+}
+
+
+#statusright{
+    float: left ;
+    width: 60px;
+    vertical-align: middle;
+    background: none repeat scroll 0 0 #5a5a5a;
+    border-top-left-radius: 10px;
+    border-bottom-left-radius: 10px;
+    margin: 0 auto;
+    height: 330px;
+/*    padding-bottom: 1000px;
+    margin-bottom: -1000px;*/
+
+}
+
+#statusright_icon {
+    display: inline-block;
+    vertical-align: top;
+    height: 100%;
+    padding-right: 10px;
+    padding-left: 5px;
+}
+
+#statusright_icon > ul {
+    position: relative ;
+    padding: 0;
+    list-style: none;
+
+}
+#statusright_icon > ul > li {
+  text-align: center;
+  padding: 20px 0 10px 0 ;
+  height: 25%;
+  vertical-align: middle;
+
+}
+
+#containerStatus{
+    /*background: #5a5a5a;*/
+    color: #fff;
+    border-top-left-radius: 10px;
+    border-bottom-left-radius: 10px;
+    /*display: table; */
+    width: 100%;
+    font-family: 'segoe ui', tahoma, geneva, kalimati, sans-serif;
+    height: 100%;
+    overflow: hidden;
+}
+
+#containerStatus a{
+    color: #fff;
+}
+
+#containerStatus a:hover{
+    color: #ccc;
+}
+
+
+.sn-barra-status-indicador {
+    float: left;
+    text-align: left;
+    font-size: 40px;
+    margin-top: -10px;
+}
+
+#sts_icon_ul {
+    position: relative;
+    vertical-align: middle;
+    height: 100%;
+}
+
+div.statusIndicator{
+    float: left;
+}
+
+#statusBody{
+    background: none repeat scroll 0 0 #5a5a5a;
+    display: table ;
+    height: 330px;
+    /*padding-bottom: 10px;*/
+}
+
+.statusColumn{
+    width: 400px;
+    float: left;
+    margin: 0 8px;
+    display: table;
+}
+
+.statusBlock{
+    width: 100%;
+    display: table;
+}
+
+.statusBlock h2{
+    font-size: 16px;
+    padding-left: 15px;
+    float: left;
+    margin-top: 0px;
+    padding-top: 5px;
+}
+
+.iconHolder{
+    width: 100%;
+    margin-top: 12px;
+    float: left;
+    border-bottom: 1px solid #fff;
+}
+.iconHolder > span {
+    float: left;
+    font-size: 30px;
+}
+
+.contentHolder{
+    float: left;
+    width: 420px;
+    margin-left: 10px;
+}
+
+.statusBlock table {
+    width: 100%;
+}
+
+.statusBlock th {
+    color: #fff;
+    text-align: left;
+    font-size: 12px;
+    font-weight: normal;
+    line-height: 18px;
+}
+
+.statusBlock td {
+    color: #fff;
+    text-align: right;
+    font-size: 12px;
+    line-height: 18px;
+}
+
+td.graphBar{
+    width: 150px;
+}
+
+.bar_chart {
+    border: 1px solid #fff;
+    height: 15px;
+    overflow: hidden;
+    border-radius: 5px;
+}
+.bar_inner {
+    height: 15px;
+}
+
+.bar_text { 
+    line-height: 14px;
+    font-size: 10px;
+    text-indent: 5px; 
+    text-align: left;
+    width: 100%; 
+    vertical-align: middle;
+}
+
+.bar_color_red { 
+    background: url(../images/status_level_bar_red.png) repeat-x;
+}
+
+.bar_color_green { 
+    background: url(../images/status_level_bar_green.png) repeat-x;
+}
+
+.bar_color_yellow { 
+    background: url(../images/status_level_bar_yellow.png) repeat-x;
+
+}
+
+/*Status Indicators*/
+
+div.statusIndicator{
+    width: 17px;
+    height: 16px;
+    margin: 0 2px;
+}
+
+.green{
+    background: url(../images/ok_icon_status_bar.png) transparent no-repeat;
+}
+
+.yellow{
+    background: url(../images/status_bar_attention_icon.png) transparent no-repeat;
+}
+
+.red{
+    background: url(../images/status_bar_alert_icon.png) transparent no-repeat;
+}
+
+/*error inspector*/
+#footer .inspect{
+    display: table;
+    width: 100%;
+}
+
+#footer .inspect ul li{
+    margin: 5px;
+    width: 200px;
+    float: left;
+    font-size: 13px;
+    padding: 0;
+}
+
+#footer .error_box{
+    text-align: center;
+    background: #ff5656;
+    color: #333;
+    margin: 10px;
+    padding: 10px;
+    border-radius: 5px;
+    -moz-border-radius: 5px;
+    -webkit-border-radius: 5px;
+    width: 930px;
+}

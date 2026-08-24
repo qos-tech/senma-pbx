@@ -1,0 +1,158 @@
+<?php
+/*
+ *  This file is part of SNEP.
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+$this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/password.js");
+?>
+
+<!-- <script src="/snep/includes/javascript/password.js"></script> -->
+<div class="row">
+    <div class="tab-content">
+        <div class="tab-pane active" id="demo">
+            <?php if($this->key){ ?>
+                <div class="snep-body-top-buttons">
+                    <div class="snep-body-search">
+                        <?php if($this->key){ ?>
+                            <a class='sn-dash-add' href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>"></a>
+                        <?php } ?>
+                    </div>
+                </div>
+            <?php } ?>
+            <form id="defaultForm" method="post" class="form-inline" style="margin-top: 0px;" action="<?php echo $this->url(array("controller" => "conference-rooms", "action" => "index"), null, true); ?>" METHOD="post">
+                <table class="table demo table-hover" data-page-size=15>
+
+                    <thead>
+                        <tr>
+                            <th class="text-center"> <?php echo $this->translate('Code') ?> </th>
+                            <th class="text-center"> <?php echo $this->translate('Record') ?> </th>
+                            <th class="text-center">
+                                <?php echo $this->translate('Password for Restricted Access') ?><br />
+                                (<small><?php echo $this->translate('Only numbers');?></small>)
+                            </th>
+                            <th class="text-center"> <?php echo $this->translate('Tag') ?>
+                            <th class="text-center"> <?php echo $this->translate('Active') ?> </th> </th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        <?php
+                        if ($this->conferenceRooms):
+
+                            foreach ($this->conferenceRooms as $id => $conferenceRooms): ?>
+
+                                <tr>
+                                    <td class="numeric text-center">
+                                        <b> <?php echo $conferenceRooms['id'] ?> </b>
+                                    </td>
+
+                                    <td class="action text-center">
+                                        <?php ( $conferenceRooms['rec'] ? $chek = 'checked' : $chek = '') ?>
+
+                                        <input type="checkbox" data-toggle="toggle" data-size="mini" <?php echo $chek ?> value="<?php $conferenceRooms['rec'] ?>"  name="rec[<?php echo $conferenceRooms['id'] ?>]">
+                                    </td>
+                                    <td class="password text-center" >
+                                        <div>
+                                            <input type="password" id="password<?php echo $conferenceRooms['id'] ?>" name="password[<?php echo $conferenceRooms['id'] ?>]"  onkeypress="return onlyDigit(event)" placeholder="<?php echo ($conferenceRooms['authenticate'] != '') ? $this->translate('Reset') : '' ;?> " size="30">
+                                        </div>
+                                    </td>
+
+                                    <td class="text-center"  >
+
+                                        <select style="width: 250px;" class="form-control" name="costCenter[<?php echo $conferenceRooms['id'] ?>]">
+                                            <?php foreach ($this->costCenter as $chave => $costCenter): ?>
+
+                                                <?php ( $conferenceRooms['ccustos'] == $costCenter['codigo'] ? $select = 'selected' : $select = '' ); ?>
+
+                                                <option value="<?php echo $costCenter['codigo'] ?>" <?php echo $select ?> >
+                                                    <?php echo $costCenter['tipo'] . " : " . $costCenter['codigo'] . " - " . $costCenter['nome']; ?>
+                                            <?php endforeach ?>
+                                        </select>
+                                    </td>
+                                    <td align="center">
+                                        <div class="checkbox" >
+                                            <label>
+                                                <input type="checkbox" data-toggle="toggle" data-size="mini" <?php echo $conferenceRooms['status'] === 1 ? 'checked' : ''; ?> name="activate[<?php echo $conferenceRooms['id'] ?>]" value="<?php $conferenceRooms['status'] ?>" data-size="mini">
+                                            </label>
+                                        </div>
+                                    </td>
+                                </tr>
+                            <?php endforeach ?>
+                        <?php endif ?>
+                    </tbody>
+                </table>
+                <div class="snep-body-footer-buttons">
+                    <input type="submit" class="btn btn-add" name="conference" value="<?php echo $this->translate('Save') ?>"/>
+                </div>
+            </div> <!-- demo -->
+        </div> <!-- tab-content -->
+    </form>
+</div> <!-- /.row -->
+
+<script type="text/javascript">
+
+    jQuery.noConflict();
+    jQuery(function() {
+        field_view = [] ;
+        for (var i=901; i <= 915 ; i++) {
+            var field_name='#password'+i;
+
+            jQuery(field_name).password().on('show.bs.password', function(e) {
+                jQuery('#methods').prop('checked', true);
+
+            }).on('hide.bs.password', function(e) {
+                jQuery('#methods').prop('checked', false);
+
+            });
+
+            jQuery('#methods').click(function() {
+                jQuery(field_name).password('toggle');
+            });
+
+        }
+    });
+
+    function pass(id) {
+        if (document.getElementById('box_' + id).style.display == '') {
+            document.getElementById('box_' + id).style.display = 'none';
+        } else {
+            document.getElementById('box_' + id).style.display = '';
+        }
+    }
+
+    function onlyDigit(e) {
+        var unicode = e.charCode ? e.charCode : e.keyCode;
+        if (unicode != 8 && unicode != 9) {
+            if (unicode < 48 || unicode > 57) {
+                return false
+            }
+        }
+    }
+
+
+    // document.oncontextmenu = new Function("return false;")
+
+    function habilita(id) {
+
+        if (document.getElementById('hab_' + id).checked == true) {
+            document.getElementById('auth_' + id).disabled = false;
+        } else {
+            document.getElementById('auth_' + id).checked = false;
+            document.getElementById('auth_' + id).disabled = true;
+            document.getElementById('box_' + id).style.display = 'none';
+        }
+    }
+
+</script>

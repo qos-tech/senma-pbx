@@ -1,0 +1,85 @@
+<!--
+
+Class containing help text of the trunks
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Troncos - Incluir / Alterar</h2>
+
+        Esta rotina permite a inclusão/edição de um tronco no sistema.
+
+        <br><strong>Nome:</strong> Nome do tronco, usado para identificação.
+        <br><strong>Tipo de Tronco: </strong>Tecnologia usada pelo tronco(SIP, 
+        IAX2, KHOMP, TDM/Virtual, SNEP SIP, SNEP IAX2).
+
+        <br><br><strong>Troncos SIP/IAX2</strong>
+
+        <br><strong>Método de Discagem: </strong>
+    <br><u>Normal:</u> Discagem padrão usando identificação digital.
+    <br><u>Sem Autenticação: </u>Esse modo cria um tronco extremamente simples 
+    para ligações que não aceitem usuário ou senha. A ligação é passada para 
+    um Host Remoto específicado. Usado especialmente em roteadores CISCO.
+    <br><strong>Usuário: </strong>Usuário usado para se autenticar ao provedor 
+    VoIP ou Servidor SIP/IAX2.
+    <br><strong>Senha: </strong>Senha de autenticação referente ao usuário.
+    <br><strong>Host Remoto: </strong>Servidor no qual será feita a autenticação do tronco.
+    <br><strong>Especificar usuário de Origem: </strong>Nome de usuário para as ligações do tronco.
+    <br><strong>Domínio de Origem: </strong>Dominio do servidor que faz a requisição. <u>Nota:</u> algumas operadoras voip podem requerer o dominio delas nesse campo (mesma informação fornecida em: Host Remoto).
+    <br><strong>Modo de DTMF: </strong>Define os tons de freqüências utilizadas na discagem.
+    <br><strong>Tempo do Controle de Qualidade: </strong>Define o tempo em que o SNEP se baseará 
+    para considerar um ramal como ativo ou inativo no sistema, valores expressados em 
+    Millisegundos.
+    <br><strong>Tipo: </strong>Define o tipo, se Peer apenas pode enviar chamadas, se Friend envia e recebe (dependendo a sua configuração).
+    <br><strong>Forçar autenticação reversa: </strong>Força no uso do protocolo que a outra ponta envie devolta os dados de autenticação do tronco para garantir a autenticidade da conexão. Algumas operadoras IP não suportam essa opção o que causa uma negação da requisição de ligações de entrada.
+    <br><strong>Dominio: </strong>Preenche o campo do cabeçalho SIP/IAX2 com a informação de dominio ao qual o tronco pertence.
+    <u>Nota:</u> Algumas operadoras voip podem requerer o dominio delas nesse campo (mesma informação fornecida em: Host Remoto).
+    <br><strong>Insecure: </strong>Determina qual o nível de checagem usado pelo sistema para permitir o uso de cabeçalhos SIP/IAX2 com informações faltantes. As opções são: yes, no, very, invite, port.
+    <br><strong>Porta: </strong> Define a porta que será usada para negociação de ligações, padrão 5060 para sip e 4569 para IAX2.
+
+    <br><br><strong>Troncos Khomp</strong>
+    <br>Troncos que usam placas da khomp podem ser facilmente configurados nessa tela.
+    <br><strong>Placa: </strong>Lista de canais e links das placas khomp disponíveis para serem usadas como tronco pelo SNEP.
+
+    <br><br><strong>Tronco TDM/Virtual</strong>
+    <br>Essa opção permite que sejam cadastrados troncos que não tem detecção automática suportada pelo SNEP, como troncos Digium.
+    <br><strong>Tecnologia do Canal: </strong>Tecnologia usada pelo tronco para interface com o Asterisk. ex: DAHDI/g1, ZAP/g2, etc.
+    <br><strong>ID da Expressão Regular: </strong>Opcional, ela é usada para 
+    definir uma expressão regular de identificação do tronco. Quando se usa 
+    troncos khomp por exemplo pode-se usar Khomp/b0l1 para fazer a discagem 
+    para o link 1 da placa E1, mas quando uma ligação de entrada ocorre ela 
+    virá com a interface real de cada canal (ex:Khomp/b0c25) para isso o snep 
+    precisa de uma expressão que identifique todos os canais pertencentes a 
+    essa placa, exemplo para khomp/b0l1 é khomp/b0c[2-5]?[0-9].<u>Nota:</u> placas khomp já possuem sistema que automatiza o uso de expressões de identificação, selecione placas de tecnologia KHOMP.
+    <br>Caso em branco a string de identificação será a propria tecnologia de 
+    canais usada para discagem.
+
+    <br><br><strong>Troncos Snep SIP</strong>
+    <br><strong>Host Remoto: </strong>Servidor no qual será feita a autenticação do tronco.
+    <br><strong>Modo DTMF: </strong>Define os tons de freqüências utilizadas na discagem.
+
+    <br><br><strong>Troncos Snep IAX2</strong>
+    <br><strong>Identificador: </strong>Identificação do tronco. 
+    <u>Nota:</u> O mesmo em todos os troncos.
+    <br><strong>Otimização de NAT: </strong>Habilita otimização no sistema para uso de NAT na rede.
+    <br><strong>Modo DTMF: </strong>Define o tipo tons freqüência utilizados na discagem.
+
+    <br><br><strong>OPÇÕES AVANÇADAS</strong>
+    <br><strong>Mapeamento de Ramais: </strong>Faz com que ligações que entram por esse tronco tenham o mesmo callerid de um ramal cadastrado no SNEP, fazendo com que esta ligação seja tratada como interna e não mais do tronco.
+    <br><strong>Modo de discagem DTMF:</strong> Habilita o tronco a realizar discagem DTMF.
+    <br><strong>Número do modo de discagem DTMF: </strong>Faz com que o tronco efetue a ligação para o canal do tronco e para o número destino opcional e após atendimento, envia o destino via DTMF. Usado em DISA de outras centrais.
+    <br><strong>Controle de Minutos: </strong>Institui um controle de minutos sobre o tronco. Caso as ligações usadas por esse tronco excedam esse tempo limite ele deixará de funcionar.
+    <br>
+
+</body>
+</html>

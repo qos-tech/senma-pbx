@@ -1,0 +1,46 @@
+<!--
+
+Class containing help text of the calls report
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Opens Tecnologia <desenvolvimento@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Relatório chamadas do período</h2>
+
+        Este Relatório permite que sejam visualizadas as chamadas registradas no sistema, mediante varios critérios de filtros.
+        Também pode ser visualizado a tarifas calculadas para cada ligação de saída e ouvir-se a gravação de cada ligação, desde que estas existam e estejam disponíveis .
+
+        <br><br><strong>Período:</strong> Define o intervalo de datas/hora do qual se deseja extrair as informações;
+        <br><strong>Ordenar:</strong> Possibilidade de ordenar os resultados por data, números de origem ou destino.
+        <br><strong>Origem/Destino:</strong> Define um filtro de número(s) ou parte dele(s) para chamadores.
+        <br><strong>Centro de Custos:</strong> Define de qual ou quais Centros de Custo se deseja ver as chamadas.
+        <br><strong>Status da Ligação:</strong> Define qual status as ligações que devem ser exibidas no relatório devem ter.
+        <br><strong>Duração:</strong> Tempo em SEGUNDOS que as ligações devem ter.
+        <br><strong>Tipo de Chamada:</strong> Que tipos de ligação devem ser exibidas no relatório. 
+        O critério de Originadas/Recebidas é baseado no conceito de tamanho máximo do campo "src" e 
+        tamanho mínimo do campo "dst" encontrado em Configurações >> Parâmetros.
+        <br><strong>Ver Tarifação:</strong> Define se ligações devem exibir os valores tarifados, baseado nas tarifas definidas no sistema.
+        <br><strong>Ver arquivos de gravação:</strong> Esta opção permite que você veja os arquivos de gravação, se disponíveis.
+        <br><strong>Tipo de Relatório:</strong> Permite que você escolha o tipo de relatório a ser exibido
+        <br><strong>Analítico:</strong> É o relatório normal, onde todos os dados são disponibilizados para uma analise mais minuciosa.
+        <br><strong>Sintético:</strong> Disponibiliza um panorama geral sobre os dados selecionados, com as totalizações. É utilizado para relatórios restritos a um ou mais ramais ou grupo de ramal.
+        <br><br><strong>Resultados:</strong> Cada linha do relatório representa um registro de ligação, sendo possível verificar a rastreabilidade da ligação, ou seja, as ligações que foram tranferidas ou sofreram transbordo de filas ou agentes da fila possuem um botão para que este comportamento seja observado.
+        <br><strong>Gráfico:</strong> Se optar por exibir um gráfico ao invés de um relatório, define o tipo de gráfico a ser exibido.
+        <br><strong>Exportar CSV:</strong> Gera relatório no formato CSV (Valores separados por vírgula) afim de tais informações sejam utilizadas em Planilhas Eletrônicas e outros Softwares estatísticos.
+        <br><strong>Observações Importantes:</strong> 
+        Os Sub-totais compreendem todas as ocorrências da seleção informada, mesmo que a ocorrência seja parte de um contexto maior. Exemplo: - Se um relatorio de todas as chamadas recebidas pelo ramal 8033 foi solicitado, as ocorrências de transferência para este ramal também são contabilizadas, mas não necessariamente será exibida na lista principal.
+        Ao solicitar um relatório onde é especificada uma origem ou destino, toda e qualquer ocorrência será contabilizada, mesmo que esta seja apenas parte de uma chamada.
+        <br>
+
+    </body>
+</html>

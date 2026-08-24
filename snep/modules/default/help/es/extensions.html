@@ -1,0 +1,96 @@
+<!--
+
+Class containing help text of the extensions
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Opens Tecnologia <desenvolvimento@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Extensiones - Agregar / Editar</h2>
+
+        Esta rutina permite el registro / editar una extensión en el sistema.
+        <br>Las extensiones registradas deben estar en el rango de variación de las extensiones de marge configurados en los parámetros del sistema.
+        <br><br><strong>Extensión:</strong> Define el código que identifica la extensión. 
+        <br><strong>Grupo de Extensiones:</strong> Establece el grupo de extensiones que pertenece la estación.
+        <br><strong>Grupo de Captura:</strong> Grupo de captura que la extensión será parte. Extensiones en el mismo grupo de captura nos permitieron capturar ligaços entre sí.
+
+        <br><br><strong>Tecnología de interfaz</strong>
+        <br><strong>Tecnología: </strong> 
+        Define que la tecnología de canal la extensión utilizará para hacer / recibir llamadas.
+        <br><strong>SIP/IAX: </strong>
+        Canales SIP o IAX con la tecnología.
+        <br><strong>Khomp: </strong> 
+        Extensiones Tecnología Khomp.    
+        <br><strong>Virtual:</strong> 
+        Extensiones con interfaces virtuales se asignan en un baúl. Al seleccionar una interfaz de troncal a la extensión virtual, el enlace a la misma se hará marcando por el tronco hacia el número de extensión.
+        <br><strong>Manual: </strong> 
+        Le permite especificar qué canal / tecnología será utlizada en la creación de la extensión.
+
+        <br><br><strong>Opciones SIP / IAX</strong>
+        <br><strong>Límite de llamadas simultáneas: </strong> 
+        Establece el número máximo de llamadas simultáneas a esta extensión.
+        <br><strong>NAT: </strong> 
+        Establece la conexión del ramal será o no a través de un NAT.
+        <br><strong>Control de calidad: </strong> 
+        Establece si o no el control de calidad en la Extensión enlaces.
+        <br><strong>Direct media:</strong> 
+        Conjuntos de paso o no de los paquetes RTP por Asterisk.
+        <br><strong>Modo DTMF: </strong> 
+        Establece el tipo de tonos de frecuencia utilizadas en la marcación.
+        <br><strong>CODECS: </strong>
+        Definir la secuencia de codecs que se prefiere para la Extensión.
+
+        <br><br><strong>Opciones KHOMP</strong>
+        <br><strong>Tablero: </strong> 
+        Define cuál de las tablas en el sistema de extensión será parte.
+        <br><strong>Canal: </strong> 
+        Define qué canal de la tarjeta seleccionada.
+
+        <br><br><strong>Opciones VIRTUAL</strong>
+        <br><strong>Tronco: </strong>
+        Establece el tronco a mapear.
+
+        <br><br><strong>Ociones MANUAL</strong>
+        <br><strong>Manual: </strong>
+        Establece el canal/tecnología de la que se utiliza.
+
+        <br><br><strong>Avanzado</strong>
+        <br><strong>Correo de voz: </strong> 
+        Establece si la rama usarán correo de voz.
+        <br><strong>E-mail: </strong> 
+        Define un correo electrónico a la Estación.
+        <br><strong>Bloque: </strong>
+        Bloqueo de la extensión. Ya sea para permitir que las llamadas salientes.
+        <br><strong>Habilitar Sígueme: </strong>
+        Permite la extensión para que me siga.
+        <br><strong>Control Minutos: </strong>
+        Define si se estipulará el tiempo a los vínculos que la extensión o no.
+        <br><strong>Tiempo Completo: </strong> 
+        Tiempo total que la extensión puede estar en conexión.
+        <br><strong>Tipo de control: </strong> 
+        Establece si los minutos están controlados por años, meses o días.
+        <br>
+
+        <h2>Extensiones - CSV Exportación</h2>
+
+        Esta rutina exportar datos de extensiones registradas en un archivo .csv. 
+
+        <h2>Extensiones - Ingregar extensiones</h2>
+
+        Esta rutina incluye una serie de extensiones. El rango se puede separar por - (guión) o (punto y coma).
+        <br>Examples: 
+        <br>1000-1002 -> El sistema registrará las extensiones 1000,1001 y 1002. 
+        <br>1000;1002 -> El sistema registrará las extensiones 1000 y 1002.
+        <br>
+
+    </body>
+</html>

@@ -1,0 +1,26 @@
+<?php 
+$this->headLink()->appendStylesheet($this->baseUrl() . "/css/main.css");
+$this->headScript()->appendFile($this->baseUrl() . '/includes/colorbox/jquery.colorbox-min.js');
+$this->headLink()->appendStylesheet($this->baseUrl() . "/includes/colorbox/colorbox.css" );
+//echo Snep_Bar::get(
+//        $this->translate("New Group"),  
+//        $this->translate("Contact Groups"), 
+//        $this->baseUrl()."/index.php/default/contact-groups",
+//        'add',
+//        '',
+//        'True'
+//        );
+?>
+
+<div style='display:none'>
+    <div id='inline_content'>
+        <h2>Grupo de Contatos - Cadastrar</h2>
+        <p>
+            Cadastra um novo grupo de contatos ou edita um grupo existente. Basta
+            fornecer um nome para cadastrar o grupo. Opcionalmente você pode selecionar
+            os contatos diretamente da lista abaixo para facilitar a administração.
+        </p>
+    </div>
+</div>
+
+<?php echo $this->form ?>

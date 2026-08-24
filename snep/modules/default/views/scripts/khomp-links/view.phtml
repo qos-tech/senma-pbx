@@ -1,0 +1,90 @@
+<meta http-equiv="refresh" content="10" />
+
+<div class="row">
+    <?php if ($this->error_message) {
+            echo $this->action( 'sneperror', 'error', null, array( 'error_type' => 'alert', 
+            'error_title' => $this->translate('Alert'), 'error_message' => $this->error_message, 'error_buttons' => False) );
+    } else { 
+        foreach ($this->dados as $board_key => $board_item): ?>
+        <div class="col-xs-6">
+            <div class="panel panel-orange">
+                <div class="panel-orange panel-heading">
+                    <?php
+                    echo $this->translate('Board : ') . $board_key . " - " 
+                    . $this->sumary[substr($board_key,1,2)] ;
+                    ?>
+                </div>
+                
+                <div class="panel-body">
+                    <div class="table-responsive">
+                        <table class="table table-striped table-bordered table-hover snep-table-linkskhomp">
+                            <thead>
+                                <tr>
+                                    <th><?php echo $this->translate('Link Status') ?></th>
+                                    <th><?php echo $this->translate('Channel Status Summary') ?></th>
+                                </tr>
+                            </thead>
+                            <tbody>
+                                <tr>
+                                    <td>
+                                        <?php
+                                        foreach ($this->dados[$board_key] as $link_key => $link_item) {
+                                            echo $this->translate('Link') . '&nbsp;' . $link_key . ' : ' . $link_item . '<br />';
+                                        }
+                                        ?>
+                                    </td>
+                                    <td>
+                                        <?php
+                                        foreach ($this->sintetic[$board_key] as $sint_key => $sint_item) {
+
+                                            echo $this->translate($this->status_sintetic[$sint_key]) . ' : <strong>' . $this->translate($sint_item) . '</strong><br />';
+                                        }
+                                        ?>
+                                    </td>
+                                </tr>
+                            </tbody>
+                        </table>
+
+
+                        <?php if ($this->tiporel == "analitic") : ?>
+                            <table class="table table-striped table-bordered table-hover snep-table-linkskhomp">
+                                <thead>
+                                    <tr>
+                                        <th><?php echo $this->translate('Channel') ?></th>
+                                        <th><?php echo $this->translate('Asterisk Status') ?></th>
+                                        <th><?php echo $this->translate('Call Status') ?></th>
+                                        <th colspan="4"><?php echo $this->translate('Channel Status') ?></th>
+                                    </tr>
+                                </thead>
+
+                                <tbody>
+                                    <?php foreach ($this->canais[$board_key] as $canal_key => $canal_item) : ?>
+                                        <tr>
+                                            <td><?php echo $this->translate($canal_key) ?></td>
+                                            <?php $cor_status = $canal_item['asterisk']; ?>
+                                            <td><?php echo $this->translate($canal_item['asterisk']) ?></td>
+                                            <td><?php echo $this->translate($canal_item['k_call']) ?></td>
+                                            <?php if ($canal_item['k_gsm'] == 'k_gsm') : ?>
+                                                    <td><?php echo $this->translate($canal_item['k_signal']) ?></td>
+                                                    <td><?php echo $this->translate($canal_item['k_opera']) ?></td>
+                                            <?php endif ?>
+                                            
+                                            <?php if ($this->status === "yes") : ?>
+                                                <td><?php echo $this->translate($canal_item['k_channel']) ?>
+                                                </td>
+                                            <?php endif ?>
+                                        </tr>
+                                    <?php endforeach; ?>
+                                </tbody>
+                            </table>
+                        <?php endif; ?>
+                    </div>
+                </div>
+            </div>    
+        </div>
+        <?php endforeach; 
+    }?>
+</div>
+
+
+

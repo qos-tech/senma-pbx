@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+ * Billing and Rates Module.
+ *
+ * @copyright Copyright (c) 2017 OpenS Tecnologia
+ * @author Douglas Conrad
+
+-->
+<billing>
+  <group id="modules" label="Billing" font="sn-chamadas">
+      <resource id="billing" label="Billing" font="sn-etiqueta">
+        <resource id="write"></resource>
+      </resource>
+      <resource id="telcos" label="Telcos" font="sn-troncos">
+        <resource id="write"></resource>
+      </resource>
+  </group>
+</billing>

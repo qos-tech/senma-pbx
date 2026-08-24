@@ -1,0 +1,93 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+    Document   : titleOptions.xml
+    Author     : Iago Uilian Benrdt, Rodrigo Cavichioli
+-->
+<title>
+	<edit>
+		<name>Edit</name>
+		<icon>edit_icon.png</icon>
+		<alt></alt>
+	</edit>
+	<exit>
+		<name>Logout</name>
+		<icon>exit_icon.png</icon>
+		<alt></alt>
+	</exit>
+	<dashboard>
+		<name>Dashboard</name>
+		<icon>send_to_dashboard_icon.png</icon>
+		<alt>Add page to Dashboard</alt>
+	</dashboard>
+	<dashboardform>
+		<name>Dashboard</name>
+		<icon>send_to_dashboard_icon.png</icon>
+		<alt>Add page to Dashboard</alt>
+	</dashboardform>
+	<import>
+		<name>Import</name>
+		<icon>import_icon.png</icon>
+		<alt></alt>
+	</import>
+	<export>
+		<name>Export</name>
+		<icon>expor_icon.png</icon>
+		<alt></alt>
+	</export>
+	<report>
+		<name>Report</name>
+		<icon>report_view_icon.png</icon>
+		<alt></alt>
+	</report>
+	<multiremove>
+		<name>Remove Multiple</name>
+		<icon>edit_icon.png</icon>
+		<alt></alt>
+	</multiremove>
+        <multiadd>
+            <name>Add Multiple</name>
+            <icon>edit_icon.png</icon>
+            <alt></alt>
+        </multiadd>
+        <multiremove>
+            <name>Remove Multiple</name>
+            <icon>edit_icon.png</icon>
+            <alt></alt>
+        </multiremove>
+        <add>
+            <name>Add</name>
+            <icon>edit_icon.png</icon>
+            <alt></alt>
+        </add>
+        <reload>
+            <name>Test Again</name>
+            <icon>send_to_dashboard_icon.png</icon>    
+            <alt>Recharge the page</alt>
+        </reload>
+        <musicsessions>
+            <name>Music on Hold Sessions</name>
+            <icon>report_view_icon.png</icon>    
+            <alt></alt>
+        </musicsessions>
+        <simulator>
+            <name>Simulator</name>
+            <icon>simulador_icon.png</icon>    
+            <alt></alt>
+        </simulator>
+	<exportcsv>
+		<name>Export CSV</name>
+		<icon>expor_icon.png</icon>    
+		<alt></alt>
+	</exportcsv>
+	<graphic>
+		<name>Graphic</name>
+		<icon>chart_view_icon.png</icon>    
+		<alt></alt>
+	</graphic>
+	<exportpdf>
+		<name>Export PDF</name>
+		<icon>report_view_icon.png</icon>    
+		<alt></alt>
+	</exportpdf>
+</title>

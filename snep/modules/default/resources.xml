@@ -1,0 +1,116 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!--
+    Document   : resources.xml
+    Created on : March 15, 2011, 5:39 PM
+    Author     : Henrique Grolli Bassotto <henrique@opens.com.br>
+    Edited by  : Tiago Zimmermann <tiago.zimmermann@opens.com.br>
+    Edited in  : February 14, 2014, 10:34 AM
+    Description:
+        Default modules resources for permission mapping
+-->
+
+<default>
+    <resource id="error" order="allow"></resource>
+    <resource id="installer" order="allow"></resource>
+
+    <group id="index" label="Dashboard" font="sn-dashboard">
+        <resource id="index" label="Dashboard" font="sn-dashboard"></resource>
+    </group>
+
+    <group id="status" label="Status" font="sn-status">
+
+        <resource id="ip-status" label="IP Status" font="sn-status-ip"></resource>
+        <resource id="inspector" label="System Status" font="sn-status-sistema"></resource>
+        <resource id="tdm-links" label="TDM boards" font="sn-links"></resource>
+        <resource id="errors-khomp" label="TDM links errors" font="sn-erros-links"></resource>
+        <resource id="audit" label="Audit" font="sn-busca"></resource>
+        <resource id="logs" label="Logs" font="sn-logs"></resource>
+    </group>
+
+    <group id="manage" label="Manage" font="sn-cadastros">
+
+        <resource id="cost-center" label="Tags" font="sn-etiqueta">
+            <resource id="write"></resource>
+        </resource>
+
+         <resource id="contacts" label="Contacts" font="sn-contatos">
+            <resource id="write"></resource>
+        </resource>
+
+        <resource id="contact-groups" label="Contact Groups" font="sn-grupo-contatos">
+            <resource id="write"></resource>
+        </resource>
+
+        <resource id="queues" label="Queues" font="sn-filas">
+            <resource id="write"></resource>
+        </resource>
+
+         <resource id="extensions" label="Extensions" font="sn-ramal">
+            <resource id="write"></resource>
+        </resource>
+
+        <resource id="extensions-groups" label="Extension Groups" font="sn-grupo-ramais">
+            <resource id="write"></resource>
+        </resource>
+
+        <resource id="pickup-groups" label="Pickup Groups" font="sn-grupo-captura">
+            <resource id="write"></resource>
+        </resource>
+
+        <resource id="users" label="Users" font="sn-usuarios">
+            <resource id="write"></resource>
+        </resource>
+
+        <resource id="profiles" label="Profiles" font="sn-perfis">
+            <resource id="write"></resource>
+        </resource>
+
+         <resource id="trunks" label="Trunks" font="sn-troncos">
+            <resource id="write"></resource>
+        </resource>
+
+        <resource id="conference-rooms" label="Conference Rooms" font="sn-conferencia">
+            <resource id="write"></resource>
+        </resource>
+
+    </group>
+
+    <group id="reports" label="Reports" font="sn-relatorios">
+        <resource id="calls-report" label="Calls" font="sn-chamadas"></resource>
+        <resource id="ranking-report" label="Call Ranking" font="sn-ranking"></resource>
+        <resource id="services-report" label="Services Use" font="sn-servicos"></resource>
+        <resource id="export-data" label="Export Data Table" font="sn-busca"></resource>
+    </group>
+
+    <group id="routing" label="Routing" font="sn-regras">
+        <resource id="route" label="Routes" font="sn-rotas">
+            <resource id="write"></resource>
+        </resource>
+        <resource id="action-configs" label="Default Configs" font="sn-conf-padrao">
+            <resource id="write"></resource>
+        </resource>
+        <resource id="expression-alias" label="Expression Alias" font="sn-alias">
+            <resource id="write"></resource>
+        </resource>
+        <resource id="dates-alias" label="Dates Alias" font="sn-alias">
+            <resource id="write"></resource>
+        </resource>
+    </group>
+
+    <group id="configs" label="Configuration" font="sn-configuracao">
+        <resource id="parameters" label="Parameters" font="sn-parametros"></resource>
+        <resource id="sound-files" label="Sound Files" font="sn-arquivo-som">
+            <resource id="write"></resource>
+        </resource>
+        <resource id="music-on-hold" label="Music on Hold" font="sn-som-espera">
+            <resource id="write"></resource>
+        </resource>
+        <resource id="cnl" label="Cnl Update" font="sn-busca"></resource>
+        <resource id="module-settings" label="Module Settings" font="sn-modulos"></resource>
+    </group>
+
+    <resource id="auth" order="allow">
+        <resource id="logout"></resource>
+    </resource>
+</default>

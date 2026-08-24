@@ -1,0 +1,78 @@
+<div class="row">
+
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("module" => "billing", "controller" => "telcos", "action" => $this->action), null, false); ?>" METHOD="post">
+        <input type="hidden" class="form-control" name="id" value="<?php echo $this->telco['id'];?>" />
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Name");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="name" value="<?php echo $this->telco['name'];?>" />
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Default Mobile Price");?></label>
+            <div class="col-sm-1">
+                <input type="text" class="form-control" name="mobile_price" placeholder="0,00" value="<?php echo $this->telco['mobile_price'];?>" />
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Default Land Line Price");?></label>
+            <div class="col-sm-1">
+                <input type="text" class="form-control" name="landline_price" placeholder="0,00" value="<?php echo $this->telco['landline_price'];?>" />
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Start Time Rate (in seconds)");?></label>
+            <div class="col-sm-1">
+                <input type="text" class="form-control" name="start_time" placeholder="30" value="<?php echo $this->telco['start_time'];?>" />
+            </div>
+        </div>
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Rate Fractionation (in seconds)");?></label>
+            <div class="col-sm-1">
+                <input type="text" class="form-control" name="fract" placeholder="6" value="<?php echo $this->telco['fract'];?>" />
+            </div>
+        </div>
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="Save"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+        	<a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+
+        </div>
+    </form>
+
+
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(document).ready(function(){
+    jQuery('#defaultForm').validate({
+        rules: {
+            group: {
+                required: true,
+                minlength: 5,
+                maxlength: 50,
+                lettersAndNumbersOnly: true
+            }
+        },
+        messages: {
+            group: {
+                required: "<?php echo $this->translate('The name is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                lettersAndNumbersOnly: "<?php echo $this->translate('Please enter letters and numbers only.'); ?>"
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+});
+
+</script>

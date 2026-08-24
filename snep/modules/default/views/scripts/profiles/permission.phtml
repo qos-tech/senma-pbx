@@ -1,0 +1,52 @@
+<?php
+$this->headLink()->appendStylesheet( $this->baseUrl() . "/css/bootstrap-duallistbox.css" );
+?>
+<script type="text/javascript" src="/snep/includes/javascript/jquery.bootstrap-duallistbox.js"></script>  
+   
+<div class="row">
+    <form id="selectboxform" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "profiles", "action" => "permission"), null, false); ?>" METHOD="post">
+
+        <div class="form-group">
+            <label class="col-sm-1 control-label"  style="text-align: left !important;" for="name"><?php echo $this->translate("Name");?></label>
+            <div class="col-sm-4">
+                <input type="text" class="form-control" name="name"  value="<?php echo $this->profile_name; ?>" disabled />
+            </div>
+        </div>
+        <fieldset>
+            <legend><?php echo $this->translate("Routines")?></legend>
+            <select multiple="multiple" size="10" name="duallistbox_permission[]" id="select">
+        	   
+        	    <?php foreach($this->resources as $y => $resource){ ?>      
+        	    	<option value="<?php echo $y;?>">
+                        <?php echo $resource;?>
+                    </option>
+        	    <?php }?>
+        	    
+        	    <?php foreach($this->selected as $x => $select){?>
+        		    <option value="<?php echo $x;?>" selected="selected">
+                        <?php echo $select;?>
+                    </option>
+        	    <?php } ?>
+            </select>
+        </fieldset>
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="save"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+          	<a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+
+        </div>
+    </form>
+</div>
+
+<script>
+jQuery.noConflict();
+    var profile = jQuery('select[name="duallistbox_permission[]"]').bootstrapDualListbox({
+        selectedListLabel: "<?php echo $this->translate('Selected'); ?>" ,
+        nonSelectedListLabel: "<?php echo $this->translate('Available'); ?>",
+        infoText: "<?php echo $this->translate('Showing all '); ?> {0}"
+    });
+    jQuery("#defaultForm").submit(function() {
+        return true;
+    });
+
+</script>

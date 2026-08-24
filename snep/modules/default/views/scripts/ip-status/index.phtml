@@ -1,0 +1,275 @@
+<!-- <meta http-equiv="refresh" content="10" /> -->
+<?php
+/*
+ *  This file is part of SNEP.
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ */
+
+?>
+
+<!-- <link href="/snep/css/bootstrap-theme.min.css" rel="stylesheet"> -->
+
+<div class="row">
+    <div class="tab-content">
+        <div class="tab-pane active" id="demo">
+            <div class="snep-body-top-buttons">
+                <div class="snep-body-search">
+                    <?php  if($this->key)
+                        echo "" ;
+                    { ?>
+                        <a class='sn-dash-add' style="margin-right: 15px;" href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>">
+                        </a>
+                    <?php } ?>
+                </div>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-12">
+        <!-- Peers -->
+        <div class="panel-group" id="accordion">
+            <div class="panel panel-default">
+                <div class="panel-heading ip-status">
+                    <h4>
+                        <a data-toggle="collapse" data-parent="#accordion" href="#collapseOne">
+                            <button type="button" class="boxremove del_field" id="exten" style="background-color:transparent !important;">
+                                <?php echo "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;".$this->translate("Extensions") ?>
+                            </button>
+                        </a>
+                    </h4>
+                </div>
+                <div id="collapseOne" class="panel-collapse collapse in ip-status"  style="background-color: #fff !important">
+                    <div class="panel-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="listExtension">
+                                <thead>
+                                    <tr>
+                                        <th class="text-center"><?php echo $this->translate("Extension") ?></th>
+                                        <th class="text-center"><?php echo $this->translate("Callerid") ?></th>
+                                        <th class="text-center"><?php echo $this->translate("Channel") ?></th>
+                                        <th class="text-center"><?php echo $this->translate("IP") ?></th>
+                                        <th class="text-center"><?php echo $this->translate("Latency") ?></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php
+                                    foreach ($this->peers as $key => $value) { ?>
+                                    
+                                        <tr>
+                                            <td class="text-center"><?php echo $value['name'] ?></td>
+                                            <td class="text-center"><?php echo $value['callerid'] ?></td>
+                                            <td class="text-center"><?php echo $value['canal'] ?></td>
+                                            <td class="text-center" id="<?php echo 'ip_'.$value['id'] ?>"> N.D. </td>
+                                            <td class="text-center" id="<?php echo 'peer_latency_'.$value['id'] ?>"> N.D. </td>
+                                        </tr>
+                                    <?php } ?>  
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- /Peers -->
+
+            <!-- Trunks -->
+            <div class="panel panel-default">
+                <div class="panel-heading ip-status">
+                    <h4>
+                        <a data-toggle="collapse" data-parent="#accordion" href="#collapseTwo">
+                            <button type="button" class="boxadd add_field" id="trunk" style="background-color:transparent !important;">
+                                <?php echo "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;".$this->translate("Trunks") ?>
+                            </button>
+                        </a>
+                    </h4>
+                </div>
+                <div id="collapseTwo" class="panel-collapse collapse ip-status"  style="background-color: #fff !important">
+                    <div class="panel-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="listTrunk">
+                                <thead>
+                                    <tr>
+                                        <th class="text-center"><?php echo $this->translate("Name") ?></th>
+                                        <th class="text-center"><?php echo $this->translate("IP") ?></th>
+                                        <th class="text-center"><?php echo $this->translate("Type") ?></th>
+                                        <th class="text-center"><?php echo $this->translate("Registry") ?></th>
+                                        <th class="text-center"><?php echo $this->translate("Latency") ?></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php
+                                    foreach ($this->trunks as $key => $value) { ?>
+                                        <tr>
+                                            <td class="text-center"><?php echo $value['callerid'] ?></td>
+                                            <td class="text-center" id="<?php echo 'host'.$value['id'] ?>"><?php echo $value['host'] ?></td>
+                                            <td class="text-center"><?php echo $value['type'] ?></td>
+                                            <td class="text-center" id="<?php echo 'status_'.$value['id'] ?>"> N.D. </td>
+                                            <td class="text-center" id="<?php echo 'trunk_latency_'.$value['id'] ?>"> N.D. </td>
+                                        </tr>
+                                    <?php } ?>  
+                                </tbody>
+                            </table>
+                            
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- /Trunks -->
+
+            <!-- Queues -->
+            <div class="panel panel-default">
+                <div class="panel-heading ip-status">
+                    <h4>
+                        <a data-toggle="collapse" data-parent="#accordion" href="#collapseThree">
+                            <button type="button" class="boxadd add_field" id="queue" style="background-color:transparent !important;">
+                                <?php echo "&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;".$this->translate("Queues") ?>
+                            </button>
+                        </a>
+                    </h4>
+                </div>
+                <div id="collapseThree" class="panel-collapse collapse ip-status"  style="background-color: #fff !important">
+                    <div class="panel-body">
+                        <div class="table-responsive">
+                            <table class="table table-striped" id="listQueue">
+                                <thead>
+                                    <tr>
+                                        <th class="text-center"><?php echo $this->translate("Name") ?></th>
+                                        <th class="text-center"><?php echo $this->translate("Strategy") ?></th>
+                                        <th class="text-center"><?php echo $this->translate("Members") ?></th>
+                                        <th class="text-center"><?php echo $this->translate("Calls completed") ?></th>
+                                        <th class="text-center"><?php echo $this->translate("Calls Abandoned") ?></th>
+                                    </tr>
+                                </thead>
+                                <tbody>
+                                    <?php
+                                    foreach ($this->queues as $key => $value) { ?>
+                                        <tr>
+                                            <td class="text-center"><?php echo $value['name'] ?></td>
+                                            <td class="text-center" id="<?php echo 'strategy_'.$value['name'] ?>"></td>
+                                            <td class="text-center" id="<?php echo 'members_'.$value['name'] ?>"></td>
+                                            <td class="text-center" id="<?php echo 'completed_'.$value['name'] ?>"></td>
+                                            <td class="text-center" id="<?php echo 'abandoned_'.$value['name'] ?>"></td>
+                                        </tr>
+                                    <?php } ?>
+                                </tbody>
+                            </table>
+                            
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <!-- /Queues -->
+        </div>  
+    </div>  
+</div>
+
+<script type="text/javascript">
+
+    jQuery.noConflict();
+    jQuery( document ).ready(function() {
+        function populate_tables() {
+            jQuery.ajax({
+                url:'/snep/includes/ip_status_trunks.php',
+                dataType:'json',
+                success: function(data) {
+                    for(i=0; i < data.length; i++){
+                        jQuery("#status_"+data[i].id).html(data[i].status) ;
+                        var lb = "label-danger";
+                        if(data[i].latencia.toUpperCase().indexOf('OK') > -1){
+                            lb = "label-success"
+                        }
+                        jQuery("#trunk_latency_"+data[i].id).html('<label class="label '+lb+'">'+data[i].latencia+'</label>') ;
+                        if (data[i].type == 'VIRTUAL') {
+                            jQuery("#host"+data[i].id).html(data[i].host) ;   
+                        }
+                        if(data[i].disabled == true){
+                            jQuery("#trunk_latency_"+data[i].id).html('<label class="label label-info"><?php echo $this->translate("Disabled") ?></label>') ;
+                        }
+                    }
+                }
+            });
+            jQuery.ajax({
+                url:'/snep/includes/ip_status_peers.php',
+                dataType:'json',
+                success: function(data) {
+                    for(i=0; i < data.length; i++){
+                        jQuery("#ip_"+data[i].id).html('<label class="badge badge-default">'+data[i].ip+'</label>') ;
+                        var lb = "label-danger";
+                        if(data[i].latencia.toUpperCase().indexOf('OK') > -1){
+                            lb = "label-success"
+                        }
+                        jQuery("#peer_latency_"+data[i].id).html('<label class="label '+lb+'">'+data[i].latencia+'</label>') ;
+                        if(data[i].disabled == true){
+                            jQuery("#peer_latency_"+data[i].id).html('<label class="label label-info"><?php echo $this->translate("Disabled") ?></label>') ;
+                        }
+                        
+                    }
+                }
+            });
+            jQuery.ajax({
+                url:'/snep/includes/ip_status_queues.php',
+                dataType:'json',
+                success: function(data) {
+                    for(i=0; i < data.length; i++){
+                        jQuery("#strategy_"+data[i].id).html(data[i].strategy) ;
+                        jQuery("#members_"+data[i].id).html('<label class="label label-info">'+data[i].members+'</label>') ;
+                        jQuery("#completed_"+data[i].id).html(data[i].completed) ;
+                        jQuery("#abandoned_"+data[i].id).html(data[i].abandoned) ;
+                    }
+                }
+            });
+            setTimeout(populate_tables, 5000);
+            
+        };
+        //setInterval(populate_tables,5000);
+        populate_tables();
+
+
+        // Changle the icon of panel titles when clicked
+        jQuery("#exten,#trunk,#queue").click(function() {
+            // Toggle clicked element
+            if(jQuery(this).hasClass('add_field')) {
+                jQuery(this).removeClass('boxadd add_field').addClass('boxremove del_field') ;
+            } else { 
+                jQuery(this).removeClass('boxremove del_field').addClass('boxadd add_field') ;
+            }
+            // Togle other elements
+            var sel=jQuery(this).attr('id') ;
+            var arr = [ 'exten','trunk','queue'] ;
+            var list = arr.splice(arr.indexOf(sel),1);
+            jQuery.each(arr,function(index,value){
+                var pid = jQuery('#'+value).parent().attr('href') ;
+                var flag = false ;
+                if (jQuery(pid).hasClass('in')) {
+                    flag = true ;
+                }
+                if(flag) {
+                    if (jQuery('#'+value).hasClass('del_field')) {
+                        jQuery('#'+value).removeClass('boxremove del_field').addClass('boxadd add_field') ;
+                    } else {
+                        jQuery('#'+value).removeClass('boxadd add_field').addClass('boxremove del_field') ;
+                    }
+                } 
+            });
+        });
+
+        jQuery('#listExtension,#listTrunk,#listQueue').dataTable( {
+            "pageLength": 100,
+            "oLanguage": {
+            "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+            },
+            "bLengthChange": false
+        });
+    });
+
+</script>

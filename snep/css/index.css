@@ -1,0 +1,163 @@
+/* 
+ *  This file is part of SNEP.
+ *  Para território Brasileiro leia LICENCA_BR.txt
+ *  All other countries read the following disclaimer
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ * CSS File - generic for any modules/default/views/scripts  
+ */
+
+table {
+    width: 100%;
+    border-collapse: collapse;
+}
+
+table .numeric, table .action {
+    text-align: center;
+}
+
+th {
+    padding-top: 5px !important;
+    padding-bottom: 5px  !important;
+    padding-left: 10px !important;
+    padding-right: 10px !important;
+}
+
+td, th {
+    border: 1px solid #A4A7AB;
+    font-size: 11px;
+    text-align: left;
+}
+
+#content {
+    padding: 0px;
+    border: none;
+    border-bottom: 1px solid #A4A7AB;
+}
+
+.links {
+    float:right;
+    padding-top: 10px;
+}
+
+.links a:hover {
+    text-decoration: underline;
+    color: #000;
+}
+
+.graphic {
+    position:absolute;
+    top:110px;
+    right:14%;
+    margin:0px;
+    padding:0px;
+}
+
+.links a {
+    display: inline-block;
+    margin: 0;
+    padding-left: 18px;
+    padding-right: 10px;
+    padding-top: 2px;
+    padding-bottom: 2px;
+    font-family: Verdana, Arial, Helvetica, sans-serif;
+    font-size: 12px;
+    color: #696969;
+    font-weight: bold;
+    text-decoration: none;
+}
+
+.links .remove {
+    background: url("../images/menos.png") no-repeat center left;
+}
+
+.links .include {
+    background: url("../images/include.png") no-repeat center left;
+}
+.links .back {
+    background: url("../images/back.png") no-repeat center left;
+}
+
+.links .refresh {
+    background: url("../images/refresh.png") no-repeat center left;
+}
+
+.links .includes {
+    background: url("../images/include_all.png") no-repeat center left;
+}
+
+.filtros {
+    background-color: #F8F8F8;
+    border: 1px solid #CDCDCD;
+    padding: 0px 4px 0px 4px;
+    border-radius: 5px;
+    -moz-border-radius: 5px;
+    -webkit-border-radius: 5px;
+    margin-bottom: 10px;
+    height:37px;
+}
+
+.filtros .zend_form {
+    margin: 0px;
+    padding: 5px 5px 0px 5px;
+    height: 37px;
+}
+
+.boards_khomp {
+   font-size: 18px;
+   font-variant: small-caps ;
+   text-align: left;
+   color: #000000 ;
+   font-weight: bolder ;
+   font-family: Verdana, Arial, Helvetica,sans-serif;
+   border: 1px solid #a4a7ab;
+   background-color : #FFD202;
+   padding-left: 20px;
+}
+.links_khomp {
+   font-size: 12px;
+   font-variant: small-caps ;
+   color: #000000 ;
+   font-weight: bolder ;
+   font-family: Verdana, Arial, Helvetica,sans-serif;
+   border: 1px solid #a4a7ab;
+   text-align: center ;
+   background-color : #FFFFFF;
+   line-height: 20px;
+
+}
+.links_sint {
+   font-size: 11px;
+   font-variant: small-caps ;
+   color: #000 ;
+   font-weight: lighter ;
+   font-family: Verdana, Arial, Helvetica,sans-serif;
+   border: 1px solid #a4a7ab;
+   text-align: center ;
+   background-color: #fff9c4 !important;
+   line-height: 20px;
+}
+
+.tb_tit2 {
+   border: 1px solid #a4a7ab;
+   font-weight: bold ;
+   position: static ;
+   background-color : #fffa7c ;
+   text-align : center;
+}
+
+.bold {
+  font-weight: bold;
+}

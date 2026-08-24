@@ -1,0 +1,53 @@
+<div class="row">
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "contact-groups", "action" => "migration"), null, true); ?>" METHOD="post">
+
+        <div class="col-lg-4">
+            <div class="panel panel-green">
+                <div class="panel-heading">
+                    <?php echo $this->translate("Migrate Extension Group");?>
+                </div>
+                <div class="panel-body" align="center">
+                    <p><?php echo $this->message ?></p>
+                </div>
+
+                <div class="form-group">
+                    <label class="col-sm-2 control-label"><?php echo $this->translate("Group contacts ");?></label>
+
+                    <label class="radio-inline">
+                        <input type="radio" name="option" id="migrate" value="migrate" checked ><?php echo $this->translate("Migrate contacts to Group");?>
+                    </label>
+
+                    <label class="radio-inline">
+                        <input type="radio" name="option" id="remove" value="remove"><?php echo $this->translate("Remove All");?>
+                    </label>
+
+                </div>
+
+                <div class="form-group">
+
+                    <label class="col-sm-2 control-label"><?php echo $this->translate("Extension Group");?></label>
+                    <div class="col-sm-8">
+                        <select class="form-control" name="group" id="group" >
+                            <?php foreach($this->groups as $key => $group){ ?>
+                                <option><?php echo $group;?></option>
+                            <?php } ?>
+                        </select>
+                    </div>
+                </div>
+
+                <input type="hidden" name="id" value="<?php echo $this->id; ?>">
+                
+            </div>
+        </div>
+
+        <br>
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="Save"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+            <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>   
+    </form>
+</row>
+
+
+

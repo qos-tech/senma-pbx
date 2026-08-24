@@ -1,0 +1,51 @@
+<!--
+
+Class containing help text of the contacts
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Opens Tecnologia <desenvolvimento@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Contacts - Add / Edit </h2>
+
+        Fill out the form correctly with the contato.Os fields of information <strong>name and phone</strong> are required.
+        <br><br><strong>Código:</strong>
+        Identify the Contact the register. The system automatically fills a code.
+        <br><strong>Name:</strong>Contact identifier name.
+        <br><strong>Group:</strong>Contact group it will belong.
+        <br><strong>Address, City, State And Zip Code:</strong>The contact address data.
+        <br><strong>Phone:</strong>Identifies the telephone Contact. You can register multiple numbers the user.
+        <br>
+
+        <h2>Contacts - Import CSV File</h2>
+
+        This routine allows from a file in .csv format, a contact list can be imported into the system. After selecting the file and click "Send", a screen with the fields detected in the file .csv will be presented. 
+        It is necessary to relate each field with said contact master field. The first line is called the "header line" that identifies each column of the file and the others are the data lines. The comma separates each field and even if there is data to it, it must be present.
+        <br><strong>Example:</strong> name,zipcode,city,estate,phone 
+        <br>Pedro da Silva,80123333,Curitiba,PR,041991122234 
+        <br>Carlos Fagundes,,Criciuma,SC,04878900012
+
+        <h2>Contacts - Export CSV File</h2>
+        This routine export contacts to a .csv file. You can export all contacts or specifically for a particular group.
+
+        <h2>Contacts - Remove multiple</h2>
+        This routine deletes all contacts in the selected group.
+        <br>
+        
+        <h2>Contacts - Shortcut on the links</h2>
+        The Snep has a feature links to contacts. When dialing * 12 + contact code is made the connection to the first number linked to this contact.
+        <br><strong>For example:</strong> There is contact A which has the code 1 and has on file phones
+        4899999999 and 4899888888. When dialing the phone * 121 the connection is made to the number 4899999999.
+        <br>
+        
+    </body>
+</html>

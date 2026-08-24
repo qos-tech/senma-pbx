@@ -1,0 +1,86 @@
+<?php 
+$this->headLink()->appendStylesheet( $this->baseUrl() . "/css/bootstrap-duallistbox.css" );
+?>
+<script type="text/javascript" src="/snep/includes/javascript/jquery.bootstrap-duallistbox.js"></script>  
+
+<div class="row">
+                
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "profiles", "action" => $this->action), null, false); ?>" method="post">
+        
+        <div class="form-group">
+            <label class="col-sm-1 control-label" style="text-align: left !important;" for="name"><?php echo $this->translate("Name");?></label>
+            <div class="col-sm-4">
+                <input type="text" class="form-control" name="name" placeholder='<?php echo $this->translate("Name")?>' value="<?php echo $this->profile['name']; ?>"/>
+            </div>
+        </div>
+
+        <fieldset>
+            <legend><?php echo $this->translate("Members")?></legend>
+
+            <select multiple="multiple" size="10" name="duallistbox_profile[]" id="select">
+               
+                <?php foreach($this->usersAll as $y => $userAll){ ?>      
+                    <option value="<?php echo $y;?>"><?php echo $userAll;?></option>
+                <?php }?>
+                
+                <?php foreach($this->userProfiles as $x => $userProfile){?>
+                    <option value="<?php echo $x;?>" selected="selected"><?php echo $userProfile;?></option>
+                <?php } ?>
+            </select>
+        </fieldset>
+        
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="save"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+        	<a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+    </form>
+</div>
+
+<script type="text/javascript">
+  jQuery.noConflict();
+    var profile = jQuery('select[name="duallistbox_profile[]"]').bootstrapDualListbox({
+        selectedListLabel: "<?php echo $this->translate('In group'); ?>" ,
+        nonSelectedListLabel: "<?php echo $this->translate('Available'); ?>",
+        infoText: "<?php echo $this->translate('Showing all '); ?> {0}"
+    });
+
+
+    jQuery("#defaultForm").submit(function() {
+        return true;
+    });
+
+jQuery.noConflict();
+jQuery(document).ready(function(){ 
+    jQuery('#defaultForm').validate({
+        rules: {
+            name: {
+                required: true,
+                minlength: 5,
+                maxlength: 30,
+                lettersOnly: true
+            }
+        },
+        messages: {
+            name: {
+                required: "<?php echo $this->translate('The name is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                lettersOnly: "<?php echo $this->translate('Letters only please'); ?>" 
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+}); 
+</script>
+
+
+
+

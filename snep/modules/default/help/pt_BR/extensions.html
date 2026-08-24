@@ -1,0 +1,105 @@
+<!--
+
+Class containing help text of the extensions
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Ramais - Incluir / Editar</h2>
+
+        Esta rotina permite o cadastro/edição de um ramal no sistema. 
+        <br>Os ramais cadastrados devem estar entre a marge de variação do range de 
+        ramais configurado nos parâmetros do sistema.
+        <br><br><strong>Ramal:</strong> Define o código que identificará o ramal. 
+        <br><strong>Grupo de Ramal:</strong>
+        Define o grupo de Ramais qual o ramal pertence
+        <br><strong>Grupo de Captura:</strong> 
+        Grupo de Captura do qual o Ramal fará parte. Ramais 
+        em um mesmo grupo de captura permitem-se capturar ligaços uns dos outros.
+
+        <br><br><strong>TECNOLOGIA DE INTERFACE</strong>
+        <br><strong>Tecnologia: </strong> 
+        Define qual tecnologia de canal o ramal irá usar para fazer/receber ligações.
+        <br><strong>SIP/IAX: </strong>
+        Canais com tecnologia SIP ou IAX.
+        <br><strong>Khomp: </strong> 
+        Ramais de tecnologia Khomp.
+        <br><strong>Virtual:</strong> 
+        Ramais com interfaces virtuais são mapeados em um 
+        tronco. Ao selecionar um tronco para a interface virtual do ramal, a ligação 
+        para ele será feita discando através do tronco para o numero do ramal.
+        <br><strong>Manual: </strong> 
+        Permite especificar qual canal/tecnologia será utlizada na 
+        criação do ramal .
+
+        <br><br><strong>OPÇÕES SIP / IAX</strong>
+        <br><strong>Limite de chamadas simultâneas: </strong> 
+        Define o número máximo de chamadas simultaneas para este ramal.
+        <br><strong>NAT: </strong> 
+        Define se a conexão do Ramal irá ou não através um NAT.
+        <br><strong>Controle de qualidade: </strong> 
+        Define se haverá ou não controle de qualidade nas ligações do Ramal.
+        <br><strong>Direct media:</strong> 
+        Define passagem ou não dos pacotes RTP pelo Asterisk.
+        <br><strong>Modo de DTMF: </strong> 
+        Define o tipo de tons freqüência utilizados na discagem.
+        <br><strong>CODECS: </strong>
+        Define a sequência dos CODECS que serão preferidos para o Ramal.
+
+        <br><br><strong>OPÇÃO KHOMP</strong>
+        <br><strong>Placa: </strong> 
+        Define quais das placas existentes no sistema o ramal fará parte.
+        <br><strong>Canal: </strong> 
+        Define qual canal da placa selecionada.
+
+        <br><br><strong>OPÇÃO VIRTUAL</strong>
+        <br><strong>Tronco: </strong>
+        Define o tronco a ser mapeado.
+
+        <br><br><strong>OPÇÃO MANUAL</strong>
+        <br><strong>Manual: </strong>
+        Define o canal/tecnologia a ser utilizado.
+
+        <br><br><strong>AVANÇADO</strong>
+        <br><strong>Correio de voz: </strong> 
+        Define se o Ramal vai ou não utilizar Correio de Voz.
+        <br><strong>E-mail: </strong> 
+        Define um e-mail para o Ramal.
+        <br><strong>Bloqueio: </strong>
+        Cadeado para o ramal. Permite ou não efetuar chamadas.
+        <br><strong>Habilitar o siga-me: </strong>
+        Permite que o ramal possa efetuar o siga-me.
+        <br><strong>Controle de Minutos: </strong>
+        Define se vai ser estipulado um tempo para as ligações desse 
+        ramal ou não.
+        <br><strong>Tempo Total: </strong> 
+        Tempo total que o ramal pode ficar em ligação.
+        <br><strong>Tipo de Controle: </strong> 
+        Define se os minutos são controlados por ano, mes ou dia.
+        <br>
+
+        <h2>Ramais - Exportar CSV</h2>
+
+        Esta rotina exporta dados dos ramais cadastrados para um arquivo .csv. 
+
+        <h2>Contatos - Incluir ramais</h2>
+
+        Esta rotina inclui um range de ramais. O range pode ser separado 
+        por -(hifen) ou ;(ponto e virgula).
+        <br>Exemplo de ranges: 
+        <br>1000-1002 -> O sistema irá cadastrar os ramais 1000,1001 e 1002. 
+        <br>1000;1002 -> O sistema irá cadastrar os ramais 1000 e 1002.
+        <br>
+
+    </body>
+</html>

@@ -1,0 +1,150 @@
+/*
+ *  This file is part of SNEP.
+ *  Para território Brasileiro leia LICENCA_BR.txt
+ *  All other countries read the following disclaimer
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  CSS File for rule simulator (modules/default/views/scripts/simulator)
+ */
+
+.error {
+  background-color: #ffeded;
+  border: 1px solid red;
+  padding: 5px;
+}
+
+form {
+  text-align: center;
+  padding: 5px;
+}
+
+label {
+  margin: 0px 5px;
+}
+
+
+/**
+ * Estilos para a lista de regras
+ */
+
+#input {
+  list-style: none;
+  padding: 0px;
+  margin: 5px;
+  text-align: center;
+}
+
+#input li {
+  display: inline;
+  margin: 0px 10px;
+}
+
+#results {
+  margin: 0px !important;
+}
+
+#results,
+#results ul {
+  list-style: none;
+  padding: 0px;
+  margin: 0px;
+}
+
+.rule {
+  padding: 20px 10px;
+}
+
+
+/**
+ * Tipos de regra
+ */
+
+.ignored {
+  color: #b3b3b3;
+  background-color: #f2f2f2;
+  border: 1px solid #ddd;
+  border-left: 10px solid #CCBABB;
+  border-radius: 20px;
+  margin-bottom: 2px;
+}
+
+.inactive {
+  color: #585858;
+  background-color: #F3E2A9;
+  border: 1px solid #ddd;
+  border-left: 10px solid #FF8000;
+  border-radius: 20px;
+  margin-bottom: 2px;
+}
+
+.torun {
+  background-color: #CBFFCB;
+  border: 1px solid #ddd;
+  border-left: 10px solid #8BE98A;
+  border-radius: 20px;
+  margin-bottom: 2px;
+}
+
+.outdated {
+  color: #b3b3b3;
+  background-color: #ffeded;
+  border: 1px solid #ddd;
+  border-left: 10px solid #F46770;
+  border-radius: 20px;
+  margin-bottom: 2px;
+}
+
+.outdated .valid {
+  font-weight: bold;
+  color: red;
+}
+
+.desc {
+  font-weight: bold;
+}
+
+.execute {
+  margin-top: -5px !important;
+  padding-top: 0px !important;
+  float: right;
+  width: 400px;
+}
+
+.execute ul {
+  margin-left: 15px !important;
+}
+
+.deny {
+  font-weight: bold;
+  color: red;
+}
+
+
+/**
+ * Regras para a lista de legendas
+ */
+
+#legenda {
+  list-style: none;
+  text-align: center;
+  margin: 0px;
+  padding: 10px;
+}
+
+#legenda li {
+  color: #000 !important;
+  display: inline;
+  padding: 5px;
+}

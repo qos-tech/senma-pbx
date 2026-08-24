@@ -1,0 +1,104 @@
+<?php
+$this->headLink()->appendStylesheet( $this->baseUrl() . "/css/agi_rules.css" );
+$this->headLink()->appendStylesheet( $this->baseUrl() . "/css/route.css" );
+$this->headLink()->appendStylesheet( $this->baseUrl() . "/css/services.css" );
+
+?>
+
+<script src="/snep/includes/javascript/prototype.js" type="text/javascript"></script>
+<script src="/snep/includes/javascript/scriptaculous/lib/prototype.js" type="text/javascript"></script>
+<script src="/snep/includes/javascript/scriptaculous/src/scriptaculous.js" type="text/javascript"></script>
+<script src="/snep/includes/javascript/snep-env.js.php" type="text/javascript"></script>
+<script src="/snep/includes/javascript/snep.js" type="text/javascript"></script>
+<script src="/snep/includes/javascript/agi_rules.js" type="text/javascript"></script>
+
+
+ <div class='row'>
+
+    <?php echo $this->form; ?>
+</div>
+
+<script language="javascript" type="text/javascript">
+/**
+ * Prototype for Dates field
+ */
+function DatesField(id) {
+     this.id        = id;
+     this.value = "";
+
+     this.render = function() {
+         $(this.id).innerHTML = this.getHtml(this.lastReference);
+     };
+
+     this.getHtml = function(objReference) {
+         this.lastReference = objReference;
+         var html = '<span id="' + this.id + '">';
+         html += ' <select class="form-control route-sm-3" onchange="' + objReference + '.value = this.value;">';
+         var selected = false;
+         for(i=0; i < dates_list.length; i++) {
+             if(dates_list[i][0] === this.value) {
+                 html += '<option selected="selected" value="' + dates_list[i][0] + '">';
+                 selected = true;
+             }else {
+                 html += '<option value="' + dates_list[i][0] + '">';
+             }
+             html += dates_list[i][1] + '</option>';
+         }
+         if ( selected === false ) {
+           html += ' <option value="0" selected="selected">Always</option>';
+         }else{
+           html += ' <option value="0">Always</option>';
+         }
+
+         html += "</select>";
+         return html;
+     };
+     this.getValue = function() {
+         return this.value;
+     };
+ }
+    <?php echo $this->rule_actions; ?>
+
+    var group_list = <?php echo $this->group_list; ?>;
+    var alias_list = <?php echo $this->alias_list; ?>;
+    var dates_list = <?php echo $this->dates_list; ?>;
+    var trunk_list = <?php echo $this->trunk_list; ?>;
+    var contacts_group_list = <?php echo $this->contact_groups_list; ?>;
+
+    var str_any = "<?php echo $this->translate("Any"); ?>";
+    var str_regex = "<?php echo $this->translate("Regular Expression"); ?>";
+    var str_group = "<?php echo $this->translate("Extension Group"); ?>";
+    var str_contacts_group = "<?php echo $this->translate("Contact Group"); ?>";
+
+    var str_ramal = "<?php echo $this->translate("Extension"); ?>";
+    var str_trunk = "<?php echo $this->translate("Trunk"); ?>";
+    var str_s     = "<?php echo $this->translate("No Destiny"); ?>";
+    var str_alias = "<?php echo $this->translate("Expression Alias"); ?>";
+
+    window.onload = function() {
+        origObj = new MultiWx('orig', SrcField);
+        <?php echo $this->dt_agirules["src"]; ?>
+        origObj.render();
+
+        dstObj = new MultiWx('dst', DstField);
+        <?php echo $this->dt_agirules["dst"]; ?>
+        dstObj.render();
+
+        datesObj = new MultiWx('dates', DatesField);
+        <?php echo $this->dt_agirules["dates"]; ?>
+        datesObj.render();
+
+        timeObj = new MultiWx('time', TimeField);
+        <?php echo $this->dt_agirules["time"]; ?>
+        timeObj.render();
+    }
+
+    function atualizaValues() {
+        $('srcValue').value  = origObj.getValue();
+        $('dstValue').value  = dstObj.getValue();
+        $('datesValue').value  = datesObj.getValue();
+        $('timeValue').value = timeObj.getValue();
+    }
+
+    Event.observe($('routeForm'), 'submit', atualizaValues);
+</script>

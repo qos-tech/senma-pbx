@@ -1,0 +1,71 @@
+<!--
+
+Class containing help text of the billing
+*
+* @category  Snep
+* @package   Snep
+* @copyright Copyright (c) 2014 OpenS Tecnologia
+* @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
+*
+-->
+
+<html>
+    <head>
+        <title></title>
+        <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+    </head>
+    <body>
+        <h2>Tarifas - Incluir </h2>
+
+        Esta rotina permite que uma tarifa seja cadastrada no sistema.
+
+        <br><br><strong>Operadora: </strong>Define o nome da Operadora.
+        <br><strong>Pais: </strong>Define o nome do país.
+        <br><strong>Estado: </strong>Define a Sigla do Estado.
+        <br><strong>Cidade: </strong>Define o nome do cidade , baseado no estado escolhido.
+        <br><strong>Código do País: </strong>Define o código DDI do país informado.
+        <br><strong>Código da Cidade: </strong>Define o código DDD da cidade escolhida.
+        <br><strong>Prefixo: </strong>
+        Define o prefixo de telefones , da cidade escolhida sobre o qual incidirá 
+        a tarifa a ser informada. Caso a tarifa seja a mesma para todos os prefixos,
+        informe o valor 0000 neste campo.
+        <br><strong>Tarifa para Fixo:</strong> 
+        Define o valor da tarifa padrão para chamadas a telefones fixos.
+        <br><strong>Tarifa para Celular:</strong> 
+        Define o valor da tarifa padrão para chamadas a telefones celulares.
+        <br><br><strong>Regras Gerais</strong>
+        <br>Os valores padrão (Fixo e Móvel) para cada operadora é informado em seu cadastro.
+        Para ajustar os valores padrão, deixe os campos com os seguintes dados:
+
+        <br><strong>Estado:</strong> ---
+        <br><strong>Cidade:</strong> Selecione
+        <br><strong>Codigo da Cidade:</strong> 0
+        <br><strong>Prefixo:</strong> 0000
+
+        <br>O cadastro de tarifação deve seguir estas 3 regras:
+        <br>1 - Se cidades diferentes tem diferentes valores, 
+        independentemente do PREFIXO do destino, uma Tarifa deve ser criada, informando 
+        o DDD e o PREFIXO correto da cidade.'0000'
+        <br>2 - se a operadora tem um valor diferente para alguns 
+        PREFIXOS de uma mesma CIDADE.
+        <br>3 - Para Tarifação INTERNACIONAL, uma tarifa individual 
+        deve ser criada para cada PAÍS, prestando atenção aos seguintes detalhes:
+        <br><strong>a)</strong> Informe o Código
+        <br><strong>b)</strong> Informe o DDD = 000
+        <br><strong>c)</strong> Informe o PREFIXO = 0000
+        
+        <h2>Tarifas - Alterar</h2>
+
+        Esta rotina permite que uma tarifa tenha o seu valor alterado no sistema.
+
+        <br>A primeira caixa esta datada com o dia e a hora na qual foi inserida 
+        as devidas tarifas. Você tem a opção de Editar essas tarifas, fazendo com 
+        que nos relatórios as tarifas mudem para esse valor, mesmo aquelas 
+        ligações que ja tenham sido feitas. 
+        <br>Poderá também fazer um novo ajuste na caixa abaixo, acionando o botão 
+        Adicionar, fazendo que a partir da data de hoje as ligações sejam tarifadas 
+        com o valor novo, e as antigas permanecerão com o valor antigo.
+        <br>
+    </body>
+</html>
+

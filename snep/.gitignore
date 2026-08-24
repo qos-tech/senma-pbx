@@ -1,0 +1,6 @@
+/logs
+arquivos/*
+/sounds
+lib/linfo/cache/*
+atualiza-dev
+snep.sublime-workspace

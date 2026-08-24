@@ -1,0 +1,14 @@
+<?php
+$this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/scriptaculous/lib/prototype.js');
+$this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/maskCostCenter.js');
+$this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/scriptaculous/src/scriptaculous.js", 'text/javascript');
+echo $this->form
+?>
+
+<script type="text/javascript">
+    Event.observe(window, 'load', init, false);
+
+    function init() {
+        mask = new maskCostCenter('id');
+    }
+</script>

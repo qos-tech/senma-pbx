@@ -1,0 +1,293 @@
+<div class="row">
+
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "queues", "action" => $this->action), null, false); ?>" METHOD="post">
+
+        <fieldset>
+            <legend><?php echo $this->translate("General Configuration");?></legend>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Queue Name");?></label>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control" name="name" placeholder='<?php echo $this->translate("Maximum 12 characters")?>' value="<?php echo $this->queue['name']; ?>" <?php echo $this->disabled;?> />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Music On Hold Class");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="musiconhold" id="musiconhold">
+                    	<?php echo $this->musiconhold;?></option>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Ring time per agent");?></label>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control" name="timeout" placeholder='<?php echo $this->translate("In seconds")?>' value="<?php echo $this->queue['timeout']; ?>" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Music on hold loop timer");?></label>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control" name="announce_frequency" placeholder='<?php echo $this->translate("In seconds")?>' value="<?php echo $this->queue['announce_frequency']; ?>"/>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Wait time until ringing all agents again");?></label>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control" name="retry" placeholder='<?php echo $this->translate("In seconds")?>' value="<?php echo $this->queue['retry']; ?>" />
+                </div>
+            </div>
+
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Rest time for agent in between calls");?></label>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control" name="wrapuptime" placeholder='<?php echo $this->translate("In seconds")?>' value="<?php echo $this->queue['wrapuptime']; ?>"/>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Maximum number of calls waiting in the queue");?></label>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control" name="maxlen" value="<?php echo $this->queue['maxlen']; ?>"/>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Queue Service Level Agreement (Used for statistics and monitoring)");?></label>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control" name="servicelevel" placeholder='<?php echo $this->translate("In seconds")?>' value="<?php echo $this->queue['servicelevel']; ?>"/>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Call distribution strategy");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="strategy" id="strategy">
+                        <?php echo $this->strategy;?></option>
+                    </select>
+                </div>
+            </div>
+
+        </fieldset>
+
+        <fieldset>
+            <legend><?php echo $this->translate("Advanced Configurations");?></legend>
+
+        </fieldset>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Queue notice audio");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="announce" id="announce">
+                        <?php foreach($this->sounds as $key => $sound){
+                            $file_name = pathinfo($sound['arquivo'], PATHINFO_FILENAME) ;
+                        	if($file_name === $this->queue['announce']){?>
+                            	<option value='<?php echo $file_name?>' selected>
+                            <?php }else{ ?>
+                            	<option value='<?php echo $file_name?>'>
+                        	<?php }
+                            echo $sound['arquivo'] === "" ? "" : $sound['arquivo'].' ( '.$sound['descricao'].' )';?>
+                            </option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Go to Context");?></label>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control" name="context" value="<?php echo $this->queue['context']; ?>"/>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Audio: You're next");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="queue_youarenext" id="queue_youarenext">
+                        <?php foreach($this->sounds as $key => $sound){
+                            $file_name = pathinfo($sound['arquivo'], PATHINFO_FILENAME) ;
+                            if($file_name === $this->queue['queue_youarenext']){?>
+                                <option value='<?php echo $file_name?>' selected>
+                            <?php }else{ ?>
+                                <option value='<?php echo $file_name?>'>
+                            <?php }
+                            echo $sound['arquivo'] === "" ? "" : $sound['arquivo'].' ( '.$sound['descricao'].' )';?>
+                            </option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Audio: You're Here");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="queue_thereare" id="queue_thereare">
+                        <?php foreach($this->sounds as $key => $sound){
+                            $file_name = pathinfo($sound['arquivo'], PATHINFO_FILENAME) ;
+                            if($file_name === $this->queue['queue_thereare']){?>
+                                <option value='<?php echo $file_name?>' selected>
+                            <?php }else{ ?>
+                                <option value='<?php echo $file_name?>'>
+                            <?php }
+                            echo $sound['arquivo'] === "" ? "" : $sound['arquivo'].' ( '.$sound['descricao'].' )';?>
+                            </option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Audio: Number of calls waiting");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="queue_callswaiting" id="queue_callswaiting">
+                        <?php foreach($this->sounds as $key => $sound){
+                            $file_name = pathinfo($sound['arquivo'], PATHINFO_FILENAME) ;
+                            if($file_name === $this->queue['queue_callswaiting']){?>
+                                <option value='<?php echo $file_name?>' selected>
+                            <?php }else{ ?>
+                                <option value='<?php echo $file_name?>'>
+                            <?php }
+                            echo $sound['arquivo'] === "" ? "" : $sound['arquivo'].' ( '.$sound['descricao'].' )';?>
+                            </option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Audio: Thanks for waiting");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="queue_thankyou" id="queue_thankyou">
+                        <?php foreach($this->sounds as $key => $sound){
+                            $file_name = pathinfo($sound['arquivo'], PATHINFO_FILENAME) ;
+                            if($file_name === $this->queue['queue_thankyou']){?>
+                                <option value='<?php echo $file_name?>' selected>
+                            <?php }else{ ?>
+                                <option value='<?php echo $file_name?>'>
+                            <?php }
+                            echo $sound['arquivo'] === "" ? "" : $sound['arquivo'].' ( '.$sound['descricao'].' )';?>
+                            </option>
+                        <?php } ?>
+                    </select>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Report member as busy when in connection")?></label>
+                <div class="col-sm-6">
+                    <label class="radio-inline">
+                        <input type="radio" name="ringinuse" id="1" value="1" <?php echo $this->ringinuseTrue; ?> ><?php echo $this->translate("Yes");?>
+                    </label>
+
+                    <label class="radio-inline">
+                        <input type="radio" name="ringinuse" id="0" value="0" <?php echo $this->ringinuseFalse; ?> ><?php echo $this->translate("No");?>
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Users can enter the queue without Agents Present?")?></label>
+                <div class="col-sm-6">
+                    <label class="radio-inline">
+                        <input type="radio" name="joinempty" id="yes" value="yes" <?php echo $this->joinempty_yes; ?> ><?php echo $this->translate("Yes");?>
+                    </label>
+
+                    <label class="radio-inline">
+                        <input type="radio" name="joinempty" id="no" value="no" <?php echo $this->joinempty_no; ?> ><?php echo $this->translate("No");?>
+                    </label>
+
+                    <label class="radio-inline">
+                        <input type="radio" name="joinempty" id="strict" value="strict" <?php echo $this->joinempty_strict; ?>><?php echo $this->translate("Restrict");?>
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Should calls be ejected from queue if all agents logout?")?></label>
+                <div class="col-sm-6">
+                    <label class="radio-inline">
+                        <input type="radio" name="leavewhenempty" id="1" value="1" <?php echo $this->leavewhenemptyTrue; ?> ><?php echo $this->translate("Yes");?>
+                    </label>
+
+                    <label class="radio-inline">
+                        <input type="radio" name="leavewhenempty" id="0" value="0" <?php echo $this->leavewhenemptyFalse; ?> ><?php echo $this->translate("No");?>
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Warn agent the time that call waited in queue")?></label>
+                <div class="col-sm-6">
+                    <label class="radio-inline">
+                        <input type="radio" name="reportholdtime" id="1" value="1" <?php echo $this->reportholdtimeTrue; ?> ><?php echo $this->translate("Yes");?>
+                    </label>
+
+                    <label class="radio-inline">
+                        <input type="radio" name="reportholdtime" id="0" value="0" <?php echo $this->reportholdtimeFalse; ?> ><?php echo $this->translate("No");?>
+                    </label>
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Silent time before connecting the agent to a caller");?></label>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control" name="memberdelay" placeholder='<?php echo $this->translate("In seconds")?>' value="<?php echo $this->queue['memberdelay']; ?>" />
+                </div>
+            </div>
+
+            <div class="form-group">
+                <label class="col-sm-5 control-label"><?php echo $this->translate("Queue Priority");?></label>
+                <div class="col-sm-6">
+                    <input type="text" class="form-control" name="weight" value="<?php echo $this->queue['weight']; ?>" />
+                </div>
+            </div>
+
+        <br>
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="Save"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+        	<a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+
+            </div>
+        </div>
+        <br>
+    </form>
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(document).ready(function(){
+    jQuery('#defaultForm').validate({
+        rules: {
+            name: {
+                required: true,
+                minlength: 1,
+                maxlength: 12,
+                lettersOnly: true
+            }
+        },
+        messages: {
+            name: {
+                required: "<?php echo $this->translate('The name is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                lettersOnly: "<?php echo $this->translate('Please enter letters only.'); ?>"
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+});
+</script>

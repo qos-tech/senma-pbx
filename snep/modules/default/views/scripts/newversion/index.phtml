@@ -1,0 +1,28 @@
+<div class="row>">
+    <div class="col-lg-12">
+        <div class="panel panel-orange">
+            <div class="panel-heading">
+                <?php echo $this->translate("Changelog and Howto update");?>
+            </div>
+            <div class="panel-body">
+                <?php echo $this->changelog; ?>
+            </div>
+            <?php if($this->debian){
+              ?>
+            <div class="panel-body">
+                <?php echo $this->translate("To update your version just run in a terminal:"); ?>
+            </div>
+            <div class="panel-body normal">
+              <i>bash~#</i> apt-get update && apt-get install snep
+            </div>
+            <?php }else{
+              ?>
+              <div class="panel-body">
+                  <?php echo $this->translate("You can get it <a target=_blank href='http://www.sneppbx.com'>here</a>."); ?>
+              </div>
+              <?php
+            }
+              ?>
+        </div>
+    </div>
+</div> <!-- /.row -->

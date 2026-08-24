@@ -1,0 +1,267 @@
+/* 
+ *  This file is part of SNEP.
+ *  Para território Brasileiro leia LICENCA_BR.txt
+ *  All other countries read the following disclaimer
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  CSS File for Routes (modules/default/views/scripts/route)
+ */
+
+
+.tabela_regra_negocio {
+    margin-bottom: 10px;
+}
+
+.tabela_regra_negocio th {
+    text-align: right;
+    width: 150px;
+    vertical-align: top;
+    padding-top: 7px;
+}
+
+/* Reseting */
+.tabela_regra_negocio,
+.tabela_regra_negocio tr,
+.tabela_regra_negocio td,
+.tabela_regra_negocio th {
+    border: none;
+}
+
+#actions,
+#actions tr,
+#actions th,
+#actions td {
+    padding: 0px;
+    margin: 0px;
+}
+
+#main_container {
+    padding: 10px;
+}
+
+#actions_toolbar {
+    border:solid 1px #CCC;
+	border-radius:5px;
+	margin-bottom: 5px;
+    padding: 5px 5px 5px 10px;
+	font-size: 16px;
+	color: #333;
+}
+
+#actions_toolbar button {
+    background-color: #FFF;
+	border:solid 1px #CCC;
+	border-radius:5px;
+    padding: 8px;
+	cursor: pointer;
+}
+#actions_toolbar button[disabled] {
+	cursor: default;
+}
+#loader_icon {
+    float: right;
+    padding: 4px;
+    display: none;
+}
+
+#actions, #actions-list-scrollable {
+    height: 400px;
+}
+
+#actions {
+    width: 100%;
+	background-color: #FFF;
+	border:solid 1px #CCC;
+	border-radius:5px;
+	margin-bottom: 5px;
+    padding: 5px;
+    margin-top: 15px;
+    border-spacing: 5px;
+    border-collapse: separate;
+}
+
+#actions tr {
+    padding: 0px;
+    margin: 0px;
+
+}
+
+#actions td, #actions th {
+    margin: 0px;
+    padding: 0px;
+    border: none;
+}
+
+#actions th {
+    text-align: left;
+    font-size: 14px;
+    vertical-align: middle;
+    height: 30px;
+    padding-left: 5px;
+    font-family: sans-serif;
+    color: #333;
+    width: auto;
+    max-width: 300px;
+}
+
+#actions td {
+    vertical-align: top;
+}
+#actions td table tr {
+    vertical-align: middle;
+    line-height: 34px;
+}
+#actions td select,
+#actions td table tr td input[type="text"]{
+ margin-left: 5px;
+    padding: 6px 12px;
+    border: 1px solid #ccc;
+    border-radius: 4px;
+    line-height: 1.42857;
+    font-size: 12px;
+    box-shadow: 0 1px 1px rgba(0, 0, 0, 0.075) inset;
+    color: #555;
+}
+#actions td table tr td p {
+    line-height: 1.42857;
+    padding: 6px 12px;
+    font-size: 12px;
+    margin: 0;
+}
+#actions td table tr td input[type="checkbox"] {
+    margin-top: 7px;
+}
+#actions-list-container {
+    padding: 0px !important;
+    width: 250px;
+}
+
+#actions-config th {
+    background: transparent;
+    padding-top: 5px;
+}
+
+#actions-config td, #actions-config tr, #actions-config th, #actions-config table {
+    border: none;
+    font-size: 14px;
+    color: #333;
+    vertical-align: middle;
+}
+
+#actions-config td label{
+    font-weight: normal !important;
+    margin-right: 15px;
+}
+
+#actions-config{
+    background-color: #F3F3F3;	
+    border: 1px solid #DDD !important;
+	border-radius:5px;
+}
+
+#actions-config input {
+    font-size: 12px;
+    float: left;
+    margin-right: 10px;
+}
+
+#actions-config input[type="checkbox"],
+#actions-config input[type="radio"]{
+   margin: 0 5px 0 0px;
+}
+
+
+.remove{
+	width: 30px;
+	height: 30px;
+	display: table;
+	background-image: url(../img/form_cancel_icon.png);
+}
+#actions-list-scrollable {
+    position: relative;
+    overflow: auto;
+    padding-bottom: 10px;
+}
+
+#actions_list {
+    list-style-position: inside;
+    padding: 0px;
+    margin: 0px;
+}
+
+#actions_list li {
+    list-style-position: inside;
+    font-family: sans-serif;
+    font-size: 12px;
+    padding: 7px 5px 7px 3px;
+    margin-bottom: 4px;
+    line-height: 20px;
+    margin-left: 2px;
+    border: 1px solid #DDD;
+    cursor: pointer;
+	/*display: table;*/
+	width: 246px;
+    vertical-align: middle;
+    border-radius: 5px;
+}
+
+#actions_list li:hover {
+    background-color: #efefef;
+}
+
+.active {
+    background-color: #F1F1F1;
+}
+
+.active:hover {
+    background-color: #DDD !important;
+}
+
+.error_box {
+    margin: 0px auto 10px auto !important;
+    padding: 10px 10px 10px 25px !important;
+    background-image: url("../img/error_16.png") !important;
+}
+
+.info_box {
+    margin: 0px auto 10px auto;
+    padding: 5px 5px 5px 24px;
+    background-image: url(../img/ico_info.png);
+    background-repeat: no-repeat;
+    background-position: left center;
+    background-color: #eeeeff;
+    border: 1px solid #A4A7AB;
+}
+#actions-config table th label{
+	font-size: 12px;
+}
+#actions-config table{
+	margin: 5px;
+	width: 98%;
+}
+#actions-config th, #actions-config td{
+	border-bottom: 1px solid #DDD;
+}
+
+.removeButton{
+    float:right;
+    background-color: transparent;
+    padding: 0;
+
+}
+
+.removeButton:hover{
+    background-color:#f1f1f1;
+}

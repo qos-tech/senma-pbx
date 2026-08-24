@@ -1,0 +1,99 @@
+<?php
+/**
+ *  This file is part of SNEP, a SNEP Module.
+ *
+ *  IVR is a copyright from Opens Tecnologia.
+ */
+
+/**
+ * Run a IVR
+ *
+ *
+ * @see PBX_Rule
+ * @see PBX_Rule_Action
+ *
+ * @category  Snep
+ * @package   PBX_Rule_Action
+ * @copyright Copyright (c) 2015 OpenS Tecnologia
+ * @author    Douglas Conrad
+ */
+class IVR extends PBX_Rule_Action {
+
+    /**
+     * @var Internacionalization
+     */
+    private $i18n;
+
+    /**
+     * Constructor
+     * @param
+     */
+    public function __construct() {
+        	$this->i18n = Zend_Registry::get("i18n");
+    }
+
+    /**
+     * Define the actions configs
+     * @param array $config
+     */
+    public function setConfig($config) {
+      $desc = (isset($this->config['desc']))?"<value>{$this->config['desc']}</value>":"";
+
+    }
+
+    /**
+     * Return the Action Name
+     * @return Action Name
+     */
+    public function getName() {
+        return $this->i18n->translate("IVR");
+    }
+
+    /**
+     * Retorna o numero da versão da classe.
+     * @return Versão da classe
+     */
+    public function getVersion() {
+        return SNEP_VERSION;
+    }
+
+    /**
+     * Return the Action Description
+     * @return
+     */
+    public function getDesc() {
+        return $this->i18n->translate("Run an IVR call flow.");
+    }
+
+    public function getDemo(){
+      $message = '<font size=6><b>Become an Official Partner to have access to this feature!</b></font>' . "<br><br>" .
+      '<font size=4>To have access to this feature you need turn on an Offical Partner.<br>
+      To known more about: <a href="http://www.opens.com.br/parceiros" target=_blank>Here</a></font>';
+      return  array("status" => "demo", "message" => $message);
+    }
+
+    /**
+     * Return a XML with all configurations needed by the Action
+     * @return String XML
+     */
+    public function getConfig() {
+        $trs = Zend_Registry::get("i18n");
+
+        return <<<XML
+<params>
+</params>
+XML;
+    }
+
+
+    /**
+     * Run the action. It is called inside the SNEP AGI.
+     *
+     * @param Asterisk_AGI $asterisk
+     * @param Asterisk_AGI_Request $request
+     */
+    public function execute($asterisk, $request) {
+
+      }
+
+}

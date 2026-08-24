@@ -1,0 +1,92 @@
+/* 
+ *  This file is part of SNEP.
+ *  Para território Brasileiro leia LICENCA_BR.txt
+ *  All other countries read the following disclaimer
+ *
+ *  SNEP is free software: you can redistribute it and/or modify
+ *  it under the terms of the GNU General Public License as published by
+ *  the Free Software Foundation, either version 3 of the License, or
+ *  (at your option) any later version.
+ *
+ *  SNEP is distributed in the hope that it will be useful,
+ *  but WITHOUT ANY WARRANTY; without even the implied warranty of
+ *  MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+ *  GNU General Public License for more details.
+ *
+ *  You should have received a copy of the GNU General Public License
+ *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
+ *
+ *  CSS File for Dashboard (modules/default/views/scripts/index)
+ */
+
+.dashboard {
+	display:table;
+	list-style-type: none;
+	margin:10px;
+}
+.dashboard a{
+	border-radius:5px;
+	width:265px;
+	height:65px;
+	float:left;
+	padding:15px 0px 0px 15px;
+	background-color:#FFFFFF;
+	margin:15px;
+	color:#555;
+	font-size: 10px;
+	position:relative;
+	display: block;
+    box-shadow: 0 1px 5px rgba(100, 100, 100, 0.6);
+	background-image: url(../img/background_dashboard_item.png);
+}
+.dashboard a img{
+	float:left;
+	margin-right:10px;
+}
+.dashboard a span{
+	font-size: 20px;
+}
+.dashboard .remover{
+	background-image: url(../img/close_shortcut_dashboard.png);
+	width: 32px;
+	height: 32px;
+	position: absolute;
+	top: -10px;
+	left:260px;	
+}
+.form .coluna{
+	float:left;
+	width: 195px;
+	margin: 20px;
+}
+.form .item{
+	margin: 10px 10px 10px 20px;
+	display: table;
+}
+#addDashboard .item label{
+	width: 120px;
+}
+.form .filter .item{
+	margin: 10px 10px 10px 20px;
+	display: table;
+	float: left;
+}
+.form .filter{
+	margin-left: 25px;
+	display: table;
+	width: 900px;
+}
+.form .title{
+	margin: 10px 10px 10px 20px;
+	display: table;
+	font-size: 20px;
+}
+.form label{
+	margin-top: 4px;
+	margin-left: 10px;
+	display: block;
+	float: left;
+}
+.form a{
+	float: left;
+}

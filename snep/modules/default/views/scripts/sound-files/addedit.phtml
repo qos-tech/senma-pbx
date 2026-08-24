@@ -1,0 +1,97 @@
+<!--
+  * View to render add/edit form sound files 
+  *
+  * @parameter <string> action : Define a action. Valid values: add, edit
+  * @parameter <array> file : Data for edit action
+  * 
+  * This file is part of SNEP.
+-->
+
+<div class="row">
+                
+    <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "sound-files", "action" => $this->action), null, true); ?>" method="post" enctype="multipart/form-data">
+        
+        <div class="form-group">
+            <label class="col-sm-3 control-label" for="inputFile"><?php echo $this->translate("Select the File");?></label>
+                <div class="col-sm-6">
+                    <input type="file" id="inputFile" name="inputFile" value='<?php echo $this->sound['arquivo'];?>'  >
+                 </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-3 control-label"><?php echo $this->translate("Description");?></label>
+            <div class="col-sm-6">
+                <input type="text" class="form-control" name="description" id="description" placeholder='<?php echo $this->translate("Description")?>' value='<?php echo $this->sound['descricao'];?>'/>
+            </div>
+        </div>
+
+        <div class="form-group">
+            <label class="col-sm-3 control-label"><?php echo $this->translate("Converte to GSM")?></label>
+            <div class="col-sm-6">
+                <div class="checkbox">
+                    <label>
+                        <input type="checkbox" name="gsm" id="gsm"/><?php echo $this->translate("Yes")?>
+                    </label>
+                </div>
+            </div>
+        </div>
+
+        <!-- Used for moh files -->
+        <input type="hidden" name="section" value="<?php echo $this->section; ?>">
+        <!-- Used to control tro edit -->
+        <input type="hidden" name="arquivo" id="arquivo" value='<?php echo $this->sound['arquivo'];?>'>
+
+        <br>
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="Save"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+            <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+        </div>
+    </form>
+
+</div> <!-- /.row -->
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+jQuery(document).ready(function(){ 
+    jQuery('#defaultForm').validate({
+        rules: {
+            <?php if ($this->action === 'add') : ?>
+            inputFile: {
+                required: true, 
+            },
+            <?php endif ?>
+            description: {
+                required: true,
+                minlength: 1,
+                maxlength: 80
+            }
+        },
+        messages: {
+            inputFile: {
+                required: "<?php echo $this->translate('The file is required'); ?>" 
+            },
+            description: {
+                required: "<?php echo $this->translate('The description is required'); ?>",
+                minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>", 
+                maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
+                lettersAndNumbersOnly: "<?php echo $this->translate('Please enter letters and numbers only'); ?>" 
+            }
+        },
+        highlight: function(element) {
+            jQuery(element).closest('.control-group').removeClass('success').addClass('error');
+        },
+        success: function(element) {
+            element
+            .text('OK!').addClass('valid')
+            .closest('.control-group').removeClass('error').addClass('success');
+        }
+    });
+    jQuery('#inputFile').change(function() {
+        var filename = jQuery(this).val();
+        jQuery('#description').val(filename);
+    });
+}); 
+
+</script>

@@ -1,0 +1,51 @@
+<div class="row">
+  <div class="tab-content">
+    <div class="tab-pane active" id="demo">
+      <?php if($this->key){ ?>
+        <div class="snep-body-top-buttons">
+          <div class="snep-body-search">
+            <?php if($this->key){ echo ""; ?>
+              <a class='sn-dash-add' href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>"></a>
+            <?php } ?>
+          </div>
+        </div>
+      <?php } ?>
+
+      <table class="table table-striped" id="listtable">
+        <thead>
+          <tr>
+            <th><?php echo $this->translate('Name');?></th>
+            <th><?php echo $this->translate('Description');?></th>
+            <th class='text-center'><?php echo $this->translate('Actions');?></th>
+          </tr>
+          </thead>
+          <tbody>
+            <?php foreach ($this->infoAcoes as $value) { ?>
+              <tr>
+                <td><?php echo $this->translate($value['name']) ?></td>
+                <td><?php echo $this->translate($value['description']) ?></td>
+                <td align="center"><a class="btn btn-add btn-sm"  href='<?php echo $this->baseUrl(); ?>/index.php/action-configs/edit/id/<?php echo $value['id'] ?>' role="button"><?php echo $this->translate('Configure')?></a></td>
+              </tr>
+            <?php } ?>
+          </tbody>
+        </table>
+      </div> 
+    </div> 
+  </div> 
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+
+jQuery(document).ready(function() {
+  jQuery('#listtable').dataTable( {
+    "pageLength": 10,
+    "oLanguage": {
+      "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+    },
+    "bLengthChange": false,
+  });
+});
+</script>
+
+

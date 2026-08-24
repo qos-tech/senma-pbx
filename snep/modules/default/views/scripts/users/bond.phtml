@@ -1,0 +1,77 @@
+<?php
+$this->headLink()->appendStylesheet( $this->baseUrl() . "/css/bootstrap-duallistbox.css" );
+?>
+<script type="text/javascript" src="/snep/includes/javascript/jquery.bootstrap-duallistbox.js"></script>
+
+<div class="row">
+    <form id="selectboxform" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "users", "action" => "bond"), null, false); ?>" METHOD="post">
+
+        <div class="form-group">
+            <label class="col-sm-1 control-label"  style="text-align: left !important;" for="name"><?php echo $this->translate("Name");?></label>
+            <div class="col-sm-4">
+                <input type="text" class="form-control" name="name"  value="<?php echo $this->user_name; ?>" disabled />
+            </div>
+        </div>
+        <fieldset>
+            <legend><?php echo $this->translate("Bond")?></legend>
+
+        <div class="form-group">
+            <label class="col-sm-2 control-label"><?php echo $this->translate("Bond Option")?></label>
+            <div class="col-sm-6">
+
+                <label class="radio-inline">
+                    <input type="radio" name="bound" id="nobound" value="nobound"  <?php echo $this->typeNobond; ?>><?php echo $this->translate("No Allow Viewing");?>
+                </label>
+
+                <label class="radio-inline">
+                    <input type="radio" name="bound" id="bound" value="bound" <?php echo $this->typeBond; ?>><?php echo $this->translate("Allow Viewing");?>
+                </label>
+
+            </div>
+        </div>
+
+        <select multiple="multiple" size="10" name="duallistbox_bond[]" id="select">
+
+                <?php foreach($this->peers as $y => $peer){ ?>
+                    <option value="<?php echo $peer['exten'];?>"><?php echo $peer['exten'];?></option>
+                <?php }?>
+
+                <?php foreach($this->selected as $x => $select){?>
+                    <option value="<?php echo $select['name'];?>" selected="selected"><?php echo $select['name'];?></option>
+                <?php } ?>
+        </select>
+        <br>
+        <fieldset>
+            <legend><?php echo $this->translate("Special Exceptions")?></legend>
+
+            <div class="form-group">
+                <label class="col-sm-1 control-label"  style="text-align: left !important;" for="name"><?php echo $this->translate("Exceptions Permited");?></label>
+                <div class="col-sm-4">
+                    <input type="text" class="form-control" name="exceptions"  value="<?php echo $this->exceptions; ?>" placeholder='<?php echo $this->translate("Comma separated")?>'/>
+                </div>
+            </div>
+
+        <input type="hidden" name="id" id="id" value="<?php echo $this->id ?>">
+
+        </fieldset>
+        <div class="snep-body-footer-buttons">
+            <button type="submit" class="btn btn-add" name="save" value="save"><?php echo $this->translate("Save");?></button>
+            &nbsp;&nbsp;&nbsp;
+            <a class="btn btn-outline btn-add" href="javascript:window.history.go(-1)" role="button"><?php echo $this->translate("Cancel")?></a>
+
+        </div>
+    </form>
+</div>
+
+<script>
+jQuery.noConflict();
+    var profile = jQuery('select[name="duallistbox_bond[]"]').bootstrapDualListbox({
+        selectedListLabel: "<?php echo $this->translate('Selected'); ?>" ,
+        nonSelectedListLabel: "<?php echo $this->translate('Available'); ?>",
+        infoText: "<?php echo $this->translate('Showing all '); ?> {0}"
+    });
+    jQuery("#defaultForm").submit(function() {
+        return true;
+    });
+
+</script>
