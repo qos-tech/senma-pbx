@@ -77,7 +77,10 @@ class ErrorsKhompController extends Zend_Controller_Action {
             $this->renderScript('error/sneperror.phtml');
         }
 
-        while (list($key, $val) = each($lines)) {
+        // PHP 8 compatibility: each() removed in PHP 8.0; foreach is
+        // equivalent here. TASK-0002 P1-A. See
+        // docs/tasks/0002-php84-compatibility-baseline.md.
+        foreach ($lines as $key => $val) {
 
             $lin = explode(";", $val);
 
@@ -98,7 +101,10 @@ class ErrorsKhompController extends Zend_Controller_Action {
             $lines = explode("\n", $data);
             $kstatus = array();
 
-            while (list($key, $val) = each($lines)) {
+            // PHP 8 compatibility: each() removed in PHP 8.0; foreach is
+            // equivalent here. TASK-0002 P1-A. See
+            // docs/tasks/0002-php84-compatibility-baseline.md.
+            foreach ($lines as $key => $val) {
 
                 $lin = explode(":", $val);
 

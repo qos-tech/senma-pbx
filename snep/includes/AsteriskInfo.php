@@ -34,8 +34,17 @@ class AsteriskInfo {
 
     /**
      * Construtor do objeto
+     *
+     * PHP 8 compatibility: PHP4-style constructor (method name matching the
+     * class name) is no longer treated as a constructor at all since PHP 8.0
+     * -- new AsteriskInfo() would silently skip this entirely, leaving
+     * self::$asterisk uninitialized and status_asterisk() fataling later
+     * with "Call to a member function command() on null". No call site
+     * anywhere in the tree calls ->AsteriskInfo() as a normal method, so
+     * renaming to __construct() is a direct, behavior-restoring fix. See
+     * docs/tasks/0002-php84-compatibility-baseline.md.
      */
-    public function AsteriskInfo() {
+    public function __construct() {
         global $SETUP;
         // Verificando se já existe alguma conex�o
         if(!isset(self::$asterisk)) {

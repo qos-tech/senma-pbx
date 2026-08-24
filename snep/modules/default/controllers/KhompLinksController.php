@@ -112,7 +112,10 @@ class KhompLinksController extends Zend_Controller_Action {
           $this->renderScript('error/sneperror.phtml');
         }
 
-        while (list($key, $val) = each($lines)) {
+        // PHP 8 compatibility: each() removed in PHP 8.0; foreach is
+        // equivalent here. TASK-0002 P1-A. See
+        // docs/tasks/0002-php84-compatibility-baseline.md.
+        foreach ($lines as $key => $val) {
 
           if (substr($val, 0, 1) === "B" && substr($val, 3, 1) === "L") {
 
@@ -273,7 +276,10 @@ class KhompLinksController extends Zend_Controller_Action {
       $lines = explode("\n", $data);
       $links = array();
 
-      while (list($key, $val) = each($lines)) {
+      // PHP 8 compatibility: each() removed in PHP 8.0; foreach is
+      // equivalent here. TASK-0002 P1-A. See
+      // docs/tasks/0002-php84-compatibility-baseline.md.
+      foreach ($lines as $key => $val) {
 
         if (substr($val, 0, 1) === "B" && substr($val, 3, 1) === "L") {
           $s = substr($val, 0, 3);
@@ -309,7 +315,10 @@ class KhompLinksController extends Zend_Controller_Action {
 
         $lines = explode("\n", $data);
 
-        while (list($chave, $valor) = each($lines)) {
+        // PHP 8 compatibility: each() removed in PHP 8.0; foreach is
+        // equivalent here. TASK-0002 P1-A. See
+        // docs/tasks/0002-php84-compatibility-baseline.md.
+        foreach ($lines as $chave => $valor) {
 
           //if (substr($valor, 0, 1) === "B" && substr($valor, 3, 1) === "C") {
           if (substr($valor, 4, 1) === "B" && substr($valor, 7, 1) === "C") {

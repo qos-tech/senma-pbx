@@ -28,6 +28,14 @@
  * @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
  * 
  */
+/**
+ * PHP 8 compatibility: every call site across the codebase invokes these
+ * methods statically (Snep_Auth_Manager::method(...)); the class is never
+ * instantiated, and no method uses $this. Calling a non-static method
+ * statically is a fatal Error since PHP 8.0. All methods below declared
+ * static to match actual usage. See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
+ */
 class Snep_Auth_Manager {
 
     public function __construct() {
@@ -38,7 +46,7 @@ class Snep_Auth_Manager {
      * getUser - Method to get data users by name
      * @return <array>
      */
-    public function getUser($name) {
+    public static function getUser($name) {
 
         $db = Zend_registry::get('db');
 
@@ -124,11 +132,21 @@ class Snep_Auth_Manager {
      * adduuid - Add uuid
      * @param <array> $uuid
      */
-    public function adduuid($uuid) {
+    public static function adduuid($uuid) {
 
         $db = Zend_Registry::get('db');
 
+        // client_key/api_key are NOT NULL with no DEFAULT; they're only
+        // populated later, by Snep_Register_Manager::registerITC(), once
+        // registration actually completes. MySQL 5.x's original non-strict
+        // sql_mode silently coerced the omitted columns to '' (the VARCHAR
+        // zero-value); MariaDB 10.11's default STRICT_TRANS_TABLES rejects
+        // that outright. Not a PHP 8 issue -- explicit '' restores the
+        // original implicit DB behavior. See
+        // docs/tasks/0002-php84-compatibility-baseline.md.
         $insert_data = array('uuid' => $uuid,
+            'client_key' => '',
+            'api_key' => '',
             'created' => date('Y-m-d H:i:s'));
 
         $db->insert('itc_register', $insert_data);
