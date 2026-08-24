@@ -1,0 +1,104 @@
+# Asterisk 22 LTS, compiled from source (TASK-0005).
+#
+# Debian 13 (trixie) ships no `asterisk` package at all (verified via
+# `apt-cache madison asterisk` against the official trixie repos -- empty
+# result), so a from-source build is not a choice made for its own sake, it's
+# the only option. Version pinned to 22.10.1, the latest non-prerelease
+# Asterisk 22 LTS release as of this task (confirmed against the GitHub
+# releases API; 22.11.0 exists only as a release candidate). See
+# docs/tasks/0005-asterisk-container-bootstrap.md for the full version
+# rationale.
+#
+# Deliberately minimal module set for this task's reduced scope (runtime
+# boundary validation only -- AMI + shared config visibility, not a
+# functional PBX yet): no PJSIP, no chan_dahdi/Khomp/H323/OSS hardware
+# drivers. Their build dependencies are simply not installed below, so
+# Asterisk's own ./configure dependency detection excludes those modules
+# automatically -- the same outcome the legacy installer reached via
+# modules.conf `noload` lines, achieved one layer earlier. modules.conf
+# still carries explicit `noload` lines too, as a second, explicit gate.
+FROM debian:13-slim AS build
+
+ARG DEBIAN_FRONTEND=noninteractive
+ARG ASTERISK_VERSION=22.10.1
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        build-essential ca-certificates curl \
+        libedit-dev libjansson-dev libsqlite3-dev libssl-dev libxml2-dev \
+        libcurl4-openssl-dev unixodbc-dev uuid-dev pkg-config \
+    && rm -rf /var/lib/apt/lists/*
+
+WORKDIR /usr/src
+RUN curl -fsSL -o asterisk.tar.gz \
+        "https://downloads.asterisk.org/pub/telephony/asterisk/asterisk-${ASTERISK_VERSION}.tar.gz" \
+    && tar -xzf asterisk.tar.gz \
+    && rm asterisk.tar.gz
+
+WORKDIR /usr/src/asterisk-${ASTERISK_VERSION}
+
+# --without-pjproject-bundled: prevents Asterisk's own configure from
+# auto-building its bundled pjproject copy, which would otherwise pull
+# res_pjsip*/chan_pjsip into the build even with no system pjproject-dev
+# installed. With no pjproject available at all, menuselect's own
+# dependency check excludes every PJSIP module automatically -- same
+# mechanism that excludes chan_dahdi/Khomp/H323 (their dev libraries are
+# never installed above either). PJSIP is explicitly out of scope for this
+# task (see CLAUDE.md Phase 6).
+RUN ./configure --without-pjproject-bundled \
+    && make menuselect.makeopts \
+    && make -j"$(nproc)" \
+    && make install \
+    && make install-headers \
+    && ldconfig
+
+# --- Runtime image -----------------------------------------------------
+
+FROM debian:13-slim
+
+ARG DEBIAN_FRONTEND=noninteractive
+
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        ca-certificates libedit2 libjansson4 libsqlite3-0 libssl3 \
+        libxml2 libcurl4 unixodbc odbc-mariadb uuid-runtime \
+    && rm -rf /var/lib/apt/lists/* \
+    # Dedicated non-root runtime user, matching current Asterisk packaging
+    # convention -- the legacy installer ran Asterisk as root
+    # (asterisk.conf's runuser/rungroup were left commented out); that is
+    # not replicated here, per this task's explicit instruction.
+    && groupadd -r asterisk \
+    && useradd -r -g asterisk -d /var/lib/asterisk -s /usr/sbin/nologin asterisk
+
+COPY --from=build /usr/sbin/asterisk /usr/sbin/asterisk
+COPY --from=build /usr/sbin/astgenkey /usr/sbin/astgenkey
+COPY --from=build /usr/sbin/astversion /usr/sbin/astversion
+COPY --from=build /usr/lib/asterisk /usr/lib/asterisk
+COPY --from=build /usr/lib/libasteriskssl.so* /usr/lib/
+RUN ldconfig
+
+RUN mkdir -p /etc/asterisk /var/lib/asterisk /var/spool/asterisk \
+        /var/log/asterisk /var/run/asterisk \
+    && chown -R asterisk:asterisk /etc/asterisk /var/lib/asterisk \
+        /var/spool/asterisk /var/log/asterisk /var/run/asterisk
+
+# Core XML documentation -- required at startup: Stasis (Asterisk's
+# internal message bus, initialized unconditionally regardless of this
+# task's reduced module scope) registers its message types against this
+# documentation and refuses to start without it ("Stasis initialization
+# failed" was the first real boot failure encountered in this task; see
+# docs/tasks/0005-asterisk-container-bootstrap.md). Baked into an
+# image-only path, not directly into /var/lib/asterisk/documentation,
+# because /var/lib/asterisk is volume-mounted (for astdb/keys
+# persistence) and an empty named volume would shadow it on first run;
+# asterisk-entrypoint.sh seeds it into the volume on first boot, same
+# pattern as /etc/asterisk.
+COPY --from=build /var/lib/asterisk/documentation /usr/share/asterisk-documentation
+RUN chown -R asterisk:asterisk /usr/share/asterisk-documentation
+
+COPY docker/asterisk-entrypoint.sh /usr/local/bin/asterisk-entrypoint.sh
+RUN chmod +x /usr/local/bin/asterisk-entrypoint.sh
+
+USER asterisk
+ENTRYPOINT ["asterisk-entrypoint.sh"]
+CMD ["asterisk", "-f", "-vvv"]

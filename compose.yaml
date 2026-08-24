@@ -9,11 +9,39 @@ services:
       - "${MAG_HTTP_PORT:-8080}:80"
     volumes:
       - ./snep:/var/www/html/snep
+      - asterisk-etc:/etc/asterisk:ro
     depends_on:
       db:
         condition: service_healthy
+      asterisk:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - mag
+    restart: unless-stopped
+
+  asterisk:
+    build:
+      context: .
+      dockerfile: docker/asterisk.Dockerfile
+    env_file:
+      - .env
+    volumes:
+      - asterisk-etc:/etc/asterisk
+      - mag-asterisk-var:/var/lib/asterisk
+      - mag-asterisk-spool:/var/spool/asterisk
+      - mag-asterisk-log:/var/log/asterisk
+      - ./docker/asterisk-config:/asterisk-config-src:ro
+      - ./snep/install/etc/asterisk/snep:/snep-asterisk-config-src:ro
+    # AMI (5038) is container-to-container only -- no host port published,
+    # per TASK-0005's explicit instruction.
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core show version"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -49,6 +77,25 @@ services:
 
 networks:
   mag:
+    # TASK-0005: pinned explicitly (rather than left to Docker's
+    # auto-allocated pool) so Asterisk's manager.conf AMI ACL has a
+    # stable, verified target. An unpinned network on this host was
+    # observed to come up as 172.18.0.0/16, not Docker's default-bridge
+    # 172.17.0.0/16 the legacy manager.conf assumed -- confirming that
+    # value would have been wrong to reuse here.
+    ipam:
+      config:
+        - subnet: 172.28.0.0/16
 
 volumes:
   mag-db:
+  # TASK-0005: /etc/asterisk is shared read-write with asterisk, read-only
+  # with app -- generated once from docker/asterisk-config/ +
+  # snep/install/etc/asterisk/snep/ by asterisk-entrypoint.sh, not bind-
+  # mounted directly from the source tree (Asterisk needs to own/write its
+  # own runtime config; the source tree must not be mutated by container
+  # runtime state).
+  asterisk-etc:
+  mag-asterisk-var:
+  mag-asterisk-spool:
+  mag-asterisk-log:

@@ -180,8 +180,12 @@ check "routes" "GET" "/index.php/default/route" "-" "200" 'var controller = "rou
 log "==> groups"
 check "groups" "GET" "/index.php/default/extensions-groups" "-" "200" 'var controller = "extensions-groups"' "normal"
 
-log "==> queues (known limitation: no Asterisk service in this topology)"
-check "queues" "GET" "/index.php/default/queues" "-" "500" "parse_ini_file(/etc/asterisk/snep/snep-musiconhold.conf)" "known_limitation"
+log "==> queues"
+# TASK-0005: the Asterisk container now exists and shares /etc/asterisk/snep
+# with the app container, so snep-musiconhold.conf is genuinely present --
+# this is a real PASS now, not the known-limitation 500 it was before the
+# asterisk service existed. See docs/tasks/0005-asterisk-container-bootstrap.md.
+check "queues" "GET" "/index.php/default/queues" "-" "200" 'var controller = "queues"' "normal"
 
 log "==> reports"
 check "reports" "GET" "/index.php/default/calls-report" "-" "200" 'var controller = "calls-report"' "normal"

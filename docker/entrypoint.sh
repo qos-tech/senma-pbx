@@ -17,6 +17,21 @@ if [ ! -f "$SETUP_CONF" ]; then
         -e "s|^db\.password = .*|db.password = \"${DB_PASSWORD}\"|" \
         -e "s|^db\.dbname = .*|db.dbname = \"${DB_NAME}\"|" \
         "$SETUP_CONF"
+
+    # TASK-0005: AMI connection details. ip_sock must resolve to the
+    # Compose service name, not the legacy default of 127.0.0.1 -- Asterisk
+    # is a separate container now, not co-located on the same host.
+    # user_sock/pass_sock are sourced from the same AMI_USER/AMI_PASSWORD
+    # env vars asterisk-entrypoint.sh uses to template manager.conf, so
+    # both sides are guaranteed to agree without hand-copying a value into
+    # two places.
+    if [ -n "${ASTERISK_HOST:-}" ]; then
+        sed -i \
+            -e "s|^ip_sock = .*|ip_sock = \"${ASTERISK_HOST}\"|" \
+            -e "s|^user_sock = .*|user_sock = \"${AMI_USER}\"|" \
+            -e "s|^pass_sock = .*|pass_sock = \"${AMI_PASSWORD}\"|" \
+            "$SETUP_CONF"
+    fi
 fi
 
 # The web UI (e.g. ParametersController) writes recording-path settings back

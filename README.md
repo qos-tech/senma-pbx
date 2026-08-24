@@ -20,9 +20,9 @@ cp .env.example .env
 make dev
 ```
 
-This builds the application image, starts the `app` and `db` containers, and
-initializes the database schema on first run. Once both containers report
-healthy (`make ps`), the application is reachable at
+This builds the application image, starts the `app`, `db`, and `asterisk`
+containers, and initializes the database schema on first run. Once all three
+containers report healthy (`make ps`), the application is reachable at
 `http://localhost:8080/` (or whatever `MAG_HTTP_PORT` is set to in `.env`).
 
 ## Common commands
@@ -36,6 +36,7 @@ make logs        # follow container logs
 make ps          # show container status
 make shell       # open a shell in the app container
 make db-shell    # open a MariaDB shell against the db container
+make asterisk-cli # open the Asterisk remote console (asterisk -rvvv)
 make smoke       # run the HTTP smoke test suite (starts the env if needed)
 make doctor      # check local prerequisites (docker, .env, compose config)
 make reset       # DESTRUCTIVE: remove containers and volumes (asks to confirm)
@@ -53,11 +54,12 @@ value each run, directly in the dev database — never touching `.env` or
 real credentials) and diffs the app container's fatal-error log
 before/after to catch regressions a bare HTTP-status check would miss.
 
-One flow (`queues`) is expected to report as a known limitation, not a
-failure: this Docker topology deliberately has no Asterisk service yet, so
-`queues` 500s on a missing Asterisk config file. The suite asserts that
-*specific* failure signature — if `queues` ever fails any other way, that's
-reported as a real regression. See `docs/tasks/0003-http-smoke-harness.md`.
+As of TASK-0005 (Asterisk container bootstrap), all flows including `queues`
+are expected to genuinely pass — `queues` previously reported as a known
+limitation (no Asterisk service, missing config file) until the `asterisk`
+container and shared `/etc/asterisk/snep` config were introduced. See
+`docs/tasks/0003-http-smoke-harness.md` and
+`docs/tasks/0005-asterisk-container-bootstrap.md`.
 
 ## Notes on the current Docker bootstrap milestone
 
@@ -75,8 +77,13 @@ reported as a real regression. See `docs/tasks/0003-http-smoke-harness.md`.
   the `db` container initializes an empty data volume — see
   `docker/db-init/00-import-snep-schema.sh` for exactly what is (and isn't)
   imported, and why.
-- Asterisk is deliberately not part of this topology yet (see
-  `docs/decisions/0001-development-environment.md`); features that depend on
-  it (AMI/AGI, call recording, etc.) are expected to be unavailable for now.
+- A dedicated `asterisk` container (Asterisk 22 LTS, compiled from source —
+  see `docker/asterisk.Dockerfile`) joined the topology in TASK-0005. AMI is
+  reachable at `asterisk:5038` (container-to-container only, not published to
+  the host) and `/etc/asterisk/snep` is shared read-only with `app`. This is a
+  minimal runtime-boundary bootstrap, not a functional PBX yet — PJSIP,
+  trunks, call routing, AGI runtime, and full ODBC realtime integration are
+  all still deferred. See `docs/tasks/0005-asterisk-container-bootstrap.md`
+  for exactly what is and isn't wired up.
 - Full implementation notes, PHP 8.4 compatibility fixes applied, and known
   remaining gaps are recorded in `docs/tasks/0001-docker-bootstrap.md`.

@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell test smoke lint doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke lint doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -28,6 +28,9 @@ shell:
 db-shell:
 	$(COMPOSE) exec db mariadb -u"$${DB_USER}" -p"$${DB_PASSWORD}" "$${DB_NAME}"
 
+asterisk-cli:
+	$(COMPOSE) exec asterisk asterisk -rvvv
+
 test:
 	@echo "No automated test suite is wired yet."
 	@echo "Add project tests before changing this target to report success."
@@ -45,6 +48,13 @@ doctor:
 	@test -f .env || (echo ".env missing: run 'cp .env.example .env'" && exit 1)
 	@$(COMPOSE) config >/dev/null
 	@echo "MAG development prerequisites look OK."
+	@if $(COMPOSE) ps asterisk 2>/dev/null | grep -q asterisk; then \
+		if $(COMPOSE) exec -T asterisk asterisk -rx "core show version" >/dev/null 2>&1; then \
+			echo "asterisk: CLI responsive."; \
+		else \
+			echo "asterisk: container is up but CLI is not responding yet."; \
+		fi; \
+	fi
 
 reset:
 	@echo "WARNING: this removes MAG development containers and volumes."
