@@ -39,7 +39,7 @@
 class Snep_Auth_Manager {
 
     public function __construct() {
-        
+
     }
 
     /**
@@ -64,7 +64,7 @@ class Snep_Auth_Manager {
      * getPassword - Method to get data password_recovery by id of user
      * @return <array>
      */
-    public function getPassword($name) {
+    public static function getPassword($name) {
 
         $db = Zend_registry::get('db');
 
@@ -84,7 +84,7 @@ class Snep_Auth_Manager {
      * sendEmail - Send mail with code for user
      * @param <array> $user 
      */
-    public function sendEmail($user, $msg, $subject) {
+    public static function sendEmail($user, $msg, $subject) {
 
         $config = Zend_Registry::get('config');
 
@@ -102,7 +102,7 @@ class Snep_Auth_Manager {
      * addCode - Add data on table password-recovery
      * @param <array> $user
      */
-    public function addCode($user) {
+    public static function addCode($user) {
 
         $db = Zend_Registry::get('db');
 
@@ -118,7 +118,7 @@ class Snep_Auth_Manager {
      * getUpdatePass - Update password of user
      * @param <array> $data
      */
-    public function getUpdatePass($data) {
+    public static function getUpdatePass($data) {
 
         $db = Zend_Registry::get('db');
 

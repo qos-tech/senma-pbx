@@ -27,6 +27,12 @@
  * @copyright Copyright (c) 2011 OpenS Tecnologia
  * @author    Rafael Pereira Bozzetti <rafael@opens.com.br>
  *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_CostCenter_Manager::method(...)); the class is never instantiated,
+ * and no method uses $this. Calling a non-static method statically is a
+ * fatal Error since PHP 8.0. All methods below declared static to match
+ * actual usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_CostCenter_Manager {
 
@@ -37,7 +43,7 @@ class Snep_CostCenter_Manager {
     /**
      * Method to get all cost centers
      */
-    public function getAll() {
+    public static function getAll() {
 
         $db = Zend_registry::get('db');
 
@@ -55,7 +61,7 @@ class Snep_CostCenter_Manager {
      * @param int $id
      * @return Array
      */
-    public function get($id) {
+    public static function get($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -74,7 +80,7 @@ class Snep_CostCenter_Manager {
      * @param array $costcenter
      * @return int
      */
-    public function add($costcenter) {
+    public static function add($costcenter) {
 
         $db = Zend_Registry::get('db');
 
@@ -92,7 +98,7 @@ class Snep_CostCenter_Manager {
      * Method to remove a cost center
      * @param int $id
      */
-    public function remove($id) {
+    public static function remove($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -110,7 +116,7 @@ class Snep_CostCenter_Manager {
      * Method to update a cost center data
      * @param int $id
      */
-    public function edit($costcenter) {
+    public static function edit($costcenter) {
 
         $db = Zend_Registry::get('db');
 
@@ -127,7 +133,7 @@ class Snep_CostCenter_Manager {
      * @param int $id
      * @return Array
      */
-    public function getCdr($id) {
+    public static function getCdr($id) {
 
         $db = Zend_Registry::get('db');
 

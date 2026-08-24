@@ -25,7 +25,15 @@
  * @package   Snep
  * @copyright Copyright (c) 2011 OpenS Tecnologia
  * @author    Rafael Pereira Bozzetti <rafael@opens.com.br>
- * 
+ *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_ContactGroups_Manager::method(...)), including the one `new
+ * Snep_ContactGroups_Manager()` site (RouteController.php:228, which only
+ * calls ->getAll() -- calling a static method through an instance arrow
+ * has always been valid PHP, so this stays compatible). No method uses
+ * $this. Calling a non-static method statically is a fatal Error since
+ * PHP 8.0. All methods below declared static to match actual usage
+ * (TASK-0002 P1-A). See docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_ContactGroups_Manager {
 
@@ -34,7 +42,7 @@ class Snep_ContactGroups_Manager {
     /**
      * Method to get all contact groups
      */
-    public function getAll() {
+    public static function getAll() {
 
         $db = Zend_registry::get('db');
 
@@ -52,7 +60,7 @@ class Snep_ContactGroups_Manager {
      * @param int $id
      * @return Array
      */
-    public function get($id) {
+    public static function get($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -71,7 +79,7 @@ class Snep_ContactGroups_Manager {
      * @param array $group
      * @return int
      */
-    public function add($group) {
+    public static function add($group) {
 
         $db = Zend_Registry::get('db');
 
@@ -85,7 +93,7 @@ class Snep_ContactGroups_Manager {
      * Method to remove a contact group
      * @param int $id
      */
-    public function remove($id) {
+    public static function remove($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -103,7 +111,7 @@ class Snep_ContactGroups_Manager {
      * Method to update a contact group data
      * @param int $id
      */
-    public function edit($group) {
+    public static function edit($group) {
 
         $db = Zend_Registry::get('db');
 
@@ -117,7 +125,7 @@ class Snep_ContactGroups_Manager {
      * @param int $groupId
      * @param int $contactId
      */
-    public function insertContactOnGroup($groupId, $contactId) {
+    public static function insertContactOnGroup($groupId, $contactId) {
 
         $db = Zend_Registry::get('db');
         
@@ -131,7 +139,7 @@ class Snep_ContactGroups_Manager {
      * Remove contact on group and insert in default group
      * @param type $contactId
      */
-    public function removeContactOnGroup($contactId) {
+    public static function removeContactOnGroup($contactId) {
 
         $db = Zend_Registry::get('db');
         
@@ -145,7 +153,7 @@ class Snep_ContactGroups_Manager {
      * Method do return all contacts by group id
      * @param int $id
      */
-    public function getGroupContacts($id) {
+    public static function getGroupContacts($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -167,7 +175,7 @@ class Snep_ContactGroups_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getValidation($id) {
+    public static function getValidation($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -187,7 +195,7 @@ class Snep_ContactGroups_Manager {
      * @param <string> $id
      * @return Array
      */
-    public function getName($name) {
+    public static function getName($name) {
 
         $db = Zend_Registry::get('db');
 

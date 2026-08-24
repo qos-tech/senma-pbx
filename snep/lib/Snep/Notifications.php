@@ -25,13 +25,23 @@
  * @copyright Copyright (c) 2015 Opens Tecnologia
  * @author    Opens Tecnologia <desenvolvimento@opens.com.br>
  */
+/**
+ * PHP 8 compatibility: every call site across the codebase invokes these
+ * methods statically (Snep_Notifications::method(...)); the class is never
+ * instantiated, and no method uses $this. Calling a non-static method
+ * statically is a fatal Error since PHP 8.0. All methods below declared
+ * static to match actual usage. Pulled forward from the P1 Manager-class
+ * batch (TASK-0002) because getNoView() is called from the shared page
+ * layout, blocking every page. See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
+ */
 class Snep_Notifications {
 
 	/**
      * getNotification -
      * @return <string> HTML rendered with notifications
      */
-		 public function getNotifications($url) {
+		 public static function getNotifications($url) {
 
          $i18n = Zend_Registry::get("i18n");
          $html = "";
@@ -76,7 +86,7 @@ class Snep_Notifications {
      * Method to get all profiles
      * @return <array> $notifications
      */
-    public function getAll() {
+    public static function getAll() {
 
 				$configs = Snep_Config::getConfiguration('default','host_notification');
 				$url = $configs["config_value"] . '/' . $_SESSION["uuid"];
@@ -90,7 +100,7 @@ class Snep_Notifications {
      * Method to get date last notification
      * @return <array> $notification
      */
-    public function getDateLastNotification() {
+    public static function getDateLastNotification() {
 
         $db = Zend_registry::get('db');
 
@@ -110,7 +120,7 @@ class Snep_Notifications {
      * Get notification where not read
      * @return <array> $notification
      */
-    public function getNoView() {
+    public static function getNoView() {
 
 			$notifications = self::getAll();
 			$notification = array();
@@ -130,7 +140,7 @@ class Snep_Notifications {
      * Method to get all profiles
      * @return <array> $notifications
      */
-    public function getNotification($id) {
+    public static function getNotification($id) {
 
 				$configs = Snep_Config::getConfiguration('default','host_notification');
 				$url = $configs["config_value"] . '/' . $_SESSION["uuid"] . "/$id";
@@ -147,7 +157,7 @@ class Snep_Notifications {
      * Get notification warning where not read
      * @return <boolean>
      */
-    public function getNotificationWarning() {
+    public static function getNotificationWarning() {
 
         $db = Zend_registry::get('db');
 
@@ -173,7 +183,7 @@ class Snep_Notifications {
      * setRead - Update core_notifications while user notification read
      * @param <int> $id
      */
-    public function setRead($id) {
+    public static function setRead($id) {
 				$configs = Snep_Config::getConfiguration('default','host_notification');
 				$url = $configs["config_value"] . '/' . $_SESSION["uuid"] . '/' . $id;
 				// get notification in itc
@@ -190,7 +200,7 @@ class Snep_Notifications {
      * @param <string> $title
      * @param <string> $notification
      */
-    public function addNotification($title,$message,$id_itc,$from) {
+    public static function addNotification($title,$message,$id_itc,$from) {
 
 
     }
@@ -200,7 +210,7 @@ class Snep_Notifications {
      * Method to remove a Notification
      * @param <int> $id
      */
-    public function removeNotification($id) {
+    public static function removeNotification($id) {
 
 				$configs = Snep_Config::getConfiguration('default','host_notification');
 				$url = $configs["config_value"] . '/' . $_SESSION["uuid"] . '/' . $id;

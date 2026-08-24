@@ -26,9 +26,16 @@
  * @category  Snep
  * @package   Snep
  * @copyright Copyright (c) 2012 OpenS Tecnologia
- * @author    Tiago Zimmermann <tiago@thesource.com.br> 
- *            
- * 
+ * @author    Tiago Zimmermann <tiago@thesource.com.br>
+ *
+ * PHP 8 compatibility: the only external call site
+ * (ExpressionAliasController.php:88,151) invokes execute() statically with
+ * no object context, so its internal self::IdentificarChave()/
+ * self::IdentificarValidade() calls have no $this to fall back on either.
+ * The class is never instantiated and no method uses $this. Calling a
+ * non-static method statically is a fatal Error since PHP 8.0. All
+ * methods below declared static to match actual usage (TASK-0002 P1-A).
+ * See docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_ValidateExpression {
 
@@ -37,7 +44,7 @@ class Snep_ValidateExpression {
      * @param <string> $String
      * @return <array>
      */
-    public function execute($String) {
+    public static function execute($String) {
         if (trim($String) === "") {
             return false ;
         }
@@ -56,7 +63,7 @@ class Snep_ValidateExpression {
      * @param <string> $string
      * @return <boolean>
      */
-    function IdentificarValidade($string) {
+    static function IdentificarValidade($string) {
 
         // Caracteres válidos
         $char_valido = array("%", "|", "#", ",", "q", "w", "e", "r", "t", "y", "u", "i", "o", "p", "a", "s", "d", "f", "g", "h", "j", "k", "l", "z", "x", "c", "v", "b", "n", "m", "Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P", "A", "S", "D", "F", "G", "H", "J", "K", "L", "Z", "X", "C", "V", "B", "N", "M", ".", "[", "]", "-", "_", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9");
@@ -75,7 +82,7 @@ class Snep_ValidateExpression {
      * @param <string> $string
      * @return <boolean>
      */
-    function IdentificarChave($string) {
+    static function IdentificarChave($string) {
 
         $total = strlen($string);
         $temp = false;

@@ -75,8 +75,15 @@ class Snep_Manutencao {
      *
      * @param <string> $arquivos
      * @return <array>
+     *
+     * PHP 8 compatibility (TASK-0002 P1-B): uses no $this, only called
+     * internally via self:: from arquivoExiste() (no external call
+     * sites) -- declared static alongside arquivoExiste() since a static
+     * arquivoExiste() would otherwise have no $this to fall back on when
+     * forwarding this call. See
+     * docs/tasks/0002-php84-compatibility-baseline.md.
      */
-    public function listaStorage($arquivos) {
+    public static function listaStorage($arquivos) {
 
         $root = scandir($arquivos);
         $return = array();
@@ -97,7 +104,14 @@ class Snep_Manutencao {
      * @param <string> $arquivos
      * @return <string> Caminho para o arquivo.
      */
-    public function arquivoExiste($calldate, $userfield) {
+    /**
+     * PHP 8 compatibility (TASK-0002 P1-B): Snep_Manutencao is never
+     * instantiated anywhere in the tree; this method uses no $this and
+     * its only external call site (CallsReportController.php:471)
+     * already uses ::. Declared static to match. See
+     * docs/tasks/0002-php84-compatibility-baseline.md.
+     */
+    public static function arquivoExiste($calldate, $userfield) {
 
         $data = substr($calldate, 0, 10);
         $ano = substr($calldate, 0, 4);

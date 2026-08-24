@@ -25,6 +25,15 @@
  * @category  Snep
  * @package   Snep
  * @copyright Copyright (c) 2015 OpenS Tecnologia
+ *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_Register_Manager::method(...)); the class is never instantiated,
+ * and no method uses $this (removeDistributions() was already declared
+ * static). Calling a non-static method statically is a fatal Error since
+ * PHP 8.0. Pulled forward from the P1 Manager-class batch (TASK-0002)
+ * because getCountry()/getState()/registerITC()/noregister() are on the
+ * login->dashboard registration-gate critical path. See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_Register_Manager {
 
@@ -36,7 +45,7 @@ class Snep_Register_Manager {
      * getCountry - Get Country in Database
      * @return <array>
      */
-    public function getCountry() {
+    public static function getCountry() {
 
         $db = Zend_Registry::get('db');
 
@@ -56,7 +65,7 @@ class Snep_Register_Manager {
      * getState - Get State in Database
      * @return <array>
      */
-    public function getState() {
+    public static function getState() {
 
         $db = Zend_Registry::get('db');
 
@@ -76,7 +85,7 @@ class Snep_Register_Manager {
      * @param int $state
      * @return <array>
      */
-    public function getCity($id_state) {
+    public static function getCity($id_state) {
 
         $db = Zend_Registry::get('db');
 
@@ -95,7 +104,7 @@ class Snep_Register_Manager {
     /**
      * registerITC - Register Snep in ITC
      */
-    public function registerITC($api_key,$client_key) {
+    public static function registerITC($api_key,$client_key) {
 
         $db = Zend_Registry::get('db');
         $db->update("itc_register", array('registered_itc' => true,
@@ -106,7 +115,7 @@ class Snep_Register_Manager {
     /**
      * noregister - No Register Snep in ITC
      */
-    public function noregister() {
+    public static function noregister() {
 
         $db = Zend_Registry::get('db');
         $db->update("itc_register", array('noregister' => true));
@@ -116,7 +125,7 @@ class Snep_Register_Manager {
     /**
      * get - Get register data in the database
      */
-    public function get() {
+    public static function get() {
 
         $db = Zend_Registry::get('db');
 
@@ -133,7 +142,7 @@ class Snep_Register_Manager {
     /**
      * addDistributions - Add distributions in database
      */
-    public function addDistributions($distributions){
+    public static function addDistributions($distributions){
 
         $db = Zend_Registry::get('db');
 

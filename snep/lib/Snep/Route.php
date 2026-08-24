@@ -38,8 +38,15 @@ class Snep_Route {
      * getRegra - Get data in the route
      * @param <int> $id - Code route
      * @return <array> $regra - data of rout
+     *
+     * PHP 8 compatibility (TASK-0002 P1-B): its one external call site
+     * (RouteController.php:647) uses ::; the class is never instantiated
+     * and this method uses no $this. Declared static to match. The
+     * class's other 3 methods (insertLogRegra, getLastId, getActions)
+     * have no external callers at all -- left untouched, out of this
+     * fix's scope. See docs/tasks/0002-php84-compatibility-baseline.md.
      */
-    function getRegra($id) {
+    static function getRegra($id) {
 
         $db = Zend_Registry::get("db");
 

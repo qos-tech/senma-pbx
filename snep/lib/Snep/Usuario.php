@@ -131,8 +131,15 @@ abstract class Snep_Usuario extends Snep_Channel {
 
     /**
      * Returns an encrypted & utf8-encoded
+     *
+     * PHP 8 compatibility: Snep_Usuario is abstract (can never be
+     * instantiated) and its only caller (AuthController::loginAction)
+     * has always invoked this statically; the body never uses $this.
+     * Calling a non-static method statically is a fatal Error since
+     * PHP 8.0. Declared static to match actual usage. See
+     * docs/tasks/0002-php84-compatibility-baseline.md.
      */
-    public function encrypt($string, $encryption_key) {
+    public static function encrypt($string, $encryption_key) {
       $encrypt_method = "AES-256-CBC";
       $secret_key = $encryption_key;
       // hash

@@ -26,19 +26,25 @@
  * @package   Snep
  * @copyright Copyright (c) 2014 OpenS Tecnologia
  * @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
- * 
+ *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_Profiles_Manager::method(...)); the class is never instantiated,
+ * and no method uses $this. Calling a non-static method statically is a
+ * fatal Error since PHP 8.0. All methods below declared static to match
+ * actual usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_Profiles_Manager {
 
     public function __construct() {
-        
+
     }
 
     /**
      * Method to get all profiles
      * @return <array>
      */
-    public function getAll() {
+    public static function getAll() {
 
         $db = Zend_registry::get('db');
 
@@ -55,7 +61,7 @@ class Snep_Profiles_Manager {
      * Method to add a profile
      * @param <array> $profile
      */
-    public function add($profile) {
+    public static function add($profile) {
 
         $db = Zend_Registry::get('db');
 
@@ -70,7 +76,7 @@ class Snep_Profiles_Manager {
      * Method to remove a profile
      * @param <int> $id
      */
-    public function remove($id) {
+    public static function remove($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -88,7 +94,7 @@ class Snep_Profiles_Manager {
      * Method to remove permission a profile
      * @param <int> $id
      */
-    public function removePermission($id) {
+    public static function removePermission($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -107,7 +113,7 @@ class Snep_Profiles_Manager {
      * @param <int> $id
      * @return <Array>
      */
-    public function get($id) {
+    public static function get($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -125,7 +131,7 @@ class Snep_Profiles_Manager {
      * Method to update a profile data
      * @param <Array> $profile
      */
-    public function edit($profile) {
+    public static function edit($profile) {
 
         $db = Zend_Registry::get('db');
 
@@ -141,7 +147,7 @@ class Snep_Profiles_Manager {
      * @param <Array> $member
      * @param <Array> $id
      */
-    public function migration($member) {
+    public static function migration($member) {
 
         $db = Zend_Registry::get('db');
 
@@ -156,7 +162,7 @@ class Snep_Profiles_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getUsersProfiles($id) {
+    public static function getUsersProfiles($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -176,7 +182,7 @@ class Snep_Profiles_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getUsersnotProfile($id) {
+    public static function getUsersnotProfile($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -196,7 +202,7 @@ class Snep_Profiles_Manager {
      * Method to get a last id of profile 
      * @return <int> 
      */
-    public function lastId() {
+    public static function lastId() {
 
         $db = Zend_Registry::get('db');
 
@@ -234,7 +240,7 @@ class Snep_Profiles_Manager {
      * @param <string> $id
      * @return Array
      */
-    public function getName($name) {
+    public static function getName($name) {
 
         $db = Zend_Registry::get('db');
 

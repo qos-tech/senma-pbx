@@ -27,6 +27,12 @@
  * @copyright Copyright (c) 2011 OpenS Tecnologia
  * @author    Rafael Pereira Bozzetti <rafael@opens.com.br>
  *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_Queues_Manager::method(...)); the class is never instantiated,
+ * and no method uses $this. Calling a non-static method statically is a
+ * fatal Error since PHP 8.0. All methods below declared static to match
+ * actual usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_Queues_Manager {
 
@@ -39,7 +45,7 @@ class Snep_Queues_Manager {
      * @param int $id
      * @return Array
      */
-    public function get($name) {
+    public static function get($name) {
 
         $db = Zend_Registry::get('db');
 
@@ -76,7 +82,7 @@ class Snep_Queues_Manager {
      * @param array $queue
      * @return int
      */
-    public function add($queue) {
+    public static function add($queue) {
 
         $db = Zend_Registry::get('db');
 
@@ -111,7 +117,7 @@ class Snep_Queues_Manager {
      * Edit a Queue
      * @param array $queue
      */
-    public function edit($queue) {
+    public static function edit($queue) {
 
         $db = Zend_Registry::get('db');
 
@@ -144,7 +150,7 @@ class Snep_Queues_Manager {
      * Remove a Queue
      * @param int $name
      */
-    public function remove($name) {
+    public static function remove($name) {
 
         $db = Zend_Registry::get('db');
 
@@ -162,7 +168,7 @@ class Snep_Queues_Manager {
      * removeQueues - Remove a queues_agent
      * @param <string> $name
      */
-    public function removeQueues($name) {
+    public static function removeQueues($name) {
 
         $db = Zend_Registry::get('db');
 
@@ -180,7 +186,7 @@ class Snep_Queues_Manager {
      * removeUserPermission
      * @param <string> $queue
      */
-    public function removeUserPermission($id) {
+    public static function removeUserPermission($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -198,7 +204,7 @@ class Snep_Queues_Manager {
      * removeQueuePeers
      * @param <string> $queue
      */
-    public function removeQueuePeers($queue) {
+    public static function removeQueuePeers($queue) {
 
         $db = Zend_Registry::get('db');
 
@@ -217,7 +223,7 @@ class Snep_Queues_Manager {
      * @param string $queue
      * @return array
      */
-    public function getMembers($queue) {
+    public static function getMembers($queue) {
 
         $db = Zend_Registry::get('db');
 
@@ -235,7 +241,7 @@ class Snep_Queues_Manager {
      * Get all members
      * @return array
      */
-    public function getAllMembers() {
+    public static function getAllMembers() {
 
         $db = Zend_Registry::get('db');
 
@@ -254,7 +260,7 @@ class Snep_Queues_Manager {
      * Remove queue members
      * @param string $queue
      */
-    public function removeAllMembers($queue) {
+    public static function removeAllMembers($queue) {
 
         $db = Zend_Registry::get('db');
 
@@ -272,7 +278,7 @@ class Snep_Queues_Manager {
      * Remove queue member
      * @param string $member
      */
-    public function removeMember($member) {
+    public static function removeMember($member) {
 
         $db = Zend_Registry::get('db');
 
@@ -291,7 +297,7 @@ class Snep_Queues_Manager {
      * @param string $queue
      * @param string $member
      */
-    public function insertMember($queue, $member) {
+    public static function insertMember($queue, $member) {
 
         $db = Zend_Registry::get('db');
 
@@ -307,7 +313,7 @@ class Snep_Queues_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getValidationPeers($id) {
+    public static function getValidationPeers($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -326,7 +332,7 @@ class Snep_Queues_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getValidationAgent($id) {
+    public static function getValidationAgent($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -345,7 +351,7 @@ class Snep_Queues_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getValidation($id) {
+    public static function getValidation($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -360,7 +366,7 @@ class Snep_Queues_Manager {
      * @param <string> $acao
      * @param <array> $add
      */
-    function insertLogQueue($acao, $add) {
+    public static function insertLogQueue($acao, $add) {
 
         $db = Zend_Registry::get("db");
 
@@ -384,7 +390,7 @@ class Snep_Queues_Manager {
      * Get all queue for csv file
      * @return <array>
      */
-    public function getCsv() {
+    public static function getCsv() {
 
         $db = Zend_Registry::get('db');
 
@@ -402,7 +408,7 @@ class Snep_Queues_Manager {
      * @param <string> $id
      * @return Array
      */
-    public function getName($name) {
+    public static function getName($name) {
 
         $db = Zend_Registry::get('db');
 

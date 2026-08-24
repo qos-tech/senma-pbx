@@ -27,6 +27,13 @@
  * @copyright Copyright (c) 2014 OpenS Tecnologia
  * @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
  *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_Extensions_Manager::method(...)); the class is never instantiated,
+ * and no method uses $this. Calling a non-static method statically is a
+ * fatal Error since PHP 8.0. All methods below declared static to match
+ * actual usage. Pulled forward from the P1 Manager-class batch (TASK-0002)
+ * because getAll() is on the extensions flow's critical rendering path.
+ * See docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_Extensions_Manager {
 
@@ -39,7 +46,7 @@ class Snep_Extensions_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getValidation($id) {
+    public static function getValidation($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -59,7 +66,7 @@ class Snep_Extensions_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getValidationRules($id) {
+    public static function getValidationRules($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -74,7 +81,7 @@ class Snep_Extensions_Manager {
      * @param <int> $id - Código do ramal
      * @return <array> $ramal - Dados do ramal
      */
-    function getPeer($name) {
+    public static function getPeer($name) {
 
         $db = Zend_Registry::get("db");
 
@@ -93,7 +100,7 @@ class Snep_Extensions_Manager {
      * remove - Remove peer
      * @param <int> $id
      */
-    public function remove($id) {
+    public static function remove($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -111,7 +118,7 @@ class Snep_Extensions_Manager {
      * removeVoicemail - Remove voicemail
      * @param <int> $id
      */
-    public function removeVoicemail($id) {
+    public static function removeVoicemail($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -128,7 +135,7 @@ class Snep_Extensions_Manager {
      * Method to get all Peers
      * @return Array
      */
-    public function getAll() {
+    public static function getAll() {
 
         $db = Zend_Registry::get('db');
 
@@ -166,7 +173,7 @@ class Snep_Extensions_Manager {
      * disable - disable peer
      * @param <int> $id
      */
-    public function disable($id) {
+    public static function disable($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -179,7 +186,7 @@ class Snep_Extensions_Manager {
      * enable - enable peer
      * @param <int> $id
      */
-    public function enable($id) {
+    public static function enable($id) {
 
         $db = Zend_Registry::get('db');
 

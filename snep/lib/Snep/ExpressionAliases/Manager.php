@@ -27,6 +27,12 @@
  * @copyright Copyright (c) 2015 OpenS Tecnologia
  * @author    Opens Tecnologia <desenvolvimento@opens.com.br>
  *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_ExpressionAliases_Manager::method(...)); the class is never
+ * instantiated, and no method uses $this. Calling a non-static method
+ * statically is a fatal Error since PHP 8.0. All methods below declared
+ * static to match actual usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_ExpressionAliases_Manager {
 
@@ -38,7 +44,7 @@ class Snep_ExpressionAliases_Manager {
      * delete - Remove expression alias
      * @param <int> $id
      */
-    public function delete($id) {
+    public static function delete($id) {
         $db = Zend_Registry::get('db');
 
         $db->delete("expr_alias", "aliasid='$id'");
@@ -49,7 +55,7 @@ class Snep_ExpressionAliases_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getValidation($id) {
+    public static function getValidation($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -68,7 +74,7 @@ class Snep_ExpressionAliases_Manager {
      * @param int $id
      * @return Array
      */
-    public function get($id) {
+    public static function get($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -86,7 +92,7 @@ class Snep_ExpressionAliases_Manager {
      * Method to get all Alias
      * @return Array
      */
-    public function getAll() {
+    public static function getAll() {
 
         $db = Zend_Registry::get('db');
 

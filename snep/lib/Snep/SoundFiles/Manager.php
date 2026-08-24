@@ -27,6 +27,20 @@
  * @copyright Copyright (c) 2011 OpenS Tecnologia
  * @author    Rafael Pereira Bozzetti <rafael@opens.com.br>
  *
+ * PHP 8 compatibility (TASK-0002 P1-B): this class mixes stateless
+ * methods (no $this usage) with stateful ones (`$this->lang`/`$this->base_dir`
+ * set fresh at the top of each stateful method, no shared state across
+ * calls, no explicit constructor). Per-method classification, not a
+ * blanket fix: `add`, `addClass`, `getClasse`, `getClasses` (already
+ * static), `editClass`, `removeClass`, `checkType`, `parseName`,
+ * `converter` use no $this and are declared static below, matching their
+ * existing `::` call sites. `get`, `edit`, `remove`, `getClassFile`,
+ * `addClassFile`, `editClassFile`, `getClassFiles`, `syncFiles`,
+ * `addSounds`, `getSounds`, `verifySoundFiles` all use `$this` and are
+ * left as instance methods -- their call sites were changed from `::` to
+ * `(new self())->method()` instead (in the calling controllers), since a
+ * static method has no `$this` to satisfy those assignments. See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_SoundFiles_Manager {
 
@@ -67,7 +81,7 @@ class Snep_SoundFiles_Manager {
      * Add a sound file
      * @param array $file
      */
-    public function add($file) {
+    public static function add($file) {
 
         $db = Zend_Registry::get('db');
 
@@ -137,7 +151,7 @@ class Snep_SoundFiles_Manager {
      * @return boolean
      */
 
-    public function addClass($class) {
+    public static function addClass($class) {
 
         $classes = self::getClasses();
         $classes[$class['name']] = $class;
@@ -184,7 +198,7 @@ class Snep_SoundFiles_Manager {
      * @return array $section
      */
 
-   public function getClasse($name) {
+   public static function getClasse($name) {
 
         $sections = new Zend_Config_Ini('/etc/asterisk/snep/snep-musiconhold.conf');
         $_section = array();
@@ -202,9 +216,19 @@ class Snep_SoundFiles_Manager {
     /**
      * Get a list of MOH Classes
      * @return array
+     *
+     * PHP 8 compatibility: Snep_SoundFiles_Manager is a heavily stateful
+     * class (36 $this uses elsewhere) NOT eligible for a blanket fix, but
+     * this one method uses no $this and every call site (3 internal via
+     * self::, 3 external via Snep_SoundFiles_Manager::) already uses
+     * static-call syntax. Individually verified and declared static; no
+     * other method in this class was touched. Pulled forward from the P1
+     * mixed-class batch (TASK-0002) because it's on the system-status
+     * flow's critical path (lib/Snep/Inspector.php ->
+     * inspectors/Sounds.php). See
+     * docs/tasks/0002-php84-compatibility-baseline.md.
      */
-
-    public function getClasses() {
+    public static function getClasses() {
 
         $sections = new Zend_Config_Ini('/etc/asterisk/snep/snep-musiconhold.conf');
         $_section = array();
@@ -336,7 +360,7 @@ class Snep_SoundFiles_Manager {
      * @return boolean
      */
 
-    public function editClass($originalName, $newClass) {
+    public static function editClass($originalName, $newClass) {
 
         $classes = self::getClasses();
 
@@ -385,7 +409,7 @@ class Snep_SoundFiles_Manager {
      * @param string $class
      * @return boolean
      */
-    public function removeClass($classRemove) {
+    public static function removeClass($classRemove) {
 
         $classes = self::getClasses();
 
@@ -613,7 +637,7 @@ class Snep_SoundFiles_Manager {
      * @param string
      * @return booolean
      */
-    public function checkType($extension) {
+    public static function checkType($extension) {
         if(strtolower($extension) != "wav"  && strtolower($extension) != "gsm") {
             return false ;
          } else {
@@ -626,7 +650,7 @@ class Snep_SoundFiles_Manager {
      * @param <string> $name
      * @return <string> $name
      */
-    public function parseName($name) {
+    public static function parseName($name) {
 
         $invalid = array('â', 'ã', 'á', 'à', 'ẽ', 'é', 'è', 'ê', 'í', 'ì', 'ó', 'õ', 'ò', 'ú', 'ù', 'ç', " ", '@', '!');
         $valid = array('a', 'a', 'a', 'a', 'e', 'e', 'e', 'e', 'i', 'i', 'o', 'o', 'o', 'u', 'u', 'c', "_", '_', '_');
@@ -638,7 +662,7 @@ class Snep_SoundFiles_Manager {
      * Converter megabytes in bytes
      * @param <string> $size
      */
-    function converter($size) {
+    static function converter($size) {
         $bytes = "1048576";
         $result = $bytes * $size;
         return $result;

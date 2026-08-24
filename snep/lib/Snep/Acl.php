@@ -64,8 +64,15 @@ class Snep_Acl extends Zend_Acl {
      * check if exists username discarding case sensitive
      * @param <string> $username
      * @return <array>
+     *
+     * PHP 8 compatibility: its only caller (AuthController::loginAction)
+     * has always invoked this statically (Snep_Acl::getCaseSensitive()),
+     * and the body never uses $this -- calling a non-static method
+     * statically is a fatal Error since PHP 8.0 (was a deprecation notice
+     * before). Declared static to match actual usage. See
+     * docs/tasks/0002-php84-compatibility-baseline.md.
      */
-    public function getCaseSensitive($username) {
+    public static function getCaseSensitive($username) {
 
         $db = Zend_Registry::get('db');
 

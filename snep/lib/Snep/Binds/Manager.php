@@ -27,6 +27,12 @@
  * @copyright Copyright (c) 2015 OpenS Tecnologia
  * @author    Opens Tecnologia <desenvolvimento@opens.com.br>
  *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_Binds_Manager::method(...)); the class is never instantiated, and
+ * no method uses $this. Calling a non-static method statically is a fatal
+ * Error since PHP 8.0. All methods below declared static to match actual
+ * usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_Binds_Manager {
 
@@ -39,7 +45,7 @@ class Snep_Binds_Manager {
      * @param <int> $id
      * @return <array> $peers
      */
-    function getBond($id) {
+    static function getBond($id) {
 
         $db = Zend_Registry::get("db");
 
@@ -59,7 +65,7 @@ class Snep_Binds_Manager {
      * @param <int> $id
      * @return <array> $peers
      */
-    function getBondException($id) {
+    public static function getBondException($id) {
 
         $db = Zend_Registry::get("db");
 
@@ -81,7 +87,7 @@ class Snep_Binds_Manager {
      * @param <string> $bond
      * @param <int> $peer
      */
-    public function addBond($id,$bond,$peer) {
+    public static function addBond($id,$bond,$peer) {
 
         $db = Zend_Registry::get('db');
 
@@ -99,7 +105,7 @@ class Snep_Binds_Manager {
      * @param <int> $id
      * @param <int> $exception
      */
-    public function addBondException($id,$exception) {
+    public static function addBondException($id,$exception) {
 
         $db = Zend_Registry::get('db');
 
@@ -115,7 +121,7 @@ class Snep_Binds_Manager {
      * removeBond - Method to remove bond a user
      * @param <int> $id
      */
-    public function removeBond($id) {
+    public static function removeBond($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -133,7 +139,7 @@ class Snep_Binds_Manager {
      * removeBondByPeer - Method to remove bond a user
      * @param <int> $id
      */
-    public function removeBondByPeer($peer) {
+    public static function removeBondByPeer($peer) {
 
         $db = Zend_Registry::get('db');
 
@@ -151,7 +157,7 @@ class Snep_Binds_Manager {
      * removeBond - Method to remove bond exception a user
      * @param <int> $id
      */
-    public function removeBondException($id) {
+    public static function removeBondException($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -170,7 +176,7 @@ class Snep_Binds_Manager {
      * @param <int> $id_user
      * @param <array> $row
      */
-    public function ResultBinds($id_user, $row){
+    public static function ResultBinds($id_user, $row){
 
     	$bond = self::getBond($id_user);
 

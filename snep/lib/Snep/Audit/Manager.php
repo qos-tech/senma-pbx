@@ -27,6 +27,12 @@
  * @copyright Copyright (c) 2018 OpenS Tecnologia
  * @author    Desenvolvimento <devops@opens.com.br>
  *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_Audit_Manager::method(...)); the class is never instantiated, and
+ * no method uses $this. Calling a non-static method statically is a fatal
+ * Error since PHP 8.0. All methods below declared static to match actual
+ * usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_Audit_Manager
 {
@@ -41,7 +47,7 @@ class Snep_Audit_Manager
     * @param <array> $initial_date, $final_date, $Category
     * @return <array>
     */
-    public function getAll($initial_date, $final_date, $category){
+    public static function getAll($initial_date, $final_date, $category){
       $db = Zend_Registry::get('db');
       $select = $db->select()->from('logs_users')
       ->where('datetime >= ?', $initial_date)
@@ -63,7 +69,7 @@ class Snep_Audit_Manager
      * @param <int> $tipo
      * @return boolean
      */
-    function saveLog($action, $table, $registerid, $description) {
+    static function saveLog($action, $table, $registerid, $description) {
       
       $db = Zend_Registry::get("db");
 
@@ -91,7 +97,7 @@ class Snep_Audit_Manager
      * @param <int> $tipo
      * @return boolean
      */
-    function addLog($action, $data) {
+    static function addLog($action, $data) {
       
       $db = Zend_Registry::get("db");
 

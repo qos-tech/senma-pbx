@@ -58,7 +58,11 @@ class MusicOnHoldController extends Zend_Controller_Action {
         $this->view->breadcrumb = Snep_Breadcrumb::renderPath(array(
                     $this->view->translate("Music on Hold Sessions")));
 
-        Snep_SoundFiles_Manager::syncFiles('moh');
+        // PHP 8 compatibility: syncFiles() uses $this internally, so it
+        // must be called on an instance, not statically (TASK-0002 P1-B).
+        // See docs/tasks/0002-php84-compatibility-baseline.md.
+        $soundFiles = new Snep_SoundFiles_Manager();
+        $soundFiles->syncFiles('moh');
 
         $sections = Snep_SoundFiles_Manager::getClasses();
 
@@ -239,7 +243,10 @@ class MusicOnHoldController extends Zend_Controller_Action {
                     $this->view->translate("Files")));
 
         $class = Snep_SoundFiles_Manager::getClasse($section);
-        $files = Snep_SoundFiles_Manager::getClassFiles($section);
+        // PHP 8 compatibility: getClassFiles() uses $this internally, so
+        // it must be called on an instance (TASK-0002 P1-B). See
+        // docs/tasks/0002-php84-compatibility-baseline.md.
+        $files = (new Snep_SoundFiles_Manager())->getClassFiles($section);
         
         if(empty($files)){
             $this->view->error_message = $this->view->translate("You do not have registered file. <br><br> Click 'Add File' to make the first registration");
@@ -268,6 +275,12 @@ class MusicOnHoldController extends Zend_Controller_Action {
             $dados = $this->_request->getParams();
             $data = $_FILES["inputFile"];
 
+            // PHP 8 compatibility: get()/addClassFile() below use $this
+            // internally, so they must be called on an instance
+            // (TASK-0002 P1-B). See
+            // docs/tasks/0002-php84-compatibility-baseline.md.
+            $soundFiles = new Snep_SoundFiles_Manager();
+
             // Converter megabytes em bytes
             $size_in_mega = ini_get('upload_max_filesize');
             $size_in_bytes = Snep_SoundFiles_Manager::converter($size_in_mega);
@@ -293,7 +306,7 @@ class MusicOnHoldController extends Zend_Controller_Action {
             $clean_name = strstr($originalName, '.', true);
             $validname = $clean_name . '.wav';
 
-            $files = Snep_SoundFiles_Manager::get($originalName);
+            $files = $soundFiles->get($originalName);
 
             if ($files) {
                 $this->view->error_message = $this->view->translate("File already exists");
@@ -319,8 +332,7 @@ class MusicOnHoldController extends Zend_Controller_Action {
                 }
 
                 if (file_exists($arq_dst) || file_exists($fileNe)) {
-                    Snep_SoundFiles_Manager::
-                    addClassFile(array('arquivo' => $originalName,
+                    $soundFiles->addClassFile(array('arquivo' => $originalName,
                         'descricao' => $dados['description'],
                         'data' => new Zend_Db_Expr('NOW()'),
                         'tipo' => 'MOH',
@@ -343,7 +355,11 @@ class MusicOnHoldController extends Zend_Controller_Action {
         $fileName = $this->_request->getParam('file');
         $class = $this->_request->getParam('class');
 
-        $this->view->file = Snep_SoundFiles_Manager::getClassFile($fileName,$class) ;
+        // PHP 8 compatibility: getClassFile()/editClassFile() use $this
+        // internally, so they must be called on an instance (TASK-0002
+        // P1-B). See docs/tasks/0002-php84-compatibility-baseline.md.
+        $soundFiles = new Snep_SoundFiles_Manager();
+        $this->view->file = $soundFiles->getClassFile($fileName,$class) ;
 
         $this->view->breadcrumb = Snep_Breadcrumb::renderPath(array(
                     $this->view->translate("Music on Hold Sessions"),
@@ -354,8 +370,8 @@ class MusicOnHoldController extends Zend_Controller_Action {
         if ($this->_request->getPost()) {
 
             $dados = $this->_request->getParams();
- 
-            Snep_SoundFiles_Manager::editClassFile($dados);
+
+            $soundFiles->editClassFile($dados);
     
             $this->_redirect($this->getRequest()->getControllerName(). "/file/section/".$dados['secao']);
         }
@@ -373,7 +389,11 @@ class MusicOnHoldController extends Zend_Controller_Action {
 
         $file = $this->_request->getParam('file');
         $class = $this->_request->getParam('class');
-        $this->view->file = Snep_SoundFiles_Manager::getClassFile($file,$class) ;
+        // PHP 8 compatibility: getClassFile()/remove() use $this
+        // internally, so they must be called on an instance (TASK-0002
+        // P1-B). See docs/tasks/0002-php84-compatibility-baseline.md.
+        $soundFiles = new Snep_SoundFiles_Manager();
+        $this->view->file = $soundFiles->getClassFile($file,$class) ;
 
         $this->view->remove_title = $this->view->translate('Delete music on hold file: '.$file); 
         $this->view->remove_message = $this->view->translate('The music on hold files will be deleted. After that, you have no way get it back.'); 
@@ -396,7 +416,7 @@ class MusicOnHoldController extends Zend_Controller_Action {
             }
             exec("rm {$file_remove} ");
 
-            Snep_SoundFiles_Manager::remove($dados['arquivo'], $dados['secao']);
+            $soundFiles->remove($dados['arquivo'], $dados['secao']);
 
             $this->_redirect($this->getRequest()->getControllerName() . "/file/section/".$dados['secao']);
         }

@@ -33,6 +33,13 @@
  * @package   Snep
  * @copyright Copyright (c) 2010 OpenS Tecnologia
  * @author Henrique Grolli Bassotto
+ *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_ExtensionsGroups_Manager::method(...)); the class is never
+ * instantiated (its constructor is even private), and no method uses
+ * $this. Calling a non-static method statically is a fatal Error since
+ * PHP 8.0. All methods below declared static to match actual usage
+ * (TASK-0002 P1-A). See docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_ExtensionsGroups_Manager {
 
@@ -84,7 +91,7 @@ class Snep_ExtensionsGroups_Manager {
      * @param int $id
      * @return array (peer_id <int>, group_id <int>, name <string> )
      */
-    public function getExtensionsGroup($id) {
+    public static function getExtensionsGroup($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -104,7 +111,7 @@ class Snep_ExtensionsGroups_Manager {
      * @param int $id
      * @return array (peer_id <int>, group_id <int>, name <string>, group_name <string> )
      */
-    public function getExtensionsNoGroup($id) {
+    public static function getExtensionsNoGroup($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -123,7 +130,7 @@ class Snep_ExtensionsGroups_Manager {
      *
      * @return array (peer_id <int>, group_id <int>, name <string>, group_name <string> )
      */
-    public function getExtensionsAll() {
+    public static function getExtensionsAll() {
 
         $db = Zend_Registry::get('db');
 
@@ -142,7 +149,7 @@ class Snep_ExtensionsGroups_Manager {
      *
      * @return <int> $group
      */
-    public function getExtensionsOnlyGroup($group) {
+    public static function getExtensionsOnlyGroup($group) {
 
         $exten_in  = self::getExtensionsGroup($group) ;
         $exten_out = self::getExtensionsNoGroup($group) ;
@@ -168,7 +175,7 @@ class Snep_ExtensionsGroups_Manager {
      * @param <string> $id
      * @return Array
      */
-    public function getName($name) {
+    public static function getName($name) {
 
         $db = Zend_Registry::get('db');
 
@@ -187,7 +194,7 @@ class Snep_ExtensionsGroups_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getValidation($id) {
+    public static function getValidation($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -206,7 +213,7 @@ class Snep_ExtensionsGroups_Manager {
     /**
      * Returns all groups and extensions of the database.
      */
-    public function getExtensionsAllGroup() {
+    public static function getExtensionsAllGroup() {
 
         $db = Zend_Registry::get('db');
 
@@ -227,7 +234,7 @@ class Snep_ExtensionsGroups_Manager {
      * @param <int> $exten
      */
 
-    public function getGroupsExtensions($exten) {
+    public static function getGroupsExtensions($exten) {
 
         $db = Zend_Registry::get('db');
 
@@ -268,7 +275,7 @@ class Snep_ExtensionsGroups_Manager {
      *
      * @param <array> $extensionsGroup
      */
-    public function addExtensionsGroup($extensionsGroup) {
+    public static function addExtensionsGroup($extensionsGroup) {
         $db = Zend_Registry::get('db');
         $db->beginTransaction();
 
@@ -315,7 +322,7 @@ class Snep_ExtensionsGroups_Manager {
      * @param <array> $new_members
      * 
      */
-    public function updateExtensionsGroup($group, $old_members, $new_members) {
+    public static function updateExtensionsGroup($group, $old_members, $new_members) {
 
         // Delete all group extensions  based in old_members
         // Insert into Default group if necessary, because any extension must belong one group
@@ -342,7 +349,7 @@ class Snep_ExtensionsGroups_Manager {
      * @param <array> $new_members
      * 
      */
-    public function updateGroupsExtension($extension, $old_members, $new_members) {
+    public static function updateGroupsExtension($extension, $old_members, $new_members) {
 
         if (count($old_members) > 0) {
             foreach ($old_members as $key => $val) {

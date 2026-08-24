@@ -186,8 +186,15 @@ class PBX_Interfaces {
     /**
     * getCodecs - get all codecs available in the asterisk
     * @return <array> id, name, format, description
+    *
+    * PHP 8 compatibility (TASK-0002 P1-B): PBX_Interfaces mixes a
+    * constructor that sets $this->interfaceList with several already-static
+    * methods; getCodecs() itself uses no $this (verified: the only $this
+    * in this file is in __construct()), and its 3 call sites
+    * (ExtensionsController.php) already use ::. Declared static to match.
+    * See docs/tasks/0002-php84-compatibility-baseline.md.
     */
-    public function getCodecs(){
+    public static function getCodecs(){
 
       $asterisk = PBX_Asterisk_AMI::getInstance();
 

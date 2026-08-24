@@ -24,7 +24,16 @@
  *
  * @category  Snep
  * @package   Snep
- * @copyright Copyright (c) 2011 OpenS Tecnologia 
+ * @copyright Copyright (c) 2011 OpenS Tecnologia
+ *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_Dashboard_Manager::method(...)); the class is never instantiated,
+ * and no method uses $this. Calling a non-static method statically is a
+ * fatal Error since PHP 8.0. All methods below declared static to match
+ * actual usage. Pulled forward from the P1 Manager-class batch (TASK-0002)
+ * because getModelos()/add()/getArray() are on the dashboard flow's
+ * critical rendering path. See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_Dashboard_Manager {
 
@@ -36,7 +45,7 @@ class Snep_Dashboard_Manager {
      * get - Get Dashboard
      * @return <array>
      */
-    public function get() {
+    public static function get() {
         $db = Zend_Registry::get('db');
 
         $dashboard = $db->query("SELECT dashboard FROM users WHERE id='$_SESSION[id_user]'")->fetchObject();
@@ -51,7 +60,7 @@ class Snep_Dashboard_Manager {
      * set - Set dashboard
      * @param <array> $dashboard
      */
-    public function set($dashboard) {
+    public static function set($dashboard) {
         $modelos = Snep_Dashboard_Manager::getModelos();
         $atual = Snep_Dashboard_Manager::get();
 
@@ -77,7 +86,7 @@ class Snep_Dashboard_Manager {
      * add - Add item in the dashboard
      * @param <string> $id
      */
-    public function add($id) {
+    public static function add($id) {
         $dashboard = Snep_Dashboard_Manager::get();
         if (is_array($id)) {
             $id['id'] = time() . rand(0, 100);
@@ -93,7 +102,7 @@ class Snep_Dashboard_Manager {
      * getModelos
      * @return type
      */
-    public function getModelos() {
+    public static function getModelos() {
         
         $i18n = Zend_Registry::get("i18n");
         $xml = simplexml_load_file('configs/dashboard.xml');
@@ -144,7 +153,7 @@ class Snep_Dashboard_Manager {
      * @param <string> $modelos
      * @return type
      */
-    public function getArray($modelos = null) {
+    public static function getArray($modelos = null) {
 
         $dashboard = Snep_Dashboard_Manager::get();
         $i18n = Zend_Registry::get("i18n");
@@ -175,7 +184,7 @@ class Snep_Dashboard_Manager {
      * getmodelosNotUsed
      * @return type
      */
-    public function getModelosNotUsed() {
+    public static function getModelosNotUsed() {
 
         $ids_key = array();
         
@@ -201,7 +210,7 @@ class Snep_Dashboard_Manager {
      * @param <string> $nameAction
      * @return <string> $key
      */
-    public function getKey($nameModule,$nameController,$nameAction){
+    public static function getKey($nameModule,$nameController,$nameAction){
 
         $dashboard = self::getModelosNotUsed();
         

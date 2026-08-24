@@ -216,8 +216,16 @@ class Snep_Locale {
     /**
      *  Adjuste Asterisk GLOBAL variable for Language
      * @param <string> $lang - Language
+     *
+     * PHP 8 compatibility (TASK-0002 P1-B): Snep_Locale is an overall
+     * stateful singleton (locale/language/timezone set in __construct()),
+     * but this one method uses no $this/self::$instance -- it only shells
+     * out and talks to the separate PBX_Asterisk_AMI singleton. Verified
+     * and declared static to match its existing :: call sites
+     * (AuthController.php, ParametersController.php). See
+     * docs/tasks/0002-php84-compatibility-baseline.md.
      */
-    public function setExtensionsLanguage($lang) {
+    public static function setExtensionsLanguage($lang) {
         $config = "/etc/asterisk/extensions.conf";
         $config_tmp = $config . '.dpkg-new' ;
         $option='SNEP_LANGUAGE' ;

@@ -29,6 +29,12 @@
  * @copyright Copyright (c) 2017 Opens Tecnologia
  * @author    Opens Tecnologia <desenvolvimentol@opens.com.br>
  *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_Version::method(...)); the class is never instantiated, and no
+ * method uses $this. Calling a non-static method statically is a fatal
+ * Error since PHP 8.0. All methods below declared static to match actual
+ * usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_Version {
 
@@ -36,7 +42,7 @@ class Snep_Version {
 
     }
 
-    public function getNewVersions(){
+    public static function getNewVersions(){
       $url = Snep_Config::getConfiguration("default","update_server");
       if($url['config_value']){
         $ctx = Snep_Request::http_context(array(), "GET");
@@ -60,7 +66,7 @@ class Snep_Version {
 
     }
 
-    public function getChangelog(){
+    public static function getChangelog(){
       $url = Snep_Config::getConfiguration("default","update_server");
       if($url['config_value']){
         $ctx = Snep_Request::http_context(array("version" => SNEP_VERSION), "GET");
@@ -79,7 +85,7 @@ class Snep_Version {
 
     }
 
-    public function my_version_compare($ver1, $ver2, $operator = null){
+    public static function my_version_compare($ver1, $ver2, $operator = null){
         $p = '#(\.0+)+($|-)#';
         $ver1 = preg_replace($p, '', $ver1);
         $ver2 = preg_replace($p, '', $ver2);

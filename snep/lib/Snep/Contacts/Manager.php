@@ -27,6 +27,12 @@
  * @copyright Copyright (c) 2011 OpenS Tecnologia
  * @author    Rafael Pereira Bozzetti <rafael@opens.com.br>
  *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_Contacts_Manager::method(...)); the class is never instantiated,
+ * and no method uses $this. Calling a non-static method statically is a
+ * fatal Error since PHP 8.0. All methods below declared static to match
+ * actual usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_Contacts_Manager {
 
@@ -37,7 +43,7 @@ class Snep_Contacts_Manager {
     /**
      * Method to get all contact
      */
-    public function getAll() {
+    public static function getAll() {
 
         $db = Zend_registry::get('db');
 
@@ -57,7 +63,7 @@ class Snep_Contacts_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function get($id) {
+    public static function get($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -76,7 +82,7 @@ class Snep_Contacts_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getMember($id) {
+    public static function getMember($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -95,7 +101,7 @@ class Snep_Contacts_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getPhone($id) {
+    public static function getPhone($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -113,7 +119,7 @@ class Snep_Contacts_Manager {
      * Method to get all state
      * @return <array>
      */
-    public function getStates() {
+    public static function getStates() {
 
         $db = Zend_Registry::get('db');
 
@@ -131,7 +137,7 @@ class Snep_Contacts_Manager {
      * @param <string> $state
      * @return <array>
      */
-    public function getCity($state) {
+    public static function getCity($state) {
 
         $db = Zend_Registry::get('db');
 
@@ -152,7 +158,7 @@ class Snep_Contacts_Manager {
      * @param array $contact
      * @return int
      */
-    public function add($contact) {
+    public static function add($contact) {
 
         $db = Zend_Registry::get('db');
 
@@ -179,7 +185,7 @@ class Snep_Contacts_Manager {
      * @param <array> $contact
      * @return int
      */
-    public function addNumber($id, $phone) {
+    public static function addNumber($id, $phone) {
 
         $db = Zend_Registry::get('db');
 
@@ -193,7 +199,7 @@ class Snep_Contacts_Manager {
      * Method to remove a contact
      * @param int $id
      */
-    public function remove($id) {
+    public static function remove($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -211,7 +217,7 @@ class Snep_Contacts_Manager {
      * Method to remove a contact group
      * @param <int> $id
      */
-    public function removeGroup($id) {
+    public static function removeGroup($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -229,7 +235,7 @@ class Snep_Contacts_Manager {
      * Method to remove phone a contact
      * @param <int> $id
      */
-    public function removePhone($id) {
+    public static function removePhone($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -247,7 +253,7 @@ class Snep_Contacts_Manager {
      * Method to update a contact data
      * @param <array> $data
      */
-    public function edit($contact) {
+    public static function edit($contact) {
 
         $db = Zend_Registry::get('db');
 
@@ -267,7 +273,7 @@ class Snep_Contacts_Manager {
      * Method to return a last inserted id.
      * The Contacts id cannot be a auto increment field
      */
-    public function getLastId() {
+    public static function getLastId() {
 
         $db = Zend_registry::get('db');
 
@@ -287,7 +293,7 @@ class Snep_Contacts_Manager {
      * removeByGroupId
      * @param <int> $groupId
      */
-    public function removeByGroupId($groupId) {
+    public static function removeByGroupId($groupId) {
 
         $db = Zend_Registry::get('db');
 

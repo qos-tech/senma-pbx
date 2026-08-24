@@ -61,9 +61,14 @@ class SoundFilesController extends Zend_Controller_Action {
         $files = $stmt->fetchAll();
         
         if(!empty($files)){
+            // PHP 8 compatibility: verifySoundFiles() uses $this
+            // internally, so it must be called on an instance
+            // (TASK-0002 P1-B). See
+            // docs/tasks/0002-php84-compatibility-baseline.md.
+            $soundFiles = new Snep_SoundFiles_Manager();
             // Mount file list and verify if exists file in directory
             foreach ($files as $id => $file) {
-                $info = Snep_SoundFiles_Manager::verifySoundFiles($file['arquivo']);
+                $info = $soundFiles->verifySoundFiles($file['arquivo']);
                 $_files[] = array_merge($file, $info);
             }
         }
@@ -107,8 +112,11 @@ class SoundFilesController extends Zend_Controller_Action {
 
             // Verify file consistence
             $error = false ;
+            // PHP 8 compatibility: get() uses $this internally, so it
+            // must be called on an instance (TASK-0002 P1-B). See
+            // docs/tasks/0002-php84-compatibility-baseline.md.
             // Verify if file exists into db table
-            if (Snep_SoundFiles_Manager::get($originalName)) {
+            if ((new Snep_SoundFiles_Manager())->get($originalName)) {
                 $this->view->error_message .= $this->view->translate("File already exists in database for this language.")."<br />";
                 $error = true;
             }
@@ -184,7 +192,11 @@ class SoundFilesController extends Zend_Controller_Action {
 
         $arquivo = $this->_request->getParam("arquivo");
 
-        $sound = Snep_SoundFiles_Manager::get($arquivo);
+        // PHP 8 compatibility: get()/edit() below use $this internally,
+        // so they must be called on an instance (TASK-0002 P1-B). See
+        // docs/tasks/0002-php84-compatibility-baseline.md.
+        $soundFiles = new Snep_SoundFiles_Manager();
+        $sound = $soundFiles->get($arquivo);
         $arq_orig = $sound['arquivo'];
 
         $this->view->sound = $sound;
@@ -246,7 +258,7 @@ class SoundFilesController extends Zend_Controller_Action {
 
             // Change register file
 
-            Snep_SoundFiles_Manager::edit($dados);
+            $soundFiles->edit($dados);
             
             //audit
             Snep_Audit_Manager::SaveLog("Updated", 'sounds', $id, $this->view->translate("Sound") ." ". $dados["arquivo"]);
@@ -275,11 +287,16 @@ class SoundFilesController extends Zend_Controller_Action {
 
         if ($this->_request->getPost()) {
             $id = $_POST['id'];
-            $file = Snep_SoundFiles_Manager::remove($id);
+            // PHP 8 compatibility: remove()/verifySoundFiles() use $this
+            // internally, so they must be called on an instance
+            // (TASK-0002 P1-B). See
+            // docs/tasks/0002-php84-compatibility-baseline.md.
+            $soundFiles = new Snep_SoundFiles_Manager();
+            $file = $soundFiles->remove($id);
 
             if ($file) {
 
-                $result = Snep_SoundFiles_Manager::verifySoundFiles($id, true);
+                $result = $soundFiles->verifySoundFiles($id, true);
 
                 if ($result['fullpath']) {
                     try {
@@ -310,7 +327,11 @@ class SoundFilesController extends Zend_Controller_Action {
         $file = $this->_request->getParam("arquivo");
 
         if ($file) {
-            $result = Snep_SoundFiles_Manager::verifySoundFiles($file, true);
+            // PHP 8 compatibility: verifySoundFiles() uses $this
+            // internally, so it must be called on an instance
+            // (TASK-0002 P1-B). See
+            // docs/tasks/0002-php84-compatibility-baseline.md.
+            $result = (new Snep_SoundFiles_Manager())->verifySoundFiles($file, true);
 
             if ($result['fullpath'] && $result['backuppath']) {
                 try {
@@ -334,8 +355,14 @@ class SoundFilesController extends Zend_Controller_Action {
                     $this->view->translate("Sound Files"),
                     $this->view->translate("Synchronization of sound files ")));
 
+        // PHP 8 compatibility: getSounds()/remove()/addSounds() below use
+        // $this internally, so they must be called on an instance
+        // (TASK-0002 P1-B). See
+        // docs/tasks/0002-php84-compatibility-baseline.md.
+        $soundFiles = new Snep_SoundFiles_Manager();
+
         // Arquivos de som cadastrados no banco
-        $soundDb = Snep_SoundFiles_Manager::getSounds();
+        $soundDb = $soundFiles->getSounds();
 
         $list_db = array();
         foreach ($soundDb as $sound) {
@@ -411,11 +438,11 @@ class SoundFilesController extends Zend_Controller_Action {
 
 
             foreach ($fileNotExist as $key => $file) {
-                Snep_SoundFiles_Manager::remove($file);
+                $soundFiles->remove($file);
 
             }
             foreach ($array_directory as $cont => $archive) {
-                Snep_SoundFiles_Manager::addSounds($archive);
+                $soundFiles->addSounds($archive);
             }
             $this->_redirect($this->getRequest()->getControllerName());
         }

@@ -24,6 +24,13 @@
  * @package   Snep
  * @copyright Copyright (c) 2010 OpenS Tecnologia
  * @author Henrique Grolli Bassotto
+ *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_PickupGroups_Manager::method(...)); the class is never
+ * instantiated (its constructor is even private), and no method uses
+ * $this. Calling a non-static method statically is a fatal Error since
+ * PHP 8.0. All methods below declared static to match actual usage
+ * (TASK-0002 P1-A). See docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_PickupGroups_Manager {
 
@@ -140,7 +147,7 @@ class Snep_PickupGroups_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getValidation($id) {
+    public static function getValidation($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -194,7 +201,7 @@ class Snep_PickupGroups_Manager {
      * getExtensiosAll - Obtem uma lista de todas extensões (ramais) com seus grupos de captura
      * @return <array> $extensionsGroup
      */
-    public function getExtensionsAll() {
+    public static function getExtensionsAll() {
 
         $db = Zend_Registry::get('db');
 
@@ -237,7 +244,7 @@ class Snep_PickupGroups_Manager {
      * @param <string> $extensionsGroup
      * @return \Exception|boolean
      */
-    public function addExtensionsGroup($extensionsGroup) {
+    public static function addExtensionsGroup($extensionsGroup) {
 
         $db = Zend_Registry::get('db');
         $db->beginTransaction();
@@ -280,7 +287,7 @@ class Snep_PickupGroups_Manager {
      * @param <string> $id
      * @return type
      */
-    public function getExtensionsOnlyGroup($id) {
+    public static function getExtensionsOnlyGroup($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -323,7 +330,7 @@ class Snep_PickupGroups_Manager {
      * @param <string> $id
      * @return Array
      */
-    public function getName($name) {
+    public static function getName($name) {
 
         $db = Zend_Registry::get('db');
 

@@ -27,6 +27,12 @@
  * @copyright Copyright (c) 2014 OpenS Tecnologia
  * @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
  *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_Trunks_Manager::method(...)); the class is never instantiated,
+ * and no method uses $this. Calling a non-static method statically is a
+ * fatal Error since PHP 8.0. All methods below declared static to match
+ * actual usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_Trunks_Manager {
 
@@ -37,7 +43,7 @@ class Snep_Trunks_Manager {
     /**
      * Method to get all trunks
      */
-    public function getData() {
+    public static function getData() {
 
         $db = Zend_registry::get('db');
 
@@ -55,7 +61,7 @@ class Snep_Trunks_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getValidation($id) {
+    public static function getValidation($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -75,7 +81,7 @@ class Snep_Trunks_Manager {
      * @param <string> $name
      * @return <array>
      */
-    public function getId($name) {
+    public static function getId($name) {
 
         $db = Zend_Registry::get('db');
 
@@ -94,7 +100,7 @@ class Snep_Trunks_Manager {
      * @param <string> $id
      * @return <array>
      */
-    public function get($id) {
+    public static function get($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -114,7 +120,7 @@ class Snep_Trunks_Manager {
      * @param <int> $id
      * @return <array>
      */
-    public function getRules($id) {
+    public static function getRules($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -128,7 +134,7 @@ class Snep_Trunks_Manager {
      * Remove a trunk
      * @param <int> $id
      */
-    public function remove($id) {
+    public static function remove($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -146,7 +152,7 @@ class Snep_Trunks_Manager {
      * Remove a trunk
      * @param <int> $id
      */
-    public function removePeers($name) {
+    public static function removePeers($name) {
 
         $db = Zend_Registry::get('db');
 
@@ -165,7 +171,7 @@ class Snep_Trunks_Manager {
      * @param <int> $id - Trunk code
      * @return <array> $tronco - Data of trunk
      */
-    function getTrunkLog($id) {
+    public static function getTrunkLog($id) {
 
         $tronco = array();
 
@@ -201,7 +207,7 @@ class Snep_Trunks_Manager {
      * @param <string> $id
      * @return Array
      */
-    public function getName($name) {
+    public static function getName($name) {
 
         $db = Zend_Registry::get('db');
 
@@ -219,7 +225,7 @@ class Snep_Trunks_Manager {
      * enable - enable trunk
      * @param <int> $id
      */
-    public function enable($id) {
+    public static function enable($id) {
 
         $db = Zend_Registry::get('db');
 

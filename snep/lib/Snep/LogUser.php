@@ -30,6 +30,12 @@
  *
  *
  */
+/**
+ * PHP 8 compatibility (TASK-0002 P1-B): both call sites invoke log()
+ * statically (Snep_LogUser::log(...)); the class is never instantiated,
+ * and the method uses no $this. Declared static to match. See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
+ */
 class Snep_LogUser {
 
     /**
@@ -39,7 +45,7 @@ class Snep_LogUser {
      * @param <int> $tipo
      * @return boolean
      */
-    function log($action, $data) {
+    static function log($action, $data) {
       $db = Zend_Registry::get("db");
 
       $ip = $_SERVER['REMOTE_ADDR'];

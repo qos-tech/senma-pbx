@@ -24,6 +24,18 @@
  * @package   Snep
  * @copyright Copyright (c) 2010 OpenS Tecnologia
  * @author Henrique Grolli Bassotto
+ *
+ * PHP 8 compatibility: this is a genuine singleton (getInstance() does
+ * `new self()`), and call sites are a mix of PBX_DatesAliases::method()
+ * (direct static syntax) and PBX_DatesAliases::getInstance()->method()
+ * (instance arrow) -- both work identically once these are static, since
+ * PHP has always allowed calling a static method through an instance
+ * arrow. No method uses $this despite the singleton pattern (each method
+ * is independently stateless, using only Zend_Registry). Calling a
+ * non-static method statically is a fatal Error since PHP 8.0. All
+ * methods below (except getInstance(), already static) declared static
+ * to match actual usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class PBX_DatesAliases {
 
@@ -52,7 +64,7 @@ class PBX_DatesAliases {
      * getAll - List expression Aliases
      * @return <array> $aliases
      */
-    public function getAll() {
+    public static function getAll() {
         $db = Zend_Registry::get('db');
         $select = $db->select()
                 ->from(array("date_alias"), array("id","name"));
@@ -67,7 +79,7 @@ class PBX_DatesAliases {
      * getAllList - List expression Aliases
      * @return <array> $aliases
      */
-    public function getAllList() {
+    public static function getAllList() {
         
         $db = Zend_Registry::get('db');
         $select = $db->select()
@@ -85,7 +97,7 @@ class PBX_DatesAliases {
      * @return <array>
      * @throws PBX_Exception_BadArg
      */
-    public function get($id) {
+    public static function get($id) {
         if (!isset($id)) {
             throw new PBX_Exception_BadArg("Id must be numerical but it is: $id");
         }
@@ -107,7 +119,7 @@ class PBX_DatesAliases {
      * @param <array> $dates array(name => String Name, id => id, timerange => array(), date => array())
      * @throws Exception
      */
-    public function add($dates) {
+    public static function add($dates) {
 
         $db = Zend_Registry::get('db');
         $db->beginTransaction();
@@ -133,7 +145,7 @@ class PBX_DatesAliases {
      * @param <array> $dates array(name => String Name, id => id, timerange => array(), date => array())
      * @throws Exception
      */
-    public function update($dates) {
+    public static function update($dates) {
         $id = $dates['id'];
 
         $db = Zend_Registry::get('db');
@@ -158,7 +170,7 @@ class PBX_DatesAliases {
      * delete - Remove expression alias
      * @param <int> $id
      */
-    public function delete($id) {
+    public static function delete($id) {
         $db = Zend_Registry::get('db');
 
         $db->delete("date_alias_list", "dateid=$id");
@@ -171,7 +183,7 @@ class PBX_DatesAliases {
       * getValidation - get route that are using this dates_alias
       * @param <string> $id
       */
-    public function getValidation($id){
+    public static function getValidation($id){
       $db = Zend_Registry::get("db");
       $select = $db->select()
                   ->from('regras_negocio')

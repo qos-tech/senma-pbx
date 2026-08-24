@@ -6,12 +6,18 @@
 
 class Snep_Request {
 
+	// __construct() is never invoked anywhere in the codebase -- the class
+	// is used exclusively via Snep_Request::method() static calls, never
+	// `new`'d -- left untouched (dead code, not a PHP 8 compatibility
+	// concern). http_context()/send_request()/parseHeaders() below are
+	// declared static because every call site already uses :: and none of
+	// them reference $this; see docs/tasks/0002-php84-compatibility-baseline.md.
 	public function __construct(){
 		$this->log = Zend_Registry::get("log");
 	}
 
     // create the http context to prepare data to send the request
-    public function http_context($data,$method="POST"){
+    public static function http_context($data,$method="POST"){
         $jdata = json_encode($data);
 		if(isset($data['content-type'])){
 			$content_type = "Content-type: " . $data['content-type'];
@@ -52,7 +58,7 @@ class Snep_Request {
     }
 
     // Send the request to the aditional service
-    public function send_request($url,$ctx){
+    public static function send_request($url,$ctx){
         $raw_response = @file_get_contents($url,0,$ctx);
 				$headers = self::parseHeaders($http_response_header);
 				$response = array(
@@ -62,7 +68,7 @@ class Snep_Request {
         return $response;
     }
 
-		function parseHeaders( $headers )	{
+		static function parseHeaders( $headers )	{
 		    $head = array();
 				if(count($headers) > 0){
 			    foreach( $headers as $k=>$v )

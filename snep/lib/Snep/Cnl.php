@@ -291,8 +291,16 @@ class Snep_Cnl {
      * Parsing name file
      * @param <string> $name
      * @return <string> $name
+     *
+     * PHP 8 compatibility: every other method in this class was already
+     * static; this one wasn't, but is called via self::parseName() from
+     * addCity() (already static) with no $this in its own body. Calling a
+     * non-static method via self:: from a static method context has no
+     * $this to fall back on and is a fatal Error since PHP 8.0. Declared
+     * static to match (TASK-0002 P1-A). See
+     * docs/tasks/0002-php84-compatibility-baseline.md.
      */
-    public function parseName($name) {
+    public static function parseName($name) {
     
         $invalid = array('â', 'ã', 'á', 'à', 'ẽ', 'é', 'è', 'ê', 'í', 'ì', 'ó', 'õ', 'ò', 'ô', 'ú', 'ù', 'ç', 'Â', 'Ã', 'Á', 'À', 'È', 'É', 'È', 'Ê', 'Í', 'Ì', 'Ó', 'Õ', 'Ò', 'Ô', 'Ú', 'Ù', 'Ç', '\'', '´');
         $valid   = array('a', 'a', 'a', 'a', 'e', 'e', 'e', 'e', 'i', 'i', 'o', 'o', 'o', 'o', 'u', 'u', 'c', 'A', 'A', 'A', 'A', 'E', 'E', 'E', 'E', 'I', 'I', 'O', 'O', 'O', 'O', 'U', 'U', 'C', ' ' , ' ');

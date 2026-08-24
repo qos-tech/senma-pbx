@@ -62,8 +62,16 @@ abstract class Snep_Config {
      * Get configuration on Snep and modules
      * @param <string> $module
      * @return <array> $configuration
+     *
+     * PHP 8 compatibility: Snep_Config is abstract (can never be
+     * instantiated) and every call site in the codebase uses ::; the body
+     * never uses $this. Pulled forward from the P1 Manager-class batch
+     * (TASK-0002) because it's called from the shared page layout
+     * (modules/default/views/layouts/layout.phtml), blocking every page,
+     * not one specific flow. See
+     * docs/tasks/0002-php84-compatibility-baseline.md.
      */
-    public function getAllConfiguration($module) {
+    public static function getAllConfiguration($module) {
 
         $db = Zend_registry::get('db');
 
@@ -83,7 +91,7 @@ abstract class Snep_Config {
      * @param <string> $key
      * @return <array> $configuration
      */
-    public function getConfiguration($module, $key) {
+    public static function getConfiguration($module, $key) {
 
         $db = Zend_registry::get('db');
 

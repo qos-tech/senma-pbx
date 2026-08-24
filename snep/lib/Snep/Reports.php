@@ -28,12 +28,18 @@
  * @package   Snep
  * @copyright Copyright (c) 2015 Opens Tecnologia
  * @author    Opens Tecnologia <desenvolvimentol@opens.com.br>
- * 
+ *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_Reports::method(...)); the class is never instantiated, and no
+ * method uses $this. Calling a non-static method statically is a fatal
+ * Error since PHP 8.0. All methods below declared static to match actual
+ * usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_Reports {
 
     public function __construct() {
-        
+
     }
 
     /**
@@ -43,7 +49,7 @@ class Snep_Reports {
      * @param <int> $cont
      * @return <array> $pagesvalue
      */
-    public function createPages($page,$line_limit,$cont = null){
+    public static function createPages($page,$line_limit,$cont = null){
         // page = 1 e line_limit = 50;
 
         $numbpagenext = $page;
@@ -81,7 +87,7 @@ class Snep_Reports {
      * @param <string> $endDay
      * @return <array> $date
      */
-    public function fmt_date($initDay,$endDay){
+    public static function fmt_date($initDay,$endDay){
 
         $init_day = explode(" ", $initDay);
         $final_day = explode(" ", $endDay);

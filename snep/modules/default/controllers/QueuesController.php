@@ -89,7 +89,10 @@ class QueuesController extends Zend_Controller_Action {
                     $this->view->translate("Add Queues")));
 
 
-        $this->view->sounds = Snep_SoundFiles_Manager::getSounds(true);
+        // PHP 8 compatibility: getSounds() uses $this internally, so it
+        // must be called on an instance (TASK-0002 P1-B). See
+        // docs/tasks/0002-php84-compatibility-baseline.md.
+        $this->view->sounds = (new Snep_SoundFiles_Manager())->getSounds(true);
 
         // Music on Hold available
         $musiconhold = "";
@@ -176,7 +179,10 @@ class QueuesController extends Zend_Controller_Action {
 
         $this->view->queue = $queue;
 
-        $this->view->sounds = Snep_SoundFiles_Manager::getSounds(true);
+        // PHP 8 compatibility: getSounds() uses $this internally, so it
+        // must be called on an instance (TASK-0002 P1-B). See
+        // docs/tasks/0002-php84-compatibility-baseline.md.
+        $this->view->sounds = (new Snep_SoundFiles_Manager())->getSounds(true);
 
         // Music On Hold available x registered
         $musiconhold = "";

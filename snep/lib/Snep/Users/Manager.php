@@ -27,6 +27,12 @@
  * @copyright Copyright (c) 2014 OpenS Tecnologia
  * @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
  *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_Users_Manager::method(...)); the class is never instantiated, and
+ * no method uses $this. Calling a non-static method statically is a fatal
+ * Error since PHP 8.0. All methods below declared static to match actual
+ * usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_Users_Manager {
 
@@ -38,7 +44,7 @@ class Snep_Users_Manager {
      * Method to add a user.
      * @param <array> $user
      */
-    public function add($user) {
+    public static function add($user) {
 
         $db = Zend_Registry::get('db');
 
@@ -59,7 +65,7 @@ class Snep_Users_Manager {
      * Method to remove a user
      * @param <int> $id
      */
-    public function remove($id) {
+    public static function remove($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -77,7 +83,7 @@ class Snep_Users_Manager {
      * Method to remove data of user in table password_recovery
      * @param <int> $id
      */
-    public function removeRecovery($id) {
+    public static function removeRecovery($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -95,7 +101,7 @@ class Snep_Users_Manager {
      * removePermission - Method to remove permission a user
      * @param <int> $id
      */
-    public function removePermission($id) {
+    public static function removePermission($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -114,7 +120,7 @@ class Snep_Users_Manager {
      * @param <array> $data
      * @return \Exception|boolean
      */
-    public function addProfile($data) {
+    public static function addProfile($data) {
 
         $db = Zend_Registry::get('db');
 
@@ -128,7 +134,7 @@ class Snep_Users_Manager {
      * Method to getAll users
      * @return <Array> $users
      */
-    public function getAll() {
+    public static function getAll() {
 
         $db = Zend_Registry::get('db');
 
@@ -146,7 +152,7 @@ class Snep_Users_Manager {
      * @param <int> $id
      * @return <Array> $users
      */
-    public function get($id) {
+    public static function get($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -164,7 +170,7 @@ class Snep_Users_Manager {
      * Method to update a user data
      * @param <Array> $user
      */
-    public function edit($user) {
+    public static function edit($user) {
 
         $db = Zend_Registry::get('db');
 
@@ -183,7 +189,7 @@ class Snep_Users_Manager {
      * @param <array> $data
      * @return \Exception|boolean
      */
-    public function addProfileByName($data) {
+    public static function addProfileByName($data) {
 
         $db = Zend_Registry::get('db');
         $db->beginTransaction();
@@ -210,7 +216,7 @@ class Snep_Users_Manager {
      * @param <string> $name
      * @param <int> $id
      */
-    public function removeProfileByName($name) {
+    public static function removeProfileByName($name) {
 
         $db = Zend_Registry::get('db');
 
@@ -225,7 +231,7 @@ class Snep_Users_Manager {
      * @param <string> $id
      * @return Array
      */
-    public function getName($name) {
+    public static function getName($name) {
 
         $db = Zend_Registry::get('db');
 
@@ -243,7 +249,7 @@ class Snep_Users_Manager {
      * Method to add a permission user if the queue .
      * @param <int> $queue
      */
-    public function addQueuesPermission($id,$queue_id) {
+    public static function addQueuesPermission($id,$queue_id) {
 
         $db = Zend_Registry::get('db');
 
@@ -258,7 +264,7 @@ class Snep_Users_Manager {
      * @param <int> $id
      * @return <Array> $users
      */
-    public function getQueuesPermission($id) {
+    public static function getQueuesPermission($id) {
 
         $db = Zend_Registry::get('db');
 
@@ -276,7 +282,7 @@ class Snep_Users_Manager {
      * removeQueuesPermission - Method to remove permission queues a user
      * @param <int> $id
      */
-    public function removeQueuesPermission($id) {
+    public static function removeQueuesPermission($id) {
 
         $db = Zend_Registry::get('db');
 

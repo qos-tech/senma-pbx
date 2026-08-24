@@ -26,18 +26,24 @@
  * @package   Snep
  * @copyright Copyright (c) 2014 OpenS Tecnologia
  * @author    Tiago Zimmermann <tiago.zimmermann@opens.com.br>
- * 
+ *
+ * PHP 8 compatibility: every call site invokes these methods statically
+ * (Snep_IpStatus_Manager::method(...)); the class is never instantiated,
+ * and no method uses $this. Calling a non-static method statically is a
+ * fatal Error since PHP 8.0. All methods below declared static to match
+ * actual usage (TASK-0002 P1-A). See
+ * docs/tasks/0002-php84-compatibility-baseline.md.
  */
 class Snep_IpStatus_Manager {
 
     public function __construct() {
-        
+
     }
 
     /**
      * Get name all Queue
      */
-    public function getQueues() {
+    public static function getQueues() {
 
         $db = Zend_registry::get('db');
 
@@ -53,7 +59,7 @@ class Snep_IpStatus_Manager {
     /**
      * Get trunks
      */
-    public function getTrunks($like) {
+    public static function getTrunks($like) {
 
         $db = Zend_registry::get('db');
 
@@ -70,7 +76,7 @@ class Snep_IpStatus_Manager {
     /**
      * Get Peers
      */
-    public function getPeers() {
+    public static function getPeers() {
 
         $db = Zend_registry::get('db');
 
