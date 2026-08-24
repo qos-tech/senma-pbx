@@ -150,6 +150,17 @@ class HW_IDS {
 	 * @access private
 	 */
 	private function _fetchPciNames() {
+		// PHP 8 compatibility (TASK-0004): $this->_pci_file is false when no
+		// pci.ids candidate path exists (see getDevs()). fopen() on PHP <8.1
+		// silently coerced that to '' and returned false with a suppressed
+		// warning -- the loop below never ran, so PCI name resolution was
+		// already a deliberate, graceful no-op in that case. PHP 8.1 made an
+		// empty-string fopen() path a ValueError instead, which @ cannot
+		// suppress. This guard restores the exact original zero-iteration
+		// outcome. See docs/tasks/0004-php84-remaining-compatibility.md.
+		if (empty($this->_pci_file)) {
+			return;
+		}
 		for ($v = false, $file = @fopen($this->_pci_file, 'r'); $file != false && $contents = fgets($file);) {
 				if (preg_match('/^(\S{4})\s+([^$]+)$/', $contents, $vend_match) == 1) {
 					$v = $vend_match;
@@ -169,6 +180,12 @@ class HW_IDS {
 	 * @access private
 	 */
 	private function _fetchUsbNames() {
+		// PHP 8 compatibility (TASK-0004): same guard as _fetchPciNames(),
+		// same reason -- $this->_usb_file is false when no usb.ids candidate
+		// path exists.
+		if (empty($this->_usb_file)) {
+			return;
+		}
 		for ($v = false, $file = @fopen($this->_usb_file, 'r'); $file != false && $contents = fgets($file);) {
 				if (preg_match('/^(\S{4})\s+([^$]+)$/', $contents, $vend_match) == 1) {
 					$v = $vend_match;

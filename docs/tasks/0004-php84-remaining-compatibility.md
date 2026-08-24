@@ -442,3 +442,141 @@ batch 2's findings:
   confirmed dead (no linfo extensions enabled), deliberately excluded.
 - Unauthenticated reachability of `/lib/linfo/index.php` — still
   documented only, not remediated, per instruction.
+
+---
+
+# Batch 4 — `HW_IDS`'s empty-path `fopen()` `ValueError`
+
+## Objective
+Fix the `fopen('', 'r')` `ValueError` in `class.HW_IDS.php::_fetchPciNames()`
+uncovered by batch 3's validation, per its own explicit deferral.
+
+## Root-cause trace (performed before editing)
+
+`getDevs()` (`class.OS_Linux.php:682-706`) resolves `pci.ids`/`usb.ids` via
+`LinfoCommon::locateActualPath()` against 3 distro-specific candidate
+paths each (Debian/Ubuntu, openSUSE, CentOS/RedHat/Fedora locations).
+Confirmed live in this container: none of the 6 candidate paths exist,
+and none of `pciutils`/`hwdata`/`usbutils` are installed (checked via
+`dpkg -l`) — this is a minimal Docker image, not a bug in it.
+`locateActualPath()` returns `false` in that case (its own 6-line
+implementation: loop candidates, return the first `is_file()` hit, else
+`false`) — `getDevs()` logs an internal-only hint
+("Cannot find pci.ids; ensure pciutils is installed.", only surfaced if
+`show_errors` is enabled, confirmed `false` in this deployment) and
+**continues regardless**, passing `false` into `new HW_IDS($usb_ids,
+$pci_ids)`.
+
+`HW_IDS::__construct()` stores that `false` in `$this->_pci_file`/
+`$this->_usb_file` without validation. `_fetchPciNames()` then called
+`@fopen($this->_pci_file, 'r')` — PHP's weak-typing coerces `false` to
+`''`, so `fopen()` received a literal empty string.
+
+**Legacy/intended behavior (proven, not assumed)**: on every previously-
+supported PHP version, `@fopen('', 'r')` returned `false` with a
+suppressed warning, and the method's own loop condition
+(`$file != false && $contents = fgets($file)`) evaluated false
+immediately — zero iterations, method returns having resolved zero
+names, no error surfaces externally. This is a deliberately-coded
+graceful-absence path (3 fallback candidate paths tried, `@`-suppression,
+a self-terminating loop condition), not an assumption that the database
+always exists. `HW_IDS::result()` only iterates the name-*resolved* maps
+(`_pci_devices`/`_usb_devices`), never falls back to raw IDs — so the
+legacy behavior for "database unavailable" is specifically **PCI/USB
+devices omitted from the results entirely**, not an ID-only fallback (no
+such fallback path exists in this code at all).
+
+**PHP 8.4 behavior difference**: PHP 8.1 made `fopen()` throw
+`ValueError: Path must not be empty` for an empty-string path instead of
+warning-and-returning-`false`. `@` does not suppress `ValueError` (only
+E_WARNING/E_NOTICE-class diagnostics) — so the exact defensive pattern
+this code relied on stopped working. This is a runtime behavior change,
+not a legacy code defect: the graceful-degradation design was and
+remains correct.
+
+**Pattern search**: `_fetchUsbNames()` (line 172, pre-fix) has the
+identical shape and is also reachable — `$usb_ids` is `false` too
+(`usbutils` also absent) and `work()` calls both methods unconditionally
+in sequence, so fixing only the PCI one would have hit the identical
+fatal one call later. Both required fixing together, not separately.
+`class.ext_dhcpd3_leases.php:68` uses the same `locateActualPath()`
+pattern but is confirmed dead (zero linfo extensions enabled, same
+finding as batch 3). `class.CallExt.php:111` uses `locateActualPath()`
+for shell-command string building, not `fopen()` — different shape, no
+`ValueError` risk. Grepped first-party code (`modules/`, `lib/Snep`,
+`lib/PBX`, `includes/`, `agi/`, `inspectors/`) for the same
+`fopen($var`/`file_get_contents($var` shape — zero hits.
+
+**Callers of `HW_IDS`**: only `class.OS_Linux.php:705` is reachable
+(`OS_Linux` is the only parser class ever instantiated in this Linux
+container, per batch 3). `OS_CYGWIN.php:636`, `OS_FreeBSD.php:571`,
+`OS_DragonFly.php:340` are dead, non-Linux platform code, not touched.
+No first-party code calls `HW_IDS` at all — PCI/USB hardware-name lookup
+is optional enrichment, explicitly designed to fail gracefully (proven
+above), matching `Linfo::scan()`'s own `'Devices' => array('default' =>
+array(), ...)` field definition (an empty collection is an equally valid
+outcome by the framework's own design).
+
+## Fix
+
+**`snep/lib/linfo/lib/class.HW_IDS.php`** — added an `empty()` guard at
+the top of both `_fetchPciNames()` and `_fetchUsbNames()`:
+```php
+if (empty($this->_pci_file)) {   // / ->_usb_file in the USB method
+    return;
+}
+```
+This restores the exact zero-iteration, zero-side-effect outcome the
+`@fopen()` + self-terminating loop already produced pre-PHP-8.1 — not a
+new fallback, not a behavior change, not the "add speculative absence
+handling" pattern ruled out up front, since the graceful-absence
+semantics were independently proven to be the existing design rather
+than assumed. No package installed; `getDevs()` itself, non-Linux
+platform classes, and linfo's extension system were not touched.
+
+## Validation performed
+- `php -l`: clean.
+- Direct `GET /lib/linfo/index.php?out=xml`: **HTTP 200** (previously a
+  bare 500 across 3 prior blockers). Explicitly parsed the response with
+  PHP's own `simplexml_load_file()` inside the container (not just
+  eyeballed) — confirmed well-formed, root element `linfo`, and read back
+  `core/os` = `Linux`, `core/kernel` = `6.12.54-linuxkit`, `core/uptime`
+  = `4 days, 8 hours, 3 minutes, 33 seconds; booted 08/20/26 01:34 PM
+  (UTC)` (a sensible, correctly-formatted value — direct confirmation
+  that batch 3's `ceil()`/`explode()` fix is producing genuinely correct
+  output, not just avoiding a fatal). `<devices/>` and `<CPU/>` render as
+  empty self-closing tags: `devices` is the exact predicted outcome of
+  this fix (no ids database → empty PCI/USB collection, by design);
+  `CPU` being empty is an unrelated, pre-existing environmental
+  observation (this container's `/proc/cpuinfo` parsing under Docker
+  Desktop's linuxkit VM yields zero entries) — not a fatal, not a PHP8
+  issue, not touched, out of this batch's scope.
+- App log for the successful request: only the same 2 pre-existing,
+  unrelated cosmetic warnings seen in every prior batch (`compact():
+  Undefined variable $extras`, "continue targeting switch") — no fatal.
+- `GET /index.php/default/systemstatus` (authenticated): unchanged, same
+  pre-existing "Unable to connect to manager" 500 as every prior batch —
+  the known no-Asterisk limitation remains, as expected.
+- `make smoke`: **14 PASS, 0 FAIL, 1 EXPECTED_LIMITATION** — exactly the
+  expected baseline. App log fatal-error diff: `0 → 0`. **Zero new PHP
+  Fatal Errors on any of the 10 required flows.**
+
+No further PHP 8.4 blocker was exposed — the direct linfo endpoint now
+returns a complete, valid, correct response. This closes the fatal chain
+that batches 2–4 worked through (`__autoload` → `create_function()` →
+`ceil()` `TypeError` → `fopen()` `ValueError`).
+
+## Files changed
+- `snep/lib/linfo/lib/class.HW_IDS.php` — 2 sites, guard clauses added to
+  `_fetchPciNames()` and `_fetchUsbNames()`.
+
+## Unresolved / follow-up (batch 4)
+- None new. `GET /lib/linfo/index.php?out=xml` is now fully functional
+  under PHP 8.4.
+- Unauthenticated reachability of `/lib/linfo/index.php` remains
+  documented-only (batch 2), now more relevant since the endpoint
+  actually returns real system information instead of erroring —
+  still deliberately not remediated here, per instruction.
+- `GET /index.php/default/systemstatus`'s no-Asterisk 500 remains the
+  same pre-existing, out-of-scope limitation documented since TASK-0002's
+  P0.
