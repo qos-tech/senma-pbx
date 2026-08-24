@@ -143,7 +143,9 @@ class Zend_Cache_Core
             Zend_Cache::throwException("Options passed were not an array"
             . " or Zend_Config instance.");
         }
-        while (list($name, $value) = each($options)) {
+        // PHP 8 compatibility: each() was removed; foreach is equivalent
+        // here. See docs/tasks/0001-docker-bootstrap.md.
+        foreach ($options as $name => $value) {
             $this->setOption($name, $value);
         }
         $this->_loggerSanity();

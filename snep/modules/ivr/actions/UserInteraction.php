@@ -168,7 +168,10 @@ XML;
           $log->info("Forward Call: {$this->config['forward_call']} -> Going to extension: {$userinput_row['result']}");
 
           $asterisk->exec_goto('default',$userinput_row['result'],1);
-          break;
+          // PHP 8 compatibility: this `break` was outside any loop/switch,
+          // a silently-ignored no-op warning under PHP 5 but a fatal parse
+          // error under PHP 7+. Removed to restore the original no-op
+          // behavior. See docs/tasks/0001-docker-bootstrap.md.
 
         }else{
           $log->info("User inserted a set of digits. Going to the next action");

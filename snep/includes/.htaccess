@@ -1,4 +1,8 @@
-<Files ~ "\.conf$">
-	Order Deny,Allow
-	Deny from all
+# Apache 2.2 "Order/Deny" syntax replaced with the Apache 2.4-native equivalent
+# (same deny-all effect) so this rule works without mod_access_compat. Pattern
+# widened from "\.conf$" to also cover setup.conf.dist (added for the Docker
+# bootstrap entrypoint templating, see docs/tasks/0001-docker-bootstrap.md) --
+# the anchored original would have left it readable over HTTP.
+<Files ~ "\.conf">
+	Require all denied
 </Files>

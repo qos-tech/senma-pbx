@@ -199,11 +199,15 @@ class Zend_Registry extends ArrayObject
      * @param string $index
      * @returns mixed
      *
-     * Workaround for http://bugs.php.net/bug.php?id=40442 (ZF-960).
+     * PHP 8 compatibility: array_key_exists() no longer accepts an
+     * ArrayAccess object (was a workaround for the long-fixed
+     * http://bugs.php.net/bug.php?id=40442 / ZF-960). Delegate to the
+     * native ArrayObject implementation instead. See
+     * docs/tasks/0001-docker-bootstrap.md.
      */
     public function offsetExists($index)
     {
-        return array_key_exists($index, $this);
+        return parent::offsetExists($index);
     }
 
 }
