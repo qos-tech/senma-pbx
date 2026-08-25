@@ -83,6 +83,7 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
 
             <select class="form-control" name="technology" id="technology" onChange="showDiv(this.value);" <?php echo $this->disabled;?> >
               <option value="sip" <?php echo $this->sip;?>><?php echo $this->translate("SIP");?></option>
+              <option value="pjsip" <?php echo $this->pjsip;?>><?php echo $this->translate("PJSIP");?></option>
               <option value="iax2" <?php echo $this->iax2;?>><?php echo $this->translate("IAX2");?></option>
               <option value="khomp" <?php echo $this->khomp;?>><?php echo $this->translate("Khomp");?></option>
               <option value="virtual" <?php echo $this->virtual;?>><?php echo $this->translate("Virtual");?></option>
@@ -148,7 +149,11 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
             </div>
           </div>
 
-          <div class="form-group">
+          <!-- TASK-0010 §2/§12: chan_sip's friend/peer/user matching mode
+               has no PJSIP equivalent (PJSIP always uses separate
+               endpoint+auth+aor). Hidden for PJSIP via showDiv() below --
+               not removed outright, since IAX2 still uses it. -->
+          <div class="form-group" id="typeSelector">
             <label class="col-sm-3 control-label"><?php echo $this->translate("Type")?></label>
             <div class="col-sm-6">
               <label class="radio-inline"><input type="radio" name="type"  value="peer" <?php echo $this->typePeer;?>> peer</label>
@@ -341,7 +346,7 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
         </div>
 
         <div>
-          <label class="col-sm-3 control-label"><?php// echo $this->translate("Control Type")?></label>
+          <label class="col-sm-3 control-label"><?php // echo $this->translate("Control Type")?></label>
           <label class="radio-inline">
             <input type="radio" name="controltype" id="Y" value="Y" <?php //echo $this->Y;?>><?php //echo $this->translate("Anually");?>
           </label>
@@ -507,12 +512,21 @@ function showDiv(div){
   document.getElementById("virtual").className = "invisible";
   document.getElementById("manual").className = "invisible";
   document.getElementById("siponly").className = "invisible";
+  document.getElementById("typeSelector").className = "invisible";
 
   if (div) {
-    if (div == 'sip') {
+    // TASK-0011: PJSIP needs the same NAT/direct-media fields SIP does
+    // (siponly), mapped differently server-side (see
+    // ExtensionsController::execAdd()/Snep_PjsipConf).
+    if (div == 'sip' || div == 'pjsip') {
       document.getElementById('siponly').className = "visible";
     }
-    if (div == "sip" || div == 'iax2') {
+    // "Type" (friend/peer/user) has no PJSIP equivalent -- shown for
+    // sip/iax2 only.
+    if (div == 'sip' || div == 'iax2') {
+      document.getElementById('typeSelector').className = "visible";
+    }
+    if (div == "sip" || div == 'iax2' || div == 'pjsip') {
       div = "sipiax"
     }
     document.getElementById(div).className = "visible";

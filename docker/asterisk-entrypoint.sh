@@ -109,6 +109,31 @@ if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
     chgrp "$SENMA_CONFIG_GROUP" "$ASTERISK_ETC/snep"
     chmod 2775 "$ASTERISK_ETC/snep"
 
+    # TASK-0011: setgid on the directory (above) only propagates group
+    # *ownership* to files created AFTER it takes effect -- it does
+    # nothing for the snep-{sip,iax2}*.conf files the `cp` above already
+    # placed here (they kept mode 0644, group "asterisk", not
+    # $SENMA_CONFIG_GROUP). This is why Snep_InterfaceConf::loadConfFromDb()
+    # (chan_sip/IAX2 provisioning) turned out to still fail its own
+    # is_writable() check for www-data even after TASK-0009 -- a real,
+    # pre-existing gap that TASK-0009's own call-only scope never
+    # exercised (nothing had tried to *provision* through the real UI
+    # yet). Fixed the same way as $ASTERISK_ETC/snep/senma-pjsip.conf
+    # below: explicit chgrp+chmod on the already-copied files.
+    chgrp "$SENMA_CONFIG_GROUP" "$ASTERISK_ETC/snep"/*.conf
+    chmod 664 "$ASTERISK_ETC/snep"/*.conf
+
+    # TASK-0011: Snep_PjsipConf::loadConfFromDb() writes here. Pre-created
+    # (not left for PHP to create on first write) because is_writable()
+    # returns false for a path that doesn't exist yet -- the generator
+    # would fail its own write-permission check on a brand new volume.
+    # 0664 (not the 0644 `touch` alone would leave it at): the setgid bit
+    # on $ASTERISK_ETC/snep above only propagates *group ownership* to new
+    # files, not group *write* permission -- www-data (a senma-config
+    # member, not the owner) needs that bit explicitly.
+    touch "$ASTERISK_ETC/snep/senma-pjsip.conf"
+    chmod 664 "$ASTERISK_ETC/snep/senma-pjsip.conf"
+
     : "${AMI_USER:?AMI_USER must be set}"
     : "${AMI_PASSWORD:?AMI_PASSWORD must be set}"
     : "${ASTERISK_AMI_ACL_SUBNET:?ASTERISK_AMI_ACL_SUBNET must be set}"
@@ -131,16 +156,6 @@ if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
         -e "s|__DB_PASSWORD__|${DB_PASSWORD}|g" \
         "$ASTERISK_ETC/res_odbc.conf"
 
-    # TASK-0009: dev/test-only PJSIP endpoint passwords (see
-    # docker/asterisk-config/pjsip.conf) -- same env-templating pattern as
-    # AMI/DB above, not committed secrets.
-    : "${PJSIP_TEST_1000_SECRET:?PJSIP_TEST_1000_SECRET must be set}"
-    : "${PJSIP_TEST_1001_SECRET:?PJSIP_TEST_1001_SECRET must be set}"
-
-    sed -i \
-        -e "s|__PJSIP_1000_SECRET__|${PJSIP_TEST_1000_SECRET}|g" \
-        -e "s|__PJSIP_1001_SECRET__|${PJSIP_TEST_1001_SECRET}|g" \
-        "$ASTERISK_ETC/pjsip.conf"
 fi
 
 exec "$@"

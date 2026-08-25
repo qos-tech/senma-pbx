@@ -30,9 +30,31 @@ if (function_exists('pcntl_signal')) {
 }
 
 // Controll errors display
+// TASK-0011: display_errors=1 (stdout) is fundamentally incompatible with
+// AGI -- STDOUT *is* the AGI protocol channel back to Asterisk. Any
+// PHP notice/warning/deprecation printed there is read by Asterisk as if
+// it were an AGI command, corrupting every subsequent AGI exchange in the
+// same call (reproduced live: a PHP 8.4 deprecation from
+// Zend_Db_Statement::execute() during a real call caused Asterisk to log
+// "AGI Tx >> 510 Invalid or unknown command" for the deprecation text,
+// which then also corrupted the very next real command,
+// "GET VARIABLE DIALSTATUS", making an actually-answered call misread as
+// unanswered).
+//
+// display_errors='stderr' was tried first and does NOT reliably fix this
+// under the CGI SAPI (confirmed empirically: php-cgi still wrote the
+// HTML-formatted deprecation text to stdout even with 'stderr' set,
+// unlike the CLI SAPI where 'stderr' behaves as documented) -- Off is the
+// only value that reliably keeps stdout clean under php-cgi. log_errors/
+// error_log (docker/php-agi.ini) keep the diagnostic value display_errors
+// used to provide, just via the log instead of the protocol stream --
+// the same display_errors=Off + log_errors=On pattern docker/php-mag.ini
+// already uses for the web app, for the equivalent reason (there,
+// notices breaking HTTP headers; here, notices breaking the AGI
+// protocol).
 error_reporting(E_ALL | E_STRICT);
 ini_set('display_startup_errors', 1);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
 
 require_once "Bootstrap.php";
 new Bootstrap();

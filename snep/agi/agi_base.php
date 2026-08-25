@@ -21,9 +21,13 @@
  */
 
 // Display errors control
+// TASK-0011: Off, not stdout -- STDOUT is the AGI protocol channel; see
+// snep/agi/snep.php's identical fix for the reproduced corruption this
+// caused, and why 'stderr' alone isn't reliable under the CGI SAPI.
+// log_errors/error_log (docker/php-agi.ini) keep errors visible.
 error_reporting(E_ALL | E_STRICT);
 ini_set('display_startup_errors', 1);
-ini_set('display_errors', 1);
+ini_set('display_errors', 0);
 
 require_once "Bootstrap.php";
 new Bootstrap();

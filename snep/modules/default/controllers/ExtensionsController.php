@@ -318,7 +318,14 @@ class ExtensionsController extends Zend_Controller_Action {
 
             switch ($techType) {
 
+              // TASK-0011: PJSIP reuses SIP's exact form fields (NAT,
+              // direct media, DTMF, codecs) -- only the server-side
+              // mapping in execAdd()/Snep_PjsipConf differs. "Type"
+              // (peer/user/friend) has no PJSIP meaning; it's still
+              // populated here (harmless) but hidden in the view via
+              // showDiv()/typeSelector.
               case "sip":
+              case "pjsip":
 
               $this->view->directmediayes = "";
               $this->view->directmedianonat = "";
@@ -566,7 +573,7 @@ class ExtensionsController extends Zend_Controller_Action {
             $directmedia = $formData["directmedia"];
             $callLimit = $formData["calllimit"];
 
-            if ($techType == 'sip' || $techType == 'iax2') {
+            if ($techType == 'sip' || $techType == 'iax2' || $techType == 'pjsip') {
               $nat_types = array('no','comedia','force_rport','auto_comedia','auto_force_rport');
               $nat = "" ;
               foreach ($nat_types as $key => $val) {
@@ -584,7 +591,7 @@ class ExtensionsController extends Zend_Controller_Action {
             }
 
             $qualify = 'no';
-            if ($techType == 'sip' || $techType == 'iax2') {
+            if ($techType == 'sip' || $techType == 'iax2' || $techType == 'pjsip') {
               if (key_exists('qualify', $formData)) {
                 $qualify = 'yes';
               }
@@ -654,7 +661,13 @@ class ExtensionsController extends Zend_Controller_Action {
               "defaultip" => "''",
               "host" => "'dynamic'",
               "insecure" => "''",
-              "language" => "'pt_BR'",
+              // TASK-0011: `peers.language` is CHAR(2) DEFAULT 'br'
+              // (schema.sql) -- was 'pt_BR' (5 chars), always too long for
+              // the column under strict SQL mode (SQLSTATE 22001, another
+              // pre-existing, technology-agnostic bug this task's real-UI
+              // testing surfaced). Using the column's own correct native
+              // default instead of a value that never fit it.
+              "language" => "'br'",
               "deny" => "''",
               "permit" => "''",
               "mask" => "''",
@@ -667,7 +680,17 @@ class ExtensionsController extends Zend_Controller_Action {
               "ipaddr" => "''",
               "regexten" => "''",
               "setvar" => "''",
-              "disallow" => "'all'"
+              "disallow" => "'all'",
+              // TASK-0011: `lastms` is NOT NULL with no column default
+              // (schema.sql) and was never in this INSERT's column list at
+              // all -- a pre-existing bug (unrelated to PJSIP, affects
+              // every technology) that silently made extension creation
+              // through the real UI impossible under strict SQL mode
+              // (SQLSTATE[HY000] 1364), never caught because no existing
+              // test exercises the create flow. 0 matches the "never
+              // qualified" placeholder chan_sip peers already show before
+              // their first real registration.
+              "lastms" => 0
             );
 
             $sqlFieldsExten = $sqlDefaultValues = "";
@@ -678,7 +701,7 @@ class ExtensionsController extends Zend_Controller_Action {
 
             $advEmail = $formData["email"];
 
-            if ($techType == "sip" || $techType == "iax2") {
+            if ($techType == "sip" || $techType == "iax2" || $techType == "pjsip") {
               $allow = sprintf("%s;%s;%s", $formData['codec'], $formData['codec1'], $formData['codec2']);
             } else {
               $allow = "ulaw";
@@ -739,6 +762,12 @@ class ExtensionsController extends Zend_Controller_Action {
             // Update table core_peer_groups
             Snep_ExtensionsGroups_Manager::updateGroupsExtension($idExten,$extensions_group,$extenGroup) ;
             Snep_InterfaceConf::loadConfFromDb();
+            // TASK-0011: called unconditionally, like Snep_InterfaceConf
+            // above -- each generator filters to its own canal prefix
+            // internally (SIP%/IAX2% vs PJSIP/%), so calling both on
+            // every write is harmless regardless of which technology this
+            // particular extension actually uses (TASK-0010 §3/§11).
+            Snep_PjsipConf::loadConfFromDb();
           }
 
           /**
@@ -794,6 +823,7 @@ class ExtensionsController extends Zend_Controller_Action {
                     Snep_Extensions_Manager::removeVoicemail($exten);
                     Snep_ExtensionsGroups_Manager::deleteExtensionGroups($idExten);
                     Snep_InterfaceConf::loadConfFromDb();
+                    Snep_PjsipConf::loadConfFromDb();
 
                   } catch (PDOException $e) {
                     $db->rollBack();
@@ -850,6 +880,7 @@ class ExtensionsController extends Zend_Controller_Action {
                     
                     Snep_Extensions_Manager::disable($exten);
                     Snep_InterfaceConf::loadConfFromDb();
+                    Snep_PjsipConf::loadConfFromDb();
 
                   } catch (PDOException $e) {
                     $db->rollBack();
@@ -885,6 +916,7 @@ class ExtensionsController extends Zend_Controller_Action {
                 Snep_Audit_Manager::SaveLog("Enabled", 'peers', $exten, $this->view->translate("Extension") . " {$result['name']} ". $exten);
                 Snep_Extensions_Manager::enable($exten);
                 Snep_InterfaceConf::loadConfFromDb();
+                Snep_PjsipConf::loadConfFromDb();
                 $this->_redirect("default/extensions");
               }
             }
