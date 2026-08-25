@@ -32,6 +32,17 @@ if [ ! -f "$SETUP_CONF" ]; then
             -e "s|^pass_sock = .*|pass_sock = \"${AMI_PASSWORD}\"|" \
             "$SETUP_CONF"
     fi
+
+    # TASK-0012: path.web is the application's web base URL (distinct
+    # from path.base, the filesystem path, untouched). Defaults to ""
+    # (root deployment, this project's actual Docker topology -- see
+    # docs/tasks/0012-web-base-path-cleanup.md for why setup.conf.dist's
+    # own inherited "/snep" default was wrong here). Set
+    # SENMA_WEB_BASE_PATH (e.g. "/snep") only for a genuine subdirectory
+    # deployment; never both a leading path here and root in reality.
+    sed -i \
+        -e "s|^path\.web = .*|path.web = \"${SENMA_WEB_BASE_PATH:-}\"|" \
+        "$SETUP_CONF"
 fi
 
 # The web UI (e.g. ParametersController) writes recording-path settings back

@@ -60,6 +60,9 @@ class NotificationsController extends Zend_Controller_Action {
         	$html = array();
         	$cont = 0;
 
+          // TASK-0012: was hardcoded "/snep/..." -- see
+          // docs/tasks/0012-web-base-path-cleanup.md.
+          $baseUrl = $this->getFrontController()->getBaseUrl();
           $active='active';
       		$html[$cont]  = "<div class='item ".$active."'>";
       		$html[$cont] .= "<div class='carousel-content'>";
@@ -69,14 +72,14 @@ class NotificationsController extends Zend_Controller_Action {
       		$html[$cont] .= "<h5>".$notification->from .' - '.date("d/m/Y G:i:s", strtotime($notification->creation_date))."</h5>";
       		$html[$cont] .= "<br><p>".$notification->message."</p>";
       		$html[$cont] .= "<div class='panel-footer clearfix notification-panel'>";
-      		$html[$cont] .= "<a href='/snep/index.php/default/notifications?id=all'><span class='notification fa fa-list fa-3x notification-panel'></span></a>&nbsp";
+      		$html[$cont] .= "<a href='".$baseUrl."/index.php/default/notifications?id=all'><span class='notification fa fa-list fa-3x notification-panel'></span></a>&nbsp";
       		$html[$cont] .= "<div class='pull-right'>";
 
               if(isset($prev_id))
-                  $html[$cont] .= "<a href='/snep/index.php/default/notifications?id=".$prev_id . "' data-slide='prev'><span class='notification fa fa-chevron-circle-left fa-3x notification-panel'></span></a>&nbsp";
+                  $html[$cont] .= "<a href='".$baseUrl."/index.php/default/notifications?id=".$prev_id . "' data-slide='prev'><span class='notification fa fa-chevron-circle-left fa-3x notification-panel'></span></a>&nbsp";
 
               if(isset($next_id))
-                  $html[$cont] .= "<a href='/snep/index.php/default/notifications?id=".$next_id. "' data-slide='next'><span class='notification fa fa-chevron-circle-right fa-3x notification-panel'></span></a>";
+                  $html[$cont] .= "<a href='".$baseUrl."/index.php/default/notifications?id=".$next_id. "' data-slide='next'><span class='notification fa fa-chevron-circle-right fa-3x notification-panel'></span></a>";
 
 
       		$html[$cont] .= "</div>";

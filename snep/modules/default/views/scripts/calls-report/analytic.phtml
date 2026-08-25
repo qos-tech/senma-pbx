@@ -8,17 +8,17 @@ $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/registr
 $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/removeItem.js');
 ?>
 
-<script src="/snep/includes/javascript/datatables/media/js/jquery.dataTables.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/media/js/dataTables.bootstrap.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/resources/syntax/shCore.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/resources/demo.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/datatables.net-buttons/js/dataTables.buttons.min.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/media/js/jszip.min.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/pdfmake/pdfmake.min.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/pdfmake/vfs_fonts.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/datatables.net-buttons/js/buttons.html5.min.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/jquery.bootpag.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/simpleplayer.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/js/jquery.dataTables.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/js/dataTables.bootstrap.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/resources/syntax/shCore.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/resources/demo.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/datatables.net-buttons/js/dataTables.buttons.min.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/js/jszip.min.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/pdfmake/pdfmake.min.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/pdfmake/vfs_fonts.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/datatables.net-buttons/js/buttons.html5.min.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/jquery.bootpag.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/simpleplayer.js" type="text/javascript"></script>
 
 <div class="row">
   <div class="tab-content">
@@ -118,7 +118,7 @@ jQuery(document).ready(function() {
   jQuery('#analytic').dataTable( {
     "pageLength": <?php echo $this->lineNumber ?>,
     "oLanguage": {
-      "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+      "sUrl": "<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/language/pt-BR.json"
     },
     dom: 'Bfrtip',
     buttons: [

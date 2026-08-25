@@ -3,15 +3,15 @@ echo $this->doctype();
 ?>
 <html>
     <head>
-    	<link href="/snep/css/font-awesome.min.css" rel="stylesheet">
-		<link href="/snep/css/bootstrap.css" rel="stylesheet">
-		<link href="/snep/css/snep.css" rel="stylesheet">
-		<link href="/snep/css/register.css" rel="stylesheet">
+    	<link href="<?php echo $this->baseUrl(); ?>/css/font-awesome.min.css" rel="stylesheet">
+		<link href="<?php echo $this->baseUrl(); ?>/css/bootstrap.css" rel="stylesheet">
+		<link href="<?php echo $this->baseUrl(); ?>/css/snep.css" rel="stylesheet">
+		<link href="<?php echo $this->baseUrl(); ?>/css/register.css" rel="stylesheet">
 		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
 
-		<script src="/snep/includes/javascript/jquery.min.js"></script>
-		<script src="/snep/includes/javascript/validate/jquery.validate.js"></script>
-		<script src="/snep/includes/javascript/validate/validate-snep.js"></script>
+		<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/jquery.min.js"></script>
+		<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/validate/jquery.validate.js"></script>
+		<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/validate/validate-snep.js"></script>
     </head>
 
     <body class="registerbody">
@@ -285,12 +285,12 @@ echo $this->doctype();
 	function carregaCidade(idstate){
 
 		jQuery.noConflict();
-		jQuery('#city').load('/snep/includes/cidades.php?estado='+idstate );
+		jQuery('#city').load('<?php echo $this->baseUrl(); ?>/includes/cidades.php?estado='+idstate );
 	};
 	function carregaEstado(idcountry){
 
 		jQuery.noConflict();
-		jQuery('#state').load('/snep/includes/estados.php?pais='+idcountry );
+		jQuery('#state').load('<?php echo $this->baseUrl(); ?>/includes/estados.php?pais='+idcountry );
 		// Temporary because not exist State/City tables in database for all countrys
 		if (idcountry != "1") {
 			carregaCidade(28) ;

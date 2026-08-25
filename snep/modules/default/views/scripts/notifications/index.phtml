@@ -58,7 +58,7 @@ jQuery(document).ready(function() {
   jQuery('#listtable').dataTable( {
     "pageLength": <?php echo $this->lineNumber ?>,
     "oLanguage": {
-      "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+      "sUrl": "<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/language/pt-BR.json"
     },
     "bLengthChange": false,
   });

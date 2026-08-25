@@ -82,7 +82,7 @@ if($controller != 'auth'){
           <span class="icon-bar"></span>
         </button>
 
-        <a href="<?php echo Zend_Registry::get('config')->system->path->web; ?>/index.php/">
+        <a href="<?php echo $this->baseUrl(); ?>/index.php/">
           <img id="snep-logo" src="<?php echo $this->baseUrl(); ?>/images/snep-main-logo.png">
           <img src="<?php echo $this->baseUrl(); ?>/images/powered-opens.png">
         </a>
@@ -128,7 +128,7 @@ if($controller != 'auth'){
                 <a href="<?php echo $this->baseUrl(); ?>/index.php/default/parameters/language?language=en">
                   <div>
                     <i></i>
-                    <img class="img-circle" src="/snep/images/Eua.png" title="Click to change language to english">
+                    <img class="img-circle" src="<?php echo $this->baseUrl(); ?>/images/Eua.png" title="Click to change language to english">
                   </div>
                 </a>
               </li>
@@ -137,7 +137,7 @@ if($controller != 'auth'){
                 <a href="<?php echo $this->baseUrl(); ?>/index.php/default/parameters/language?language=pt_BR">
                   <div>
                     <i></i>
-                    <img class="img-circle" src="/snep/images/Brazil.png" title="Clique para mudar o idioma para português">
+                    <img class="img-circle" src="<?php echo $this->baseUrl(); ?>/images/Brazil.png" title="Clique para mudar o idioma para português">
                   </div>
                 </a>
               </li>
@@ -145,7 +145,7 @@ if($controller != 'auth'){
               <li>
                 <a href="<?php echo $this->baseUrl(); ?>/index.php/default/parameters/language?language=es">
                   <div>
-                    <i></i><img class="img-circle" src="/snep/images/es.png" title="Haga clic para cambiar el idioma a español">
+                    <i></i><img class="img-circle" src="<?php echo $this->baseUrl(); ?>/images/es.png" title="Haga clic para cambiar el idioma a español">
                   </div>
                 </a>
               </li>

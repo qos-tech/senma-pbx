@@ -32,7 +32,7 @@ $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/route.css" );
       <div class="panel panel-default">
         <div class="panel-heading">
           <div class="snep-body-top-buttons">
-            <a class="btn btn-outline btn-add" style="margin-right: 5px;" href="<?php echo $this->baseUrl ?>/simulator " role="button" data-intro="<?php echo $this->translate('You can Simulate what will happen when a call are made!');?>"><?php echo $this->translate("Simulator")?></a>
+            <a class="btn btn-outline btn-add" style="margin-right: 5px;" href="<?php echo $this->baseUrl(); ?>/simulator " role="button" data-intro="<?php echo $this->translate('You can Simulate what will happen when a call are made!');?>"><?php echo $this->translate("Simulator")?></a>
             <a class="btn btn-add" href="<?php echo $this->url ?>/add/ " role="button"><?php echo $this->translate("Add Rule")?></a>
             <div class="btn-group">
               <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
@@ -55,7 +55,7 @@ $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/route.css" );
 
             <div class="snep-body-search" >
               <?php if($this->key){ ?>
-                <a class='sn-dash-add' href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>" data-intro="<?php echo $this->translate('You can Add a shortcut of this screen to your Dashboard')?>"></a>
+                <a class='sn-dash-add' href="<?php echo $this->baseUrl(); ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>" data-intro="<?php echo $this->translate('You can Add a shortcut of this screen to your Dashboard')?>"></a>
               <?php } ?>
             </div>
           </div>
@@ -98,7 +98,7 @@ $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/route.css" );
                     </div>
                     <a class="btn btn-default btn-sm"  href='<?php echo $this->baseUrl(); ?>/index.php/route/duplicate/<?php echo $route['id']?>' ><?php echo $this->translate('Duplicate')?></a>
                     <a class="btn btn-edit btn-sm"  href='<?php echo $this->baseUrl(); ?>/index.php/route/edit/<?php echo $route['id'] ?>'><?php echo $this->translate('Edit')?></a>
-                    <a class="btn btn-danger btn-sm"  href="<?php echo $this->baseUrl ?>/route/remove/id/<?php echo $route['id'] ?>" role="button"><?php echo $this->translate('Delete')?></a>
+                    <a class="btn btn-danger btn-sm"  href="<?php echo $this->baseUrl(); ?>/route/remove/id/<?php echo $route['id'] ?>" role="button"><?php echo $this->translate('Delete')?></a>
                   </td>
                 </tr>
               <?php endforeach ?>
@@ -118,7 +118,7 @@ jQuery(document).ready(function() {
     "pageLength": <?php echo $this->lineNumber ?>,
     "order": [[ 1, "desc" ]],
     "oLanguage": {
-      "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+      "sUrl": "<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/language/pt-BR.json"
     },
     "bLengthChange": false,
   });

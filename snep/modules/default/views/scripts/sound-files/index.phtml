@@ -1,7 +1,7 @@
 <?php
 $this->headScript()->appendFile($this->baseUrl() .  "/includes/javascript/snep.js");
 ?>
-<script src="/snep/includes/javascript/simpleplayer.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/simpleplayer.js" type="text/javascript"></script>
 
 <div class= "row">
   <div class="tab-content">
@@ -13,7 +13,7 @@ $this->headScript()->appendFile($this->baseUrl() .  "/includes/javascript/snep.j
             <a class="btn btn-outline btn-add" href="<?php echo $this->url ?>/synchronize/ " role="button"><?php echo $this->translate("Synchronize archives")?></a>
             <div class="snep-body-search">
               <?php if($this->key){ ?>
-                <a class='sn-dash-add' href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>"></a>
+                <a class='sn-dash-add' href="<?php echo $this->baseUrl(); ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>"></a>
               <?php } ?>
             </div>
           </div>
@@ -81,7 +81,7 @@ jQuery(document).ready(function() {
   jQuery('#listtable').dataTable( {
     "pageLength": <?php echo $this->lineNumber ?>,
     "oLanguage": {
-      "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+      "sUrl": "<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/language/pt-BR.json"
     },
     "bLengthChange": false,
   });

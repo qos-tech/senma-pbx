@@ -29,7 +29,7 @@
                     <?php  if($this->key)
                         echo "" ;
                     { ?>
-                        <a class='sn-dash-add' style="margin-right: 15px;" href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>">
+                        <a class='sn-dash-add' style="margin-right: 15px;" href="<?php echo $this->baseUrl(); ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>">
                         </a>
                     <?php } ?>
                 </div>
@@ -179,7 +179,7 @@
     jQuery( document ).ready(function() {
         function populate_tables() {
             jQuery.ajax({
-                url:'/snep/includes/ip_status_trunks.php',
+                url:'<?php echo $this->baseUrl(); ?>/includes/ip_status_trunks.php',
                 dataType:'json',
                 success: function(data) {
                     for(i=0; i < data.length; i++){
@@ -199,7 +199,7 @@
                 }
             });
             jQuery.ajax({
-                url:'/snep/includes/ip_status_peers.php',
+                url:'<?php echo $this->baseUrl(); ?>/includes/ip_status_peers.php',
                 dataType:'json',
                 success: function(data) {
                     for(i=0; i < data.length; i++){
@@ -217,7 +217,7 @@
                 }
             });
             jQuery.ajax({
-                url:'/snep/includes/ip_status_queues.php',
+                url:'<?php echo $this->baseUrl(); ?>/includes/ip_status_queues.php',
                 dataType:'json',
                 success: function(data) {
                     for(i=0; i < data.length; i++){
@@ -266,7 +266,7 @@
         jQuery('#listExtension,#listTrunk,#listQueue').dataTable( {
             "pageLength": 100,
             "oLanguage": {
-            "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+            "sUrl": "<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/language/pt-BR.json"
             },
             "bLengthChange": false
         });

@@ -6,7 +6,7 @@
         <div class="snep-body-top-buttons">
           <div class="snep-body-search">
             <?php if ($this->key) { echo ""; ?>
-              <a class='sn-dash-add' href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard'); ?>"></a>
+              <a class='sn-dash-add' href="<?php echo $this->baseUrl(); ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard'); ?>"></a>
             <?php }?>
           </div>
         </div>

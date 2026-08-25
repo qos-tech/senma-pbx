@@ -136,7 +136,13 @@ class Snep_Dashboard_Manager {
         			
         			$result[$id]["nome"] = $i18n->translate($module->getLabel());
         			$result[$id]["descricao"] = $i18n->translate($item->getLabel());
-        			$result[$id]["link"] = str_replace("/snep/index.php/".$explode[0]."/", "", $item->getUri());
+        			// TASK-0012: was hardcoded "/snep/index.php/..." -- see
+        			// docs/tasks/0012-web-base-path-cleanup.md. Uses the same
+        			// config-driven base URL Snep_Modules.php used to build
+        			// $item->getUri() in the first place, so the prefix being
+        			// stripped always matches what's actually there.
+        			$webBase = Zend_Registry::get('config')->system->path->web;
+        			$result[$id]["link"] = str_replace($webBase."/index.php/".$explode[0]."/", "", $item->getUri());
         			$result[$id]["icone"] = $item->getFont();
         			$result[$id]["module"] = $explode[0];
         			$id++;

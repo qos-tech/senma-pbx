@@ -19,8 +19,8 @@
 $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/bootstrap-select.css" );
 $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/password.js");
 ?>
-<script src="/snep/includes/javascript/password.js"></script>
-<script src="/snep/includes/javascript/bootstrap-select.js"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/password.js"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/bootstrap-select.js"></script>
 <div class="row">
     <form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "users", "action" => $this->action), null, false); ?>" autocomplete="off">
 

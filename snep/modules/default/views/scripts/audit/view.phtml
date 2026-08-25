@@ -5,15 +5,15 @@ $this->headLink()->appendStylesheet($this->baseUrl() . "/includes/javascript/dat
 $this->headLink()->appendStylesheet($this->baseUrl() . "/includes/javascript/datatables/resources/demo.css");
 ?>
 
-<script src="/snep/includes/javascript/datatables/media/js/jquery.dataTables.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/media/js/dataTables.bootstrap.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/resources/syntax/shCore.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/resources/demo.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/datatables.net-buttons/js/dataTables.buttons.min.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/media/js/jszip.min.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/pdfmake/pdfmake.min.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/pdfmake/vfs_fonts.js" type="text/javascript"></script>
-<script src="/snep/includes/javascript/datatables/datatables.net-buttons/js/buttons.html5.min.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/js/jquery.dataTables.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/js/dataTables.bootstrap.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/resources/syntax/shCore.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/resources/demo.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/datatables.net-buttons/js/dataTables.buttons.min.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/js/jszip.min.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/pdfmake/pdfmake.min.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/pdfmake/vfs_fonts.js" type="text/javascript"></script>
+<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/datatables.net-buttons/js/buttons.html5.min.js" type="text/javascript"></script>
 
 
 
@@ -61,7 +61,7 @@ jQuery(document).ready(function() {
   jQuery('#analytic').dataTable( {
     "pageLength": <?php echo $this->lineNumber ?>,
     "oLanguage": {
-      "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+      "sUrl": "<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/language/pt-BR.json"
     },
     dom: 'Bfrtip',
     buttons: [

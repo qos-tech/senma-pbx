@@ -122,6 +122,13 @@ class Snep_Manutencao {
         $file_dir = $config->ambiente->path_voz;
         $arquivos = substr($file_dir, 0, strlen($file_dir) - 1);
 
+        // TASK-0012: was hardcoded "/snep/arquivos/..." -- this is a
+        // browser-facing URL (rendered as an <audio src> in the calls
+        // report), not a filesystem path, so it must respect the
+        // deployment's actual base URL. See
+        // docs/tasks/0012-web-base-path-cleanup.md.
+        $baseUrl = Zend_Controller_Front::getInstance()->getBaseUrl();
+
         $conference = explode("_", $userfield);
         if ($conference[3] >= 901 && $conference[3] <= 915) {
             $conf = true;
@@ -134,17 +141,17 @@ class Snep_Manutencao {
 
             // Se existir pasta com data, já organizado pelo movefiles.
             if (file_exists($arquivos . "/" . $data . "/" . $userfield . ".wav")) {
-                return "/snep/arquivos/" . $data . "/" . $userfield . ".wav";
+                return $baseUrl . "/arquivos/" . $data . "/" . $userfield . ".wav";
             } elseif (file_exists($arquivos . "/" . $data . "/" . $userfield . ".mp3")) {
-                return "/snep/arquivos/" . $data . "/" . $userfield . ".mp3";
+                return $baseUrl . "/arquivos/" . $data . "/" . $userfield . ".mp3";
             }elseif (file_exists($arquivos . "/" . $data . "/" . $userfield . ".wav")) {
-                return "/snep/arquivos/" . $data . "/" . $userfield . ".wav";
+                return $baseUrl . "/arquivos/" . $data . "/" . $userfield . ".wav";
             } elseif (file_exists($arquivos . "/" . $data . "/" . $userfield . ".WAV")) {
-                return "/snep/arquivos/" . $data . "/" . $userfield . ".WAV";
+                return $baseUrl . "/arquivos/" . $data . "/" . $userfield . ".WAV";
             } elseif ($conf == true) {
 
                 if (file_exists($arquivos . "/" . $conference[3] . "/" . $userfield . ".wav")) {
-                    return "/snep/arquivos/" . $conference[3] . "/" . $userfield . ".wav";
+                    return $baseUrl . "/arquivos/" . $conference[3] . "/" . $userfield . ".wav";
                 }
             } else {
 
@@ -153,15 +160,15 @@ class Snep_Manutencao {
                 foreach ($storages as $storage) {
 
                     if (file_exists($arquivos . "/" . $storage . "/" . $data . "/" . $userfield . ".wav")) {
-                        return "/snep/arquivos/" . $storage . "/" . $data . "/" . $userfield . ".wav";
+                        return $baseUrl . "/arquivos/" . $storage . "/" . $data . "/" . $userfield . ".wav";
                     } elseif (file_exists($arquivos . "/" . $storage . "/" . $data . "/" . $userfield . ".mp3")) {
-                        return "/snep/arquivos/" . $storage . "/" . $data . "/" . $userfield . ".mp3";
+                        return $baseUrl . "/arquivos/" . $storage . "/" . $data . "/" . $userfield . ".mp3";
                     } elseif (file_exists($arquivos . "/" . $storage . "/" . $data . "/" . $userfield . ".WAV")) {
-                        return "/snep/arquivos/" . $storage . "/" . $data . "/" . $userfield . ".WAV";
+                        return $baseUrl . "/arquivos/" . $storage . "/" . $data . "/" . $userfield . ".WAV";
                     } elseif ($conf == true) {
 
                         if (file_exists($arquivos . "/" . $storage . "/" . $conference[3] . "/" . $userfield . ".wav")) {
-                            return "/snep/arquivos/" . $storage . "/" . $conference[3] . "/" . $userfield . ".wav";
+                            return $baseUrl . "/arquivos/" . $storage . "/" . $conference[3] . "/" . $userfield . ".wav";
                         }
                     }
                 }
@@ -220,7 +227,10 @@ class Snep_Manutencao {
 
         $zip->close();
 
-        return "/snep/arquivos/" . $strNomeArquivo;
+        // TASK-0012: was hardcoded "/snep/arquivos/..." -- see
+        // docs/tasks/0012-web-base-path-cleanup.md.
+        $baseUrl = Zend_Controller_Front::getInstance()->getBaseUrl();
+        return $baseUrl . "/arquivos/" . $strNomeArquivo;
     }
 
 }

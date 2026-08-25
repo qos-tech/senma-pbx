@@ -37,7 +37,17 @@ record.format = "wav"
 record_mp3 = ""
 
 [system]
-path.web = "/snep"
+; TASK-0012: the application's web base URL (NOT a filesystem path --
+; path.base below is that). Historically hardcoded to "/snep" from
+; SNEP's original subdirectory-of-a-shared-webroot deployment model;
+; this project's actual Docker deployment serves the app directly at the
+; web root (docker/apache-mag.conf's DocumentRoot points straight at
+; /var/www/html/snep), so the correct value here is "". Templated by
+; docker/entrypoint.sh from SENMA_WEB_BASE_PATH (.env, default empty) --
+; set it to "/snep" (leading slash, no trailing slash) only if this
+; deployment genuinely serves SENMA from a subdirectory. See
+; docs/tasks/0012-web-base-path-cleanup.md.
+path.web = ""
 path.modrewrite = ""
 path.base = "/var/www/html/snep"
 path.log = "/var/log/snep/"

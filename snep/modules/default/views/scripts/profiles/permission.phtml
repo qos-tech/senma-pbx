@@ -1,7 +1,7 @@
 <?php
 $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/bootstrap-duallistbox.css" );
 ?>
-<script type="text/javascript" src="/snep/includes/javascript/jquery.bootstrap-duallistbox.js"></script>  
+<script type="text/javascript" src="<?php echo $this->baseUrl(); ?>/includes/javascript/jquery.bootstrap-duallistbox.js"></script>  
    
 <div class="row">
     <form id="selectboxform" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => "profiles", "action" => "permission"), null, false); ?>" METHOD="post">

@@ -28,7 +28,7 @@ $this->headScript()->appendFile($this->baseUrl() .  "/includes/javascript/snep.j
             <a class="btn btn-add" href="<?php echo $this->url ?>/add/ " role="button"><?php echo $this->translate("Add Session")?></a>
             <div class="snep-body-search">
               <?php if($this->key){ ?>
-                <a class='sn-dash-add' href="<?php echo $this->baseUrl ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>"></a>
+                <a class='sn-dash-add' href="<?php echo $this->baseUrl(); ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>"></a>
               <?php } ?>
             </div>
           </div>
@@ -79,7 +79,7 @@ jQuery(document).ready(function() {
   jQuery('#listtable').dataTable( {
     "pageLength": <?php echo $this->lineNumber ?>,
     "oLanguage": {
-      "sUrl": "/snep/includes/javascript/datatables/media/language/pt-BR.json"
+      "sUrl": "<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/language/pt-BR.json"
     },
     "bLengthChange": false,
   });

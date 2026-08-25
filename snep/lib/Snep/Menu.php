@@ -251,14 +251,29 @@ class Snep_Menu {
     }
 
     public function getPermission($uri){
-        
-        $link = explode("/", $uri); // /snep/index.php/default/ip-status
-        $count = count($link); // [0] = "", [1] = snep, [2] = index.php, [3] = default, [4] = ip-status
-        if($count > 4){ // 5
+
+        // TASK-0012: was `explode("/", $uri)` parsed at fixed indices
+        // [3]/[4], hardcoded to assume $uri always starts with the
+        // literal 6-segment "/snep/index.php/module/action" shape --
+        // silently wrong (wrong indices, wrong $count threshold, whole
+        // permission check effectively bypassed) once path.web stopped
+        // being "/snep". Strip whatever the actual configured base URL
+        // is first, so what's left is always the fixed
+        // "/index.php/module/action" shape regardless of deployment
+        // (root or subdirectory) -- see
+        // docs/tasks/0012-web-base-path-cleanup.md.
+        $baseUrl = Zend_Controller_Front::getInstance()->getBaseUrl();
+        if ($baseUrl !== '' && strpos($uri, $baseUrl) === 0) {
+            $uri = substr($uri, strlen($baseUrl));
+        }
+
+        $link = explode("/", $uri); // [0] = "", [1] = index.php, [2] = default, [3] = ip-status
+        $count = count($link);
+        if($count > 3){
 
             $group = Snep_Profiles_Manager::getIdProfile($_SESSION['id_user']);
-            $result = Snep_Permission_Manager::get($group, "$link[3]_". $link[4].'_read');
-            $user = Snep_Permission_Manager::getUser($_SESSION['id_user'], "$link[3]_". $link[4]. '_read');
+            $result = Snep_Permission_Manager::get($group, "$link[2]_". $link[3].'_read');
+            $user = Snep_Permission_Manager::getUser($_SESSION['id_user'], "$link[2]_". $link[3]. '_read');
 
             // Verifica se usuario possui permissao individuais
             if ($user != false) {
@@ -295,7 +310,13 @@ class Snep_Menu {
             $font = $this->getFont();
 
             if ($font == 'sn-dashboard') {
-                $html .= "<a href='/snep/index.php/default/index'><i class='sn-dashboard fa-fw'></i><span class='side-menu-title'>Dashboard</span></a>";
+                // TASK-0012: was hardcoded "/snep/..." -- see
+                // docs/tasks/0012-web-base-path-cleanup.md. Safe to call
+                // Zend_Controller_Front here (unlike Snep_Modules'
+                // bootstrap-time menu construction): this runs during
+                // normal layout/view rendering, well after MVC dispatch.
+                $dashboardBaseUrl = Zend_Controller_Front::getInstance()->getBaseUrl();
+                $html .= "<a href='{$dashboardBaseUrl}/index.php/default/index'><i class='sn-dashboard fa-fw'></i><span class='side-menu-title'>Dashboard</span></a>";
             } else {
 
                 if (count(explode("_", $html)) == 2) {
