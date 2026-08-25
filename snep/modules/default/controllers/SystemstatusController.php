@@ -52,14 +52,23 @@ class SystemstatusController extends Zend_Controller_Action {
           $_SESSION['cloud_noticed'] = true;
         }
 
-    		$serverport = $_SERVER['SERVER_PORT'] ;
-    		$linfoData = new Zend_Http_Client('http://localhost:'.$serverport . str_replace("/index.php", "", $this->getFrontController()->getBaseUrl()) . '/lib/linfo/index.php?out=xml');
+    		// TASK-0006: this is a loopback request to the same Apache container,
+    		// not to whatever host/port the browser used to reach us. The
+    		// host-published MAG_HTTP_PORT (e.g. 8080) is a Docker port mapping
+    		// that has no meaning inside the container -- Apache only ever
+    		// listens on 80 here (docker/apache-mag.conf). $_SERVER['SERVER_PORT']
+    		// must not be used either: under Apache's default UseCanonicalName
+    		// Off, it reflects the client's Host header (confirmed: a request
+    		// sent with Host: localhost:9999 made SERVER_PORT report 9999),
+    		// not the server's actual listening port. See
+    		// docs/tasks/0006-systemstatus-runtime.md.
+    		$linfoData = new Zend_Http_Client('http://127.0.0.1:80' . str_replace("/index.php", "", $this->getFrontController()->getBaseUrl()) . '/lib/linfo/index.php?out=xml');
 
         try {
             $linfoData->request();
             $sysInfo = $linfoData->getLastResponse()->getBody();
             $this->sysInfo = simplexml_load_string($sysInfo);
-        } catch (HttpException $ex) {
+        } catch (Zend_Http_Client_Exception $ex) {
             echo $ex;
         }
 
