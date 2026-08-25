@@ -1,0 +1,1 @@
+<sip:__EXTEN__@__ASTERISK_HOST__>;auth_user=__EXTEN__;auth_pass=__SECRET__;answermode=__ANSWERMODE__

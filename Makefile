@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke lint doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke call-smoke lint doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -37,6 +37,9 @@ test:
 
 smoke: up
 	@set -a; . ./.env; set +a; bash scripts/smoke-test.sh
+
+call-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/call-smoke-test.sh
 
 lint:
 	@echo "No lint pipeline is wired yet."

@@ -9,7 +9,13 @@ services:
       - "${MAG_HTTP_PORT:-8080}:80"
     volumes:
       - ./snep:/var/www/html/snep
-      - asterisk-etc:/etc/asterisk:ro
+      # TASK-0009: was :ro. Snep_InterfaceConf (future work, not invoked by
+      # this task) will eventually need to write generated dialplan config
+      # here; the actual write-protection now comes from filesystem
+      # permissions (only /etc/asterisk/snep is group-writable via the
+      # shared senma-config group), not the Docker mount flag. See
+      # docker/asterisk-entrypoint.sh and docs/tasks/0009-first-pjsip-call.md.
+      - asterisk-etc:/etc/asterisk
     depends_on:
       db:
         condition: service_healthy
@@ -38,6 +44,18 @@ services:
       - mag-asterisk-log:/var/log/asterisk
       - ./docker/asterisk-config:/asterisk-config-src:ro
       - ./snep/install/etc/asterisk/snep:/snep-asterisk-config-src:ro
+      # TASK-0009: extensions.conf + custom/{preagi,posagi,eof}.conf --
+      # the vendored dialplan itself was never deployed into the container
+      # before this task (only its snep/snep-*.conf includes were). See
+      # docker/asterisk-entrypoint.sh.
+      - ./snep/install/etc/asterisk:/snep-asterisk-dialplan-src:ro
+      # TASK-0009: the SENMA AGI entrypoints, bind-mounted (not copied into
+      # the image) at the SAME absolute path the app container already
+      # uses -- several config values (voicemail.conf's externnotify,
+      # setup.conf's path_voz) hardcode /var/www/html/snep. astagidir in
+      # asterisk.conf points at /var/www/html/snep/agi. Read-only: this
+      # container executes AGI scripts, it does not author them.
+      - ./snep:/var/www/html/snep:ro
     # AMI (5038) is container-to-container only -- no host port published,
     # per TASK-0005's explicit instruction.
     healthcheck:

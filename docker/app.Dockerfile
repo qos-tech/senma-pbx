@@ -13,6 +13,16 @@ RUN apt-get update \
     # writable by the Apache user. See docs/tasks/0001-docker-bootstrap.md.
     && mkdir -p /var/log/snep \
     && chown www-data:www-data /var/log/snep \
+    # TASK-0009: shared group for the /etc/asterisk/snep writable subtree,
+    # matching docker/asterisk.Dockerfile's identical, explicitly-pinned
+    # GID 3000 (not auto-assigned -- see that file for the full rationale;
+    # this container's own auto-assigned system GIDs top out at 100/users
+    # well below 3000). www-data does not need this group for TASK-0009
+    # itself (Snep_InterfaceConf is not modified/invoked here), only the
+    # filesystem architecture is being made valid ahead of that future
+    # milestone. See docs/tasks/0009-first-pjsip-call.md.
+    && groupadd -g 3000 senma-config \
+    && usermod -aG senma-config www-data \
     # Suppresses Apache's "Could not reliably determine the server's fully
     # qualified domain name" startup warning (cosmetic, but pollutes logs).
     && echo "ServerName localhost" > /etc/apache2/conf-available/mag-servername.conf \

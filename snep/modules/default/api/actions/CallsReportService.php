@@ -340,11 +340,17 @@ class CallsReportService implements SnepService {
     }
 
     $stmt = $db->query($select);
-    $cont = count($stmt);
 
+    $row = array();
     while ($dado = $stmt->fetch()) {
       $row[] = $dado;
     }
+    // TASK-0009: was count($stmt) -- PHP 8 made count() on a non-Countable
+    // object (Zend_Db_Statement_Pdo) a fatal TypeError instead of PHP 7's
+    // silent 1. $row is exactly the rows this query returned, fetched
+    // immediately below anyway, so counting it after the fetch loop
+    // preserves the original "row count" intent without re-querying.
+    $cont = count($row);
 
     if($replace){
       $select_contacts = "SELECT `c`.id,`c`.name, `p`.`phone` FROM `contacts_names` AS `c` INNER JOIN `contacts_phone` AS `p` ON c.id = p.contact_id";

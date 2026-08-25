@@ -22,7 +22,15 @@ set -euo pipefail
 
 ASTERISK_CONFIG_SRC=/asterisk-config-src
 SNEP_ASTERISK_CONFIG_SRC=/snep-asterisk-config-src
+# TASK-0009: extensions.conf + custom/*.conf -- the vendored dialplan
+# itself, never deployed into the container before this task.
+SNEP_ASTERISK_DIALPLAN_SRC=/snep-asterisk-dialplan-src
 ASTERISK_ETC=/etc/asterisk
+# TASK-0009: GID of the senma-config group, created identically (same
+# fixed GID, not auto-assigned) in both docker/asterisk.Dockerfile and
+# docker/app.Dockerfile. Used below to make /etc/asterisk/snep
+# group-writable without widening the rest of /etc/asterisk.
+SENMA_CONFIG_GROUP=senma-config
 ASTERISK_DOCS_BAKED=/usr/share/asterisk-documentation
 ASTERISK_DOCS_DEST=/var/lib/asterisk/documentation
 
@@ -58,6 +66,19 @@ if [ ! -d "$ASTERISK_DOCS_DEST" ]; then
     cp -r "$ASTERISK_DOCS_BAKED"/. "$ASTERISK_DOCS_DEST/"
 fi
 
+# TASK-0009: astagidir (asterisk.conf) stays at the default
+# /var/lib/asterisk/agi-bin. extensions.conf/snep-features.conf call AGI
+# scripts as "snep/<script>.php" (a "snep/" prefix baked into the
+# dialplan), so Asterisk resolves <astagidir>/snep/<script>.php. This
+# symlink makes that resolve into the real, bind-mounted AGI tree --
+# the same "symlink farm" pattern the legacy (non-Docker) install used
+# (see TASK-0001/0008), not a new invention. Unconditional/idempotent
+# (ln -sfn), not gated behind the /etc/asterisk first-boot check: this
+# lives in the separate astvarlibdir volume, which can be fresh
+# independently of /etc/asterisk.
+mkdir -p /var/lib/asterisk/agi-bin
+ln -sfn /var/www/html/snep/agi /var/lib/asterisk/agi-bin/snep
+
 if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
     echo "[asterisk-entrypoint] /etc/asterisk not yet populated, assembling from vendored config"
 
@@ -65,6 +86,28 @@ if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
 
     mkdir -p "$ASTERISK_ETC/snep"
     cp "$SNEP_ASTERISK_CONFIG_SRC"/*.conf "$ASTERISK_ETC/snep/"
+
+    # TASK-0009: the real SENMA dialplan, deployed for the first time.
+    # Only extensions.conf + its custom/ includes -- not the whole vendored
+    # snep/install/etc/asterisk/ tree (that also contains legacy
+    # sip.conf/modules.conf/etc. this Docker build deliberately does not
+    # use; see docker/asterisk-config/*.conf instead).
+    cp "$SNEP_ASTERISK_DIALPLAN_SRC/extensions.conf" "$ASTERISK_ETC/"
+    mkdir -p "$ASTERISK_ETC/custom"
+    cp "$SNEP_ASTERISK_DIALPLAN_SRC/custom/preagi.conf" \
+        "$SNEP_ASTERISK_DIALPLAN_SRC/custom/posagi.conf" \
+        "$SNEP_ASTERISK_DIALPLAN_SRC/custom/eof.conf" \
+        "$ASTERISK_ETC/custom/"
+
+    # TASK-0009: /etc/asterisk/snep is the one subtree SENMA's own runtime
+    # (currently: nothing yet: Snep_InterfaceConf is not invoked by this
+    # task) will eventually need to write. setgid so files written by
+    # either the asterisk user or the app container's www-data (both
+    # members of $SENMA_CONFIG_GROUP) keep the shared group; 2775 keeps
+    # the rest of /etc/asterisk (0755, owned solely by asterisk:asterisk,
+    # untouched above) as the Asterisk runtime's own exclusive tree.
+    chgrp "$SENMA_CONFIG_GROUP" "$ASTERISK_ETC/snep"
+    chmod 2775 "$ASTERISK_ETC/snep"
 
     : "${AMI_USER:?AMI_USER must be set}"
     : "${AMI_PASSWORD:?AMI_PASSWORD must be set}"
@@ -87,6 +130,17 @@ if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
         -e "s|__DB_USER__|${DB_USER}|g" \
         -e "s|__DB_PASSWORD__|${DB_PASSWORD}|g" \
         "$ASTERISK_ETC/res_odbc.conf"
+
+    # TASK-0009: dev/test-only PJSIP endpoint passwords (see
+    # docker/asterisk-config/pjsip.conf) -- same env-templating pattern as
+    # AMI/DB above, not committed secrets.
+    : "${PJSIP_TEST_1000_SECRET:?PJSIP_TEST_1000_SECRET must be set}"
+    : "${PJSIP_TEST_1001_SECRET:?PJSIP_TEST_1001_SECRET must be set}"
+
+    sed -i \
+        -e "s|__PJSIP_1000_SECRET__|${PJSIP_TEST_1000_SECRET}|g" \
+        -e "s|__PJSIP_1001_SECRET__|${PJSIP_TEST_1001_SECRET}|g" \
+        "$ASTERISK_ETC/pjsip.conf"
 fi
 
 exec "$@"

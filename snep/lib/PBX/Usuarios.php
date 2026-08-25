@@ -63,6 +63,11 @@ class PBX_Usuarios {
         if ($tech == "SIP") {
             require_once "PBX/Asterisk/Interface/SIP.php";
             $interface = new PBX_Asterisk_Interface_SIP(array("username" => $usuario->name, "secret" => $usuario->secret));
+        } else if ($tech == "PJSIP") {
+            // TASK-0009: minimum runtime dispatch for the development
+            // PJSIP call proof. See PBX_Asterisk_Interface_PJSIP.
+            require_once "PBX/Asterisk/Interface/PJSIP.php";
+            $interface = new PBX_Asterisk_Interface_PJSIP(array("username" => $usuario->name, "secret" => $usuario->secret));
         } else if ($tech == "IAX2") {
             require_once "PBX/Asterisk/Interface/IAX2.php";
             $interface = new PBX_Asterisk_Interface_IAX2(array("username" => $usuario->name, "secret" => $usuario->secret));
