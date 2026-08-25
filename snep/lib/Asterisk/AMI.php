@@ -139,7 +139,7 @@ require_once "Asterisk/Exception/Auth.php";
         $buffer = trim(fgets($this->socket, 4096));
         while($buffer != "")
         {
-        
+
           $a = strpos($buffer, ':');
           if($a)
           {
@@ -160,7 +160,24 @@ require_once "Asterisk/Exception/Auth.php";
             }
 
             // store parameter in $parameters
-            $parameters[substr($buffer, 0, $a)] = substr($buffer, $a + 2);
+            $key = substr($buffer, 0, $a);
+            $value = substr($buffer, $a + 2);
+            $parameters[$key] = $value;
+
+            // TASK-0006B: modern Asterisk (22+) frames the "Command" action's
+            // output as one repeated "Output:" header per line instead of the
+            // legacy "Response: Follows" + "--END COMMAND--" accumulation
+            // above -- confirmed on both Response: Success and Response: Error
+            // Command replies, never on non-Command actions (Login/Ping/
+            // Status/etc never emit Output at all). Accumulating into the
+            // same 'data' key preserves the existing contract every current
+            // caller (AsteriskInfo::status_asterisk(), PBX_Interfaces::
+            // getCodecs(), PBX_Khomp_Info, SystemstatusController) already
+            // reads, instead of changing each of them. See
+            // docs/tasks/0006-systemstatus-runtime.md.
+            if ($key === 'Output') {
+              $parameters['data'] = ($parameters['data'] ?? '') . $value . "\n";
+            }
           }
           $buffer = trim(fgets($this->socket, 4096));
         }

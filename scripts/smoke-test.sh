@@ -187,6 +187,16 @@ log "==> queues"
 # asterisk service existed. See docs/tasks/0005-asterisk-container-bootstrap.md.
 check "queues" "GET" "/index.php/default/queues" "-" "200" 'var controller = "queues"' "normal"
 
+log "==> systemstatus"
+# TASK-0006A fixed the loopback linfo request (127.0.0.1:80, not
+# SERVER_PORT); TASK-0006B fixed Asterisk_AMI::wait_response() to parse
+# Asterisk 22's Output:-framed Command responses. The marker below is the
+# real, AMI-derived Asterisk version string -- not just HTTP 200 -- so this
+# only passes when the full AMI round-trip genuinely works, matching the
+# exact Asterisk version pinned in docker/asterisk.Dockerfile. See
+# docs/tasks/0006-systemstatus-runtime.md.
+check "systemstatus" "GET" "/index.php/default/systemstatus" "-" "200" 'Asterisk - 22.10.1' "normal"
+
 log "==> reports"
 check "reports" "GET" "/index.php/default/calls-report" "-" "200" 'var controller = "calls-report"' "normal"
 

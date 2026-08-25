@@ -150,6 +150,134 @@ blocked by the AMI response-format incompatibility above. Accordingly:
 - `snep/modules/default/controllers/SystemstatusController.php` — 2
   sites: loopback URL construction, caught exception type.
 
-## Not modified (per instruction)
+## Not modified (per instruction, in TASK-0006A)
 `snep/lib/Asterisk/AMI.php`, `scripts/smoke-test.sh`, Asterisk
 configuration, ODBC, PJSIP, AGI runtime.
+
+---
+
+# TASK-0006B — AMI Command response compatibility
+
+## Objective
+Fix the AMI response-parsing incompatibility identified in TASK-0006A:
+`Asterisk_AMI::wait_response()` only understood the legacy AMI "Command"
+response shape, so every caller reading `['data']` got silently empty
+results against Asterisk 22.
+
+## Legacy AMI framing (what this class was written against)
+```
+Response: Follows
+<raw multi-line command output>
+--END COMMAND--
+```
+`wait_response()` detects this only by checking, on the *first* line of a
+response block, whether that header's *value* is literally `"Follows"` —
+then switches to reading raw, un-trimmed lines into `$parameters['data']`
+until a `--END ` line appears.
+
+## Asterisk 22 framing (captured live, raw protocol, bypassing the PHP client)
+```
+Response: Success
+Message: Command output follows
+Output: <line 1>
+Output: <line 2>
+...
+```
+— confirmed across single-line (`core show version`), multi-line
+(`core show codecs`, 50 lines), and **error** cases (`khomp summary
+concise` → `Response: Error` + the same `Output:`-per-line framing).
+Confirmed via 5 other action types (`Login`, `Ping`, `Status`,
+`CoreStatus`, `QueueStatus`) that `Output:` headers **never** appear
+outside the Command action, success or failure — the presence of an
+`Output:` header, not the `Response:` value, is what actually indicates
+"this is Command output."
+
+## Compatibility contract implemented
+`snep/lib/Asterisk/AMI.php`, `wait_response()` only, purely additive next
+to the existing "store parameter" line (the legacy `Follows` branch above
+it is untouched):
+```php
+$key = substr($buffer, 0, $a);
+$value = substr($buffer, $a + 2);
+$parameters[$key] = $value;
+
+if ($key === 'Output') {
+    $parameters['data'] = ($parameters['data'] ?? '') . $value . "\n";
+}
+```
+`$parameters['Output']` still gets set exactly as before (last value,
+unchanged, unused by any caller but preserved). Gated strictly on the
+literal key `Output`, not on `Response`'s value — so `Response: Error`
+Command replies populate `data` exactly like `Response: Success` ones,
+proven below. `wait_event()`/`process_event()` were not touched; traced
+and confirmed they never receive Command-shaped (`Output:`-framed)
+responses at all — they're used only for the separate `Agents`/`Status`
+AMI actions, which respond via event streams.
+
+## Multi-line handling
+Every repeated `Output:` line is appended, in order, joined by `"\n"`,
+with a trailing `"\n"` after the final line — reproducing the legacy
+`Follows`-branch's trailing-newline behavior, which `PBX_Khomp_Info::
+boardInfo()` depends on (`array_pop($lines)` after `explode("\n", ...)`
+to drop the expected trailing empty element).
+
+## Validation performed
+- `php -l`: clean. Diff confined to `wait_response()`; `wait_event()`
+  unchanged (confirmed via `git diff`).
+- AMI login via SENMA's own `Asterisk_AMI::connect()`: still succeeds.
+- `Ping` (non-Command action) via the real client: unchanged shape
+  (`Response`, `Ping`, `Timestamp`), **no** `data` key introduced —
+  confirms the fix cannot fire on non-Command responses.
+- `Command("core show version")` via the real client: `data` present,
+  contains `22.10.1`, ends with a newline.
+- `Command("core show codecs")` (50-line multi-output) via the real
+  client: `data` contains all 50 lines in original order (first line
+  "Disclaimer: this command is...", last line the `siren14` codec row),
+  both `ulaw` and `opus` present, single trailing newline — proves
+  accumulation, not last-value-wins.
+- `Command("khomp summary concise")` (error-producing, no Khomp module in
+  this image): `Response` remains `Error`, `Message` remains available,
+  `Output` remains available (single value, existing behavior preserved),
+  **and** `data` correctly contains the "No such command..." text — proves
+  the fix is gated on `Output:` framing, not on `Response: Success`.
+- `PBX_Interfaces::getCodecs()` exercised through the real, unmodified
+  SENMA code path (`GET /index.php/default/extensions/add`, authenticated):
+  real codec `<option>` tags rendered (`alaw`, `ulaw`, `gsm`, `opus`,
+  correct `selected` defaults) — proves the fix works through an actual
+  first-party caller, not just direct AMI calls. (That same page later
+  hits an unrelated, pre-existing PHP 8 bareword-constant fatal in
+  `modules/default/views/scripts/extensions/addedit.phtml:344` —
+  confirmed unrelated to AMI/this change, out of scope, not fixed.)
+- Authenticated `systemstatus`: **HTTP 200**, `Asterisk - 22.10.1`
+  genuinely rendered (was `Asterisk - ` empty), status indicator now green
+  (`#96d190`, was red `#f0625f`), no raw exception/fallback output.
+- `scripts/smoke-test.sh`: added a `systemstatus` check using the real
+  AMI-derived version string (`'Asterisk - 22.10.1'`) as the marker —
+  deliberately not HTTP 200 alone, and deliberately not a generic HTML
+  marker, since only a genuinely-working AMI round-trip can produce it.
+- `make smoke`, run twice: **16 PASS, 0 FAIL, 0 EXPECTED_LIMITATION**,
+  identical both times (`queues` and `systemstatus` both PASS). App log
+  fatal-error count: `0 → 0` both runs. Asterisk log
+  (`/var/log/asterisk/full`): only the same expected missing-optional-
+  config declines from TASK-0005's minimal config, no new errors.
+
+## `systemstatus` is now PASS
+Unlike TASK-0006A, all stated requirements are met: HTTP 200, meaningful
+linfo data, genuine AMI-derived Asterisk version, correct running
+indicator, no fallback output. `make smoke` reflects this as a real PASS.
+
+## Files changed
+- `snep/lib/Asterisk/AMI.php` — `wait_response()`, ~15 lines
+  (implementation + explanatory comment).
+- `scripts/smoke-test.sh` — new `systemstatus` check.
+
+## Remaining AMI runtime debt
+- `extensions/addedit.phtml:344`'s unrelated bareword-constant fatal
+  (found incidentally while validating `getCodecs()`) — not fixed, not
+  part of this task; a PHP 8 compatibility item for a future batch.
+- Reload-only AMI Command callers (`ConferenceRoomsController`,
+  `Snep_InterfaceConf`, `Snep_Locale`) were not individually re-validated
+  beyond confirming they never read `['data']` — they were unaffected by
+  the original bug and remain unaffected by this fix.
+- Everything else already recorded as out of scope in TASK-0005/0006A:
+  ODBC, PJSIP, AGI runtime, Asterisk configuration.
