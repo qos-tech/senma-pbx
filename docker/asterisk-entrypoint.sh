@@ -26,6 +26,27 @@ ASTERISK_ETC=/etc/asterisk
 ASTERISK_DOCS_BAKED=/usr/share/asterisk-documentation
 ASTERISK_DOCS_DEST=/var/lib/asterisk/documentation
 
+# TASK-0007: /etc/odbc.ini (the DSN definition) is a system path outside
+# the /etc/asterisk volume -- unlike that volume's contents, it carries no
+# user-editable state and nothing else depends on it persisting, so it's
+# simplest to regenerate it deterministically every start rather than
+# gate it behind a first-boot check. Driver referenced by the "MariaDB
+# Unicode" name already registered in /etc/odbcinst.ini by the
+# odbc-mariadb package at image-build time -- no architecture-specific
+# driver path anywhere. Only Server/Database are templated (not
+# secrets); actual DB credentials live in res_odbc.conf, templated below.
+: "${DB_HOST:?DB_HOST must be set}"
+: "${DB_NAME:?DB_NAME must be set}"
+cat > /etc/odbc.ini <<EOF
+[snep]
+Description = SENMA MariaDB DSN
+Driver = MariaDB Unicode
+Server = ${DB_HOST}
+Port = ${DB_PORT:-3306}
+Database = ${DB_NAME}
+Charset = utf8mb4
+EOF
+
 # /var/lib/asterisk is a named volume (for astdb/key persistence); an
 # empty volume shadows the documentation baked into the image at build
 # time (see docker/asterisk.Dockerfile). Stasis refuses to start without
@@ -54,6 +75,18 @@ if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
         -e "s|__AMI_PASSWORD__|${AMI_PASSWORD}|g" \
         -e "s|__AMI_ACL_SUBNET__|${ASTERISK_AMI_ACL_SUBNET}|g" \
         "$ASTERISK_ETC/manager.conf"
+
+    # TASK-0007: same DB_USER/DB_PASSWORD the app container's own DB
+    # connection already uses (docker/entrypoint.sh) -- one source of
+    # truth for the "snep" MariaDB credentials, not a second hand-copied
+    # pair.
+    : "${DB_USER:?DB_USER must be set}"
+    : "${DB_PASSWORD:?DB_PASSWORD must be set}"
+
+    sed -i \
+        -e "s|__DB_USER__|${DB_USER}|g" \
+        -e "s|__DB_PASSWORD__|${DB_PASSWORD}|g" \
+        "$ASTERISK_ETC/res_odbc.conf"
 fi
 
 exec "$@"
