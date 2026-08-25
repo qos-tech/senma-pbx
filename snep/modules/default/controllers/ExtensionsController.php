@@ -116,9 +116,19 @@ class ExtensionsController extends Zend_Controller_Action {
       public function securityPassword($password){
 
         $force = 0;
-        
-        if(count(password) >= 8) $force += 10;
-        if(count(password) >= 16) $force += 10;
+
+        // TASK-0013: was `count(password)` -- a bareword (undefined
+        // constant under PHP 8, fatal) that was never valid even as
+        // count($password): $password is peers.secret (varchar(80),
+        // nullable in schema.sql), a scalar string, not a Countable/array.
+        // This function scores password strength by length + character
+        // class, so strlen() is the intended check; cast to string since
+        // the column can be NULL even though this controller's own
+        // execAdd() never writes NULL (isset(...) : "" fallback) -- see
+        // docs/tasks/0013-extension-security-password-php84.md.
+        $passwordLength = strlen((string)$password);
+        if($passwordLength >= 8) $force += 10;
+        if($passwordLength >= 16) $force += 10;
         if(preg_match('/[A-Z]/', $password)) $force += 20;
         if(preg_match('/[a-z]/', $password)) $force += 20;
         if(preg_match('/[0-9]/', $password)) $force += 20;
