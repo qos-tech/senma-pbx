@@ -17,7 +17,14 @@
  *
  * Usage:
  *   php trunk-smoke-route.php create <trunk_id> <destination> <desc>
+ *   php trunk-smoke-route.php create-inbound <trunk_id> <did> <extension> <desc>
  *   php trunk-smoke-route.php remove <rule_id>
+ *
+ * TASK-0016: "create-inbound" builds the mirror-direction rule (trunk as
+ * SOURCE, matched via addSrc(type=T), instead of destination) -- proving
+ * inbound routing through the same real domain API, DiscarRamal in
+ * place of DiscarTronco. "remove" is already generic (PBX_Rules::delete()
+ * takes only a rule id) and needs no separate inbound variant.
  */
 
 define('APPLICATION_PATH', '/var/www/html/snep');
@@ -42,13 +49,23 @@ require_once "PBX/Rule/Plugin/Broker.php";
 require_once "PBX/Rule.php";
 require_once "PBX/Rules.php";
 require_once "PBX/Trunks.php";
+require_once "PBX/Usuarios.php";
 require_once APPLICATION_PATH . "/modules/default/actions/DiscarTronco.php";
+require_once APPLICATION_PATH . "/modules/default/actions/DiscarRamal.php";
 
-// DiscarTronco::getName()/getDesc() call $this->i18n->translate() --
-// needs a translator present in the registry even though this script
-// never renders a UI.
+// DiscarTronco/DiscarRamal::getName()/getDesc() call
+// $this->i18n->translate() -- needs a translator present in the
+// registry even though this script never renders a UI. DiscarTronco's
+// constructor reads registry key "Zend_Translate"; DiscarRamal's reads
+// "i18n" (both real bootstraps, snep/Bootstrap.php and
+// snep/agi/Bootstrap.php, already register the identical
+// Snep_Locale::getInstance()->getZendTranslate() object under both
+// keys) -- both are set here from the same instance so either action
+// class can be constructed.
 require_once "Snep/Locale.php";
-Zend_Registry::set("Zend_Translate", Snep_Locale::getInstance()->getZendTranslate());
+$translator = Snep_Locale::getInstance()->getZendTranslate();
+Zend_Registry::set("Zend_Translate", $translator);
+Zend_Registry::set("i18n", $translator);
 
 require_once "Zend/Log.php";
 require_once "Zend/Log/Writer/Null.php";
@@ -86,11 +103,43 @@ if ($action === "create") {
 
     PBX_Rules::register($rule);
     echo $rule->getId() . "\n";
+} else if ($action === "create-inbound") {
+    $trunkId = (int) $argv[2];
+    $did = $argv[3];
+    $extension = $argv[4];
+    $desc = $argv[5];
+
+    $rule = new PBX_Rule();
+    $rule->setDesc($desc);
+    $rule->setPriority(10);
+    $rule->setTypeRule("incoming");
+    foreach (array("sun", "mon", "tue", "wed", "thu", "fri", "sat") as $day) {
+        $rule->addWeekDay($day);
+    }
+    $rule->addValidTime("00:00:00-23:59:59");
+    // T: only this specific trunk (PBX_Rule::checkExpr()'s 'T' case
+    // requires $request->getSrcObj() instanceof Snep_Trunk with a
+    // matching getId() -- see docs/tasks/0016-pjsip-inbound-trunk-routing.md
+    // §1/§9). Not "X" (any origin), which would also match every
+    // internal/outbound call already exercised by the other smoke
+    // fixtures.
+    $rule->addSrc(array("type" => "T", "value" => $trunkId));
+    // RX: exact match on the reserved inbound test DID -- same
+    // astrule2regex() exact-literal behavior as the outbound fixture
+    // above.
+    $rule->addDst(array("type" => "RX", "value" => $did));
+
+    $ramal = new DiscarRamal();
+    $ramal->setConfig(array("ramal" => $extension));
+    $rule->addAction($ramal);
+
+    PBX_Rules::register($rule);
+    echo $rule->getId() . "\n";
 } else if ($action === "remove") {
     $ruleId = (int) $argv[2];
     PBX_Rules::delete($ruleId);
     echo "removed\n";
 } else {
-    fwrite(STDERR, "usage: php trunk-smoke-route.php create <trunk_id> <destination> | remove <rule_id>\n");
+    fwrite(STDERR, "usage: php trunk-smoke-route.php create <trunk_id> <destination> <desc> | create-inbound <trunk_id> <did> <extension> <desc> | remove <rule_id>\n");
     exit(1);
 }

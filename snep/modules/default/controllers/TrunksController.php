@@ -249,6 +249,15 @@ class TrunksController extends Zend_Controller_Action {
           $db->insert("trunks", $trunk_data['trunk']);
           $id = $db->lastInsertId();
 
+          // TASK-0016: PJSIP's id_regex depends on trunks.id, which
+          // doesn't exist until the INSERT above returns it -- see the
+          // comment in preparePost()'s PJSIP branch. Patched here, still
+          // inside the same transaction, before anything else can read
+          // this row.
+          if ($trunk_data['trunk']['type'] === "PJSIP") {
+            $db->update("trunks", array("id_regex" => "PJSIP/trunk-" . $id), "id = $id");
+          }
+
           if($trunk_data['trunk']['trunktype'] == "I") {
             $trunk_data['ip']["name"] = $trunk_data['trunk']["name"];
             $db->insert("peers", $trunk_data['ip']);
@@ -457,7 +466,11 @@ class TrunksController extends Zend_Controller_Action {
 
         if ($form_isValid) {
 
-          $trunk_data = $this->preparePost();
+          // TASK-0016: $idTrunk is already known here (the URL's "trunk"
+          // param) -- pass it through so preparePost()'s PJSIP branch
+          // can compute the real id_regex directly, no follow-up UPDATE
+          // needed (unlike addAction(), where the row doesn't exist yet).
+          $trunk_data = $this->preparePost(null, $idTrunk);
 
           $db = Snep_Db::getInstance();
           $db->beginTransaction();
@@ -556,7 +569,7 @@ class TrunksController extends Zend_Controller_Action {
     * @param <string> $post
     * @return type
     */
-    protected function preparePost($post = null) {
+    protected function preparePost($post = null, $trunkId = null) {
 
       $post = $post === null ? $_POST : $post;
       $tech = $post['technology'];
@@ -653,18 +666,33 @@ class TrunksController extends Zend_Controller_Action {
       // §4/§17/§20) -- dialmethod is stored but not specially
       // interpreted here; Snep_PjsipTrunkConf's decision to emit a
       // registration object is driven entirely by reverse_auth, not
-      // dialmethod. A NOAUTH-style PJSIP trunk (no auth, IP-matched) has
-      // no distinct effect in this milestone -- that requires a real new
-      // `identify` object, explicitly deferred to TASK-0016. The stored
-      // canal value below only needs to start with "PJSIP/" for
-      // Snep_PjsipTrunkConf's own filter to find it; the actual Asterisk
-      // object names are computed independently from trunks.id (an
-      // auto-increment primary key not yet known at this point in
-      // preparePost(), before the trunks row is inserted -- see
-      // docs/tasks/0015-pjsip-trunk-provisioning.md), not parsed back
-      // out of this string.
+      // dialmethod. `channel` only needs to start with "PJSIP/" for
+      // Snep_PjsipTrunkConf's own filter to find the row; the real
+      // Asterisk endpoint/auth/aor object names are computed
+      // independently from trunks.id, not parsed back out of this
+      // string -- see docs/tasks/0015-pjsip-trunk-provisioning.md.
       $trunk_data['dialmethod'] = strtoupper($trunk_data['dialmethod']);
-      $trunk_data['channel'] = $trunk_data['id_regex'] = "PJSIP/" . $trunk_data['username'];
+      $trunk_data['channel'] = "PJSIP/" . $trunk_data['username'];
+
+      // TASK-0016: id_regex is a DIFFERENT concern from `channel` above
+      // -- PBX_Interfaces::getChannelOwner() matches an INBOUND
+      // Asterisk channel name against id_regex directly (no separate
+      // parsing), so it must hold the deterministic SENMA endpoint
+      // identity Snep_PjsipTrunkConf/PBX_Trunks::get() actually name
+      // the object ("trunk-<trunks.id>", TASK-0014 §10/TASK-0015 §4) --
+      // NOT the provider-assigned account username `channel` uses
+      // above (the original TASK-0015 bug: a PJSIP trunk's id_regex was
+      // "PJSIP/<username>", which could never match the real inbound
+      // channel name; see docs/tasks/0016-pjsip-inbound-trunk-routing.md
+      // §2.2). trunks.id is an auto-increment column: on edit, the
+      // caller already knows it (the URL's "trunk" param) and passes it
+      // in as $trunkId; on add, no row exists yet, so it's left unset
+      // here and addAction() patches it in a follow-up UPDATE once
+      // lastInsertId() is available, in the same transaction, before
+      // commit.
+      if ($trunkId !== null) {
+        $trunk_data['id_regex'] = "PJSIP/trunk-" . $trunkId;
+      }
 
     } else if ($trunktype === "SNEPSIP" || $trunktype === "SNEPIAX2") {
 

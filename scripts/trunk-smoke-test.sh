@@ -28,8 +28,27 @@
 #      reads it back
 #   -> HTTP POST to TrunksController::removeAction() cleans up.
 #
-# Outbound only, per TASK-0014/TASK-0015's explicit scope boundary --
-# inbound trunk identification/routing is TASK-0016.
+# TASK-0016 extends the same fixture (same trunk, same provider
+# container, same registered test extension) with the reverse direction:
+#
+#   provider originates a real INVITE (PJSIP/58888@to-senma, a static
+#   endpoint added to docker/provider-config/pjsip.conf) toward SENMA
+#   -> Snep_PjsipTrunkConf's generated `identify` object (match=<trunk's
+#      configured host>) resolves it to this same trunk's endpoint
+#   -> PBX_Asterisk_AGI_Request correctly identifies the trunk (the
+#      strrpos()/id_regex fixes -- see
+#      docs/tasks/0016-pjsip-inbound-trunk-routing.md §2)
+#   -> [default] -> existing AGI (snep/snep.php) -> existing
+#      PBX_Rules/PBX_Dialplan engine -> a second route/rule (src=T:<id>,
+#      dst=RX:58888) -> DiscarRamal -> the same registered test extension
+#      rings and (answermode=auto) answers -> held briefly -> clean
+#      hangup -> a second real CDR row -> report readback.
+#
+# Both directions share one trunk/extension provisioning pass and one
+# EXIT-trap cleanup -- provisioning the same fixture twice would be pure
+# waste, and nothing about either direction's checks touches the other's
+# state (see docs/tasks/0016-pjsip-inbound-trunk-routing.md §15 for why
+# this stays one command instead of two).
 #
 # Separate from scripts/smoke-test.sh (HTTP-only) and
 # scripts/call-smoke-test.sh (PJSIP extensions only) by design -- this is
@@ -55,12 +74,24 @@ ROUTE_DESC="TASK-0015 trunk-smoke route fixture"
 TEST_DESTINATION=600
 BARESIP_CONTAINER="senma-trunksmoke-${TEST_EXT}"
 
+# TASK-0016 inbound fixtures. 58888 is the reserved inbound test DID
+# established by investigation (docs/tasks/0016-pjsip-inbound-trunk-routing.md
+# §3/§8): 600 is already the outbound destination, and any 3-digit
+# number starting with 7 or 9 collides with pre-existing dialplan
+# features (snep-features.conf's _7XX call-parking pattern, [default]'s
+# own _9XX conference pattern) before a call would ever reach the AGI at
+# all -- confirmed live, not assumed.
+TEST_DESTINATION_INBOUND=58888
+INBOUND_ROUTE_DESC="TASK-0016 trunk-smoke inbound route fixture"
+PROVIDER_TO_SENMA_ENDPOINT="to-senma"
+
 PASS=0
 FAIL=0
 declare -a RESULTS=()
 CREATED_EXT=0
 CREATED_TRUNK_ID=""
 CREATED_ROUTE_ID=""
+CREATED_INBOUND_ROUTE_ID=""
 CONF_DIR=""
 COOKIEJAR=""
 
@@ -202,6 +233,11 @@ cleanup() {
         $COMPOSE exec -T app php -- remove "$CREATED_ROUTE_ID" < "$ROUTE_SCRIPT" >/dev/null 2>&1 \
             && log "removed route fixture id=${CREATED_ROUTE_ID}" \
             || log "WARNING: could not remove route fixture id=${CREATED_ROUTE_ID} -- may need manual cleanup"
+    fi
+    if [ -n "$CREATED_INBOUND_ROUTE_ID" ]; then
+        $COMPOSE exec -T app php -- remove "$CREATED_INBOUND_ROUTE_ID" < "$ROUTE_SCRIPT" >/dev/null 2>&1 \
+            && log "removed inbound route fixture id=${CREATED_INBOUND_ROUTE_ID}" \
+            || log "WARNING: could not remove inbound route fixture id=${CREATED_INBOUND_ROUTE_ID} -- may need manual cleanup"
     fi
     if [ -n "$COOKIEJAR" ]; then
         if [ "$CREATED_EXT" = "1" ]; then
@@ -395,8 +431,17 @@ sed \
     -e "s|__EXTEN__|${TEST_EXT}|g" \
     -e "s|__ASTERISK_HOST__|${ASTERISK_NAME}|g" \
     -e "s|__SECRET__|${TEST_EXT_SECRET}|g" \
-    -e "s|__ANSWERMODE__|manual|g" \
+    -e "s|__ANSWERMODE__|auto|g" \
     "$TEMPLATE_DIR/accounts.template" > "$CONF_DIR/${TEST_EXT}/accounts"
+# TASK-0016: was "manual". answermode only governs how this endpoint
+# handles an INCOMING INVITE -- placing the outbound call below is
+# always an explicit ctrl_tcp "dial" command regardless, so this has no
+# effect on the existing outbound checks (confirmed: they stay green
+# unchanged). "auto" lets this same already-registered endpoint also
+# auto-answer the new inbound-phase call below with zero extra
+# ctrl_tcp/config plumbing -- one registered test extension proves both
+# directions, matching call-smoke-test.sh's own destination-extension
+# precedent (answermode=auto there too).
 
 log "==> starting baresip test endpoint (extension ${TEST_EXT})"
 docker run -d --name "$BARESIP_CONTAINER" --network "$NETWORK_NAME" \
@@ -537,12 +582,162 @@ else
     bad "SENMA reporting path can read it" "skipped -- no CDR uniqueid available to look up"
 fi
 
+# =============================================================================
+# TASK-0016 -- inbound direction (provider -> SENMA -> SENMA extension)
+# =============================================================================
+#
+# Reuses the exact trunk/extension fixture provisioned above -- no second
+# trunk, no second provider, no second extension (docs/tasks/
+# 0016-pjsip-inbound-trunk-routing.md §15).
+
+# --- 16. Generated `identify` section exists --------------------------------
+
+log "==> checking generated identify section"
+# $GENERATED_CONF was captured in step 4 above and nothing has edited or
+# reloaded the trunk since -- still an accurate snapshot, no need to
+# re-fetch.
+if echo "$GENERATED_CONF" | grep -q "^\[${TRUNK_OBJ}-identify\]"; then
+    ok "generated identify section exists" "senma-pjsip-trunks.conf contains [${TRUNK_OBJ}-identify]"
+else
+    bad "generated identify section exists" "expected [${TRUNK_OBJ}-identify] section not found in senma-pjsip-trunks.conf"
+fi
+
+# --- 17. Provider's static to-senma endpoint is present ---------------------
+
+log "==> checking provider's to-senma endpoint (docker/provider-config/pjsip.conf)"
+if $COMPOSE exec -T provider asterisk -rx "pjsip show endpoint ${PROVIDER_TO_SENMA_ENDPOINT}" 2>&1 | grep -q "Endpoint:  ${PROVIDER_TO_SENMA_ENDPOINT}"; then
+    ok "provider to-senma endpoint present" "static endpoint used to originate the inbound test call is loaded"
+else
+    bad "provider to-senma endpoint present" "endpoint not found on the provider container -- check docker/provider-config/pjsip.conf"
+    cleanup
+    trap - EXIT
+    exit 1
+fi
+
+# --- 18. Inbound route fixture, through the same PBX_Rules domain API ------
+
+log "==> checking for a leftover inbound route fixture from a prior interrupted run"
+LEFTOVER_INBOUND_ROUTE_ID="$(db_query "SELECT id FROM regras_negocio WHERE \`desc\`='${INBOUND_ROUTE_DESC}';")"
+if [ -n "$LEFTOVER_INBOUND_ROUTE_ID" ]; then
+    log "found leftover inbound route fixture id=${LEFTOVER_INBOUND_ROUTE_ID} -- removing via PBX_Rules::delete() before creating a new one"
+    $COMPOSE exec -T app php -- remove "$LEFTOVER_INBOUND_ROUTE_ID" < "$ROUTE_SCRIPT" >&2 \
+        || stop "found a leftover inbound route fixture (id=${LEFTOVER_INBOUND_ROUTE_ID}) but could not remove it"
+fi
+
+log "==> creating the inbound route fixture (trunk ${CREATED_TRUNK_ID} -> DID ${TEST_DESTINATION_INBOUND} -> extension ${TEST_EXT})"
+INBOUND_ROUTE_OUT="$($COMPOSE exec -T app php -- create-inbound "$CREATED_TRUNK_ID" "$TEST_DESTINATION_INBOUND" "$TEST_EXT" "$INBOUND_ROUTE_DESC" < "$ROUTE_SCRIPT" 2>&1)"
+CREATED_INBOUND_ROUTE_ID="$(echo "$INBOUND_ROUTE_OUT" | grep -oE '^[0-9]+$' | tail -1)"
+if [ -n "$CREATED_INBOUND_ROUTE_ID" ]; then
+    ok "inbound route fixture created" "rule id=${CREATED_INBOUND_ROUTE_ID} via PBX_Rules::register() (src=T:${CREATED_TRUNK_ID} -> dst=RX:${TEST_DESTINATION_INBOUND} -> DiscarRamal ramal=${TEST_EXT})"
+else
+    stop "inbound route fixture creation failed: $INBOUND_ROUTE_OUT"
+fi
+
+# --- 19-21. Provider originates the inbound call, verify it rings/answers/hangs up
+
+log "==> placing inbound call: provider -> ${TEST_DESTINATION_INBOUND} (through trunk id=${CREATED_TRUNK_ID}) -> extension ${TEST_EXT}"
+LOG_MARK_BEFORE_IN="$($COMPOSE exec -T asterisk sh -c 'wc -l < /var/log/asterisk/full' 2>/dev/null | tr -d '\r ')"
+# Same monotonic-marker reasoning as the outbound check above (§ step 14) --
+# uniqueid, not wall-clock time.
+UNIQUEID_MARK_IN="$(db_query "SELECT MAX(uniqueid) FROM cdr;")"
+UNIQUEID_MARK_IN="${UNIQUEID_MARK_IN:-0}"
+
+# The provider originates a real INVITE through its own static to-senma
+# endpoint (docker/provider-config/pjsip.conf), Request-URI user=58888.
+# Once SENMA's routed extension answers, the LOCAL (provider-side) leg
+# runs a plain Wait() -- exactly how a real carrier switch originates a
+# call without running any dialplan logic of its own; the actual
+# ring/answer/hold under test happens entirely on SENMA's side.
+$COMPOSE exec -T provider asterisk -rx "channel originate PJSIP/${TEST_DESTINATION_INBOUND}@${PROVIDER_TO_SENMA_ENDPOINT} application Wait 5" >&2
+
+sleep 2
+MIDCALL="$($COMPOSE exec -T asterisk asterisk -rx 'core show channels' 2>&1)"
+if echo "$MIDCALL" | grep -qE "^[1-9][0-9]* active channels?"; then
+    ok "call established briefly" "SENMA reports active channel(s) mid-call: $(echo "$MIDCALL" | grep -E "^[0-9]+ active channels?")"
+else
+    bad "call established briefly" "no active channels observed mid-call: $MIDCALL"
+fi
+
+sleep 5
+FINAL_IN="$($COMPOSE exec -T asterisk asterisk -rx 'core show channels' 2>&1)"
+if echo "$FINAL_IN" | grep -q "^0 active channels"; then
+    ok "inbound call hangup succeeded" "0 active channels after the provider's own Wait()+Hangup"
+else
+    bad "inbound call hangup succeeded" "channels still active: $FINAL_IN"
+fi
+
+# --- 22. Trunk identity + AGI/rule engine trace (item 8: do not infer trunk
+#         identity merely because the destination rang) --------------------
+
+log "==> checking trunk identity + AGI/rule engine trace"
+AGI_TRACE_IN="$($COMPOSE exec -T asterisk sh -c "tail -n +$((LOG_MARK_BEFORE_IN+1)) /var/log/asterisk/full" 2>/dev/null)"
+if echo "$AGI_TRACE_IN" | grep -q "(PJSIP/${TRUNK_OBJ}-" \
+    && echo "$AGI_TRACE_IN" | grep -qF "Identified source: ${TRUNK_CALLERID} (Snep_Trunk)" \
+    && echo "$AGI_TRACE_IN" | grep -q "Running the rule .*:${INBOUND_ROUTE_DESC}" \
+    && echo "$AGI_TRACE_IN" | grep -q "Discando para ramal ${TEST_EXT} no canal PJSIP/${TEST_EXT}" \
+    && echo "$AGI_TRACE_IN" | grep -q "Launched AGI Script .*snep/snep.php"; then
+    ok "trunk identity + AGI/rule engine trace" "channel resolved to PJSIP/${TRUNK_OBJ}-*, PBX_Interfaces::getChannelOwner() identified it as Snep_Trunk '${TRUNK_CALLERID}' (not merely 'destination rang'), matched the inbound fixture rule, DiscarRamal dialed extension ${TEST_EXT}"
+else
+    bad "trunk identity + AGI/rule engine trace" "expected trunk-identity/AGI/rule trace not found in Asterisk's log for this call"
+fi
+
+# --- 23. CDR row exists and is correct --------------------------------------
+
+log "==> checking inbound CDR"
+# TASK-0016 finding (docs/tasks/0016-pjsip-inbound-trunk-routing.md §11):
+# predicted, then validated live, that an inbound call routed through
+# DiscarRamal produces exactly ONE cdr row (unlike the outbound/
+# DiscarTronco case above, which produces two) -- not "fixed" to match
+# the outbound shape, since Asterisk legitimately does something
+# different here. src is NOT filtered on: an unauthenticated `channel
+# originate` test call has no real caller identity (observed live as
+# "anonymous") -- asserting a specific literal here would be fragile to
+# an Asterisk-version-specific default, so it's only logged, not
+# required to equal a fixed string.
+CDR_ROW_IN="$(db_query "SELECT uniqueid,src,disposition,duration,billsec,channel,dstchannel,calldate FROM cdr WHERE dst='${TEST_DESTINATION_INBOUND}' AND uniqueid > '${UNIQUEID_MARK_IN}' ORDER BY calldate ASC, uniqueid ASC LIMIT 1;")"
+CDR_IN_UNIQUEID="$(echo "$CDR_ROW_IN" | awk -F'\t' '{print $1}')"
+CDR_IN_SRC="$(echo "$CDR_ROW_IN" | awk -F'\t' '{print $2}')"
+CDR_IN_DISPOSITION="$(echo "$CDR_ROW_IN" | awk -F'\t' '{print $3}')"
+CDR_IN_DURATION="$(echo "$CDR_ROW_IN" | awk -F'\t' '{print $4}')"
+CDR_IN_BILLSEC="$(echo "$CDR_ROW_IN" | awk -F'\t' '{print $5}')"
+CDR_IN_CHANNEL="$(echo "$CDR_ROW_IN" | awk -F'\t' '{print $6}')"
+CDR_IN_DSTCHANNEL="$(echo "$CDR_ROW_IN" | awk -F'\t' '{print $7}')"
+CDR_IN_CALLDATE="$(echo "$CDR_ROW_IN" | awk -F'\t' '{print $8}')"
+
+if [ -n "$CDR_IN_UNIQUEID" ] \
+    && [ "$CDR_IN_DISPOSITION" = "ANSWERED" ] \
+    && [ "${CDR_IN_DURATION:-0}" -gt 0 ] 2>/dev/null \
+    && [ "${CDR_IN_BILLSEC:-0}" -gt 0 ] 2>/dev/null \
+    && [[ "$CDR_IN_CHANNEL" == PJSIP/${TRUNK_OBJ}-* ]] \
+    && [[ "$CDR_IN_DSTCHANNEL" == PJSIP/${TEST_EXT}-* ]] \
+    && [[ "$CDR_IN_CALLDATE" != "0000-00-00"* ]]; then
+    ok "inbound CDR row exists and is correct" "uniqueid=$CDR_IN_UNIQUEID src=$CDR_IN_SRC disposition=ANSWERED duration=$CDR_IN_DURATION billsec=$CDR_IN_BILLSEC channel=$CDR_IN_CHANNEL dstchannel=$CDR_IN_DSTCHANNEL calldate=$CDR_IN_CALLDATE"
+else
+    bad "inbound CDR row exists and is correct" "no matching/valid CDR row found (uniqueid='$CDR_IN_UNIQUEID' src='$CDR_IN_SRC' disposition='$CDR_IN_DISPOSITION' duration='$CDR_IN_DURATION' billsec='$CDR_IN_BILLSEC' channel='$CDR_IN_CHANNEL' dstchannel='$CDR_IN_DSTCHANNEL' calldate='$CDR_IN_CALLDATE')"
+fi
+
+# --- 24. SENMA reporting path can read it back ------------------------------
+
+log "==> checking SENMA report readback (inbound)"
+if [ -n "$CDR_IN_UNIQUEID" ]; then
+    TODAY_IN="$($COMPOSE exec -T asterisk date +%Y-%m-%d | tr -d '\r')"
+    REPORT_JSON_IN="$(curl -sS -u "${TEST_USER}:${TEST_PASSWORD}" \
+        "${BASE_URL}/modules/default/api/index.php?service=CallsReport&start_date=${TODAY_IN}&start_hour=00:00:00&end_date=${TODAY_IN}&end_hour=23:59:59&report_type=analytic&status_answered=1&dst=${TEST_DESTINATION_INBOUND}&order_dst=equal" 2>&1)"
+    if echo "$REPORT_JSON_IN" | grep -qF "\"uniqueid\":\"${CDR_IN_UNIQUEID}\""; then
+        ok "SENMA reporting path can read it (inbound)" "CallsReport API endpoint returned this exact CDR (uniqueid=$CDR_IN_UNIQUEID)"
+    else
+        bad "SENMA reporting path can read it (inbound)" "CallsReport API did not return uniqueid=$CDR_IN_UNIQUEID: $REPORT_JSON_IN"
+    fi
+else
+    bad "SENMA reporting path can read it (inbound)" "skipped -- no CDR uniqueid available to look up"
+fi
+
 print_report
 
-# --- 16. Cleanup happens via the EXIT trap (HTTP delete of the trunk and
-#         extension fixtures, PBX_Rules::delete() for the route fixture,
-#         then a fresh Snep_PjsipTrunkConf/Snep_PjsipConf regeneration
-#         naturally omits them all) ----------------------------------------
+# --- Cleanup happens via the EXIT trap (HTTP delete of the trunk and
+#     extension fixtures, PBX_Rules::delete() for both route fixtures,
+#     then a fresh Snep_PjsipTrunkConf/Snep_PjsipConf regeneration
+#     naturally omits them all) ----------------------------------------
 
 if [ "$FAIL" -gt 0 ]; then
     exit 1

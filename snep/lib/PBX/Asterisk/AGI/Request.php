@@ -117,7 +117,26 @@ class PBX_Asterisk_AGI_Request extends Asterisk_AGI_Request {
         $channel = $this->request['channel'];
         // removendo o hash de controle do asterisk
         // de TECH/ID-HASH para TECH/ID
-        $channel = strpos($channel, '-') ? substr($channel, 0, strpos($channel, '-')) : $channel;
+        //
+        // TASK-0016: was strpos() (first hyphen). Every object name this
+        // was ever exercised against (bare extension numbers, plain
+        // chan_sip usernames) has no internal hyphen, so "first" and
+        // "last" hyphen always coincided -- until TASK-0014/0015's PJSIP
+        // trunk naming convention ("trunk-<trunks.id>", e.g. "trunk-2")
+        // introduced the first object name with one. Asterisk always
+        // appends its own channel-instance suffix as the FINAL
+        // "-<sequence>" segment (e.g. "PJSIP/trunk-2-00000002"), so the
+        // correct, general strip point is the LAST hyphen, not the
+        // first -- truncating at the first hyphen instead produced
+        // "PJSIP/trunk", losing the trunk id entirely and colliding
+        // identically across every trunk. strrpos() finds that final
+        // separator regardless of how many hyphens the endpoint/peer
+        // name itself contains, and was confirmed live to be identical
+        // to the old strpos() behavior for every name ever exercised
+        // (every current peers.canal/trunks.id_regex value and every
+        // real captured channel name) -- see
+        // docs/tasks/0016-pjsip-inbound-trunk-routing.md.
+        $channel = strrpos($channel, '-') ? substr($channel, 0, strrpos($channel, '-')) : $channel;
 
         if ("Local/0000" === substr("$channel", 0, 10)) {
           $channel = "SIP/".substr("$channel", 10,4);
