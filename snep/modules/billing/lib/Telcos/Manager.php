@@ -16,8 +16,17 @@ class Telcos_Manager {
     /**
     * getAll - Get all Telcos
     * @return <array>
+    *
+    * TASK-0015A: called statically (Telcos_Manager::getAll()) from
+    * TrunksController::addAction()/editAction() -- a PHP 8 fatal
+    * ("non-static method called statically") since this method uses no
+    * $this. Declared static to match actual usage, scoped to this one
+    * method only: add()/get()/remove()/update() below are called the
+    * same way from TelcosController but are a separate, unexercised
+    * (by this task) instance of the identical bug -- not fixed here,
+    * see docs/tasks/0015a-trunk-crud-php84-strict-sql.md.
     */
-    public function getAll(){
+    public static function getAll(){
       $db = Zend_Registry::get('db');
       $select = $db->select()->from('telcos');
       $telcos = $db->query($select)->fetchAll();

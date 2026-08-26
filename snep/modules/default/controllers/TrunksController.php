@@ -218,7 +218,17 @@ class TrunksController extends Zend_Controller_Action {
       // Trunk name validation
       $newId = Snep_Trunks_Manager::getName($_POST['callerid']);
 
-      if (count($newId) > 1) {
+      // TASK-0015A: getName() returns Zend_Db_Statement::fetch()'s raw
+      // result -- false when no trunk with this callerid exists yet
+      // (the normal case for any new trunk), or a single 2-key
+      // associative array (id, callerid) when one does. count($newId)
+      // on the false case is a PHP 8 fatal TypeError (count() requires
+      // Countable|array); count()==2 on the found case only "worked" by
+      // coincidence (counting the row's 2 selected columns, not rows
+      // found). A plain truthiness check preserves the exact original
+      // intent (a row was found vs. not) without relying on that
+      // coincidence. See docs/tasks/0015a-trunk-crud-php84-strict-sql.md.
+      if ($newId) {
         $form_isValid = false;
         $message = $this->view->translate("Name already exists.");
         $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
@@ -301,10 +311,21 @@ class TrunksController extends Zend_Controller_Action {
       $this->view->translate("Trunks"),
       $this->view->translate("Edit trunk")));
 
-      $idTrunk = mysql_escape_string($this->getRequest()->getParam("trunk"));
+      // TASK-0015A: mysql_escape_string() was removed entirely in PHP 7
+      // -- fatal ("Call to undefined function") on every editAction()
+      // load. Zend_Db_Adapter_Abstract::quote() is this codebase's own
+      // already-present equivalent (used throughout Zend_Db) and, unlike
+      // mysql_escape_string(), returns the value already wrapped in
+      // quotes -- so the SQL text below no longer adds its own literal
+      // quotes around it. Scoped to this one call site; the identical
+      // removed-function call exists in 4 other, unrelated files
+      // (RouteController x2, PickupGroupsController,
+      // Snep_Parameters_Manager) -- not touched here, see
+      // docs/tasks/0015a-trunk-crud-php84-strict-sql.md.
+      $idTrunk = $this->getRequest()->getParam("trunk");
 
       $db = Snep_Db::getInstance();
-      $trunk = $db->query("select * from trunks where id='$idTrunk'")->fetch();
+      $trunk = $db->query("select * from trunks where id=" . $db->quote($idTrunk))->fetch();
       $trunk['qualify_value'] = "";
       if (class_exists("Telcos_Manager")) {
         $this->view->telcos = Telcos_Manager::getAll();
@@ -415,7 +436,10 @@ class TrunksController extends Zend_Controller_Action {
 
         $newId = Snep_Trunks_Manager::getName($_POST['callerid']);
 
-        if (count($newId) > 1 && $_POST['callerid'] != $trunk['callerid']) {
+        // TASK-0015A: same count()-on-false fatal as addAction() above,
+        // same fix -- see the comment there and
+        // docs/tasks/0015a-trunk-crud-php84-strict-sql.md.
+        if ($newId && $_POST['callerid'] != $trunk['callerid']) {
           $form_isValid = false;
           $message = $this->view->translate("Name already exists.");
           $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
@@ -556,16 +580,34 @@ class TrunksController extends Zend_Controller_Action {
       $trunk_data[$section_name] = $section;
     }
 
-    $trunk_data['dtmf_dial'] = ($post['dtmf_dial'] === "dtmf_dial" ? true : false) ;
+    // TASK-0015A: was PHP true/false. Zend_Db::insert()/update() bind
+    // values via PDO positional parameters with no explicit type, and
+    // PDO implicitly binds PHP `false` as the empty string '' (not '0')
+    // -- MariaDB's strict mode then rejects '' for these NOT NULL
+    // BOOLEAN columns (`Incorrect integer value: ''`). `true` happens to
+    // stringify to '1', which strict mode accepts, which is why only the
+    // false/unchecked case ever surfaced this. Using 1/0 preserves the
+    // exact same boolean meaning while binding as a value MariaDB
+    // actually accepts for these columns. See
+    // docs/tasks/0015a-trunk-crud-php84-strict-sql.md.
+    $trunk_data['dtmf_dial'] = ($post['dtmf_dial'] === "dtmf_dial" ? 1 : 0) ;
     $trunk_data['dtmf_dial_number'] = ($trunk_data['dtmf_dial'] ? $trunk_data['dtmf_dial_number'] : "");
 
-    $trunk_data['map_extensions'] = ($post['map_extensions'] === "map_extensions" ? true : false) ;
+    $trunk_data['map_extensions'] = ($post['map_extensions'] === "map_extensions" ? 1 : 0) ;
 
-    $trunk_data['reverse_auth'] = ($post['reverse_auth'] === "reverse_auth" ? true : false) ;
+    $trunk_data['reverse_auth'] = ($post['reverse_auth'] === "reverse_auth" ? 1 : 0) ;
 
     $trunk_data['time_total'] = ($post['tempo'] === "tempo" ? $trunk_data['time_total'] : NULL);
     $trunk_data['time_chargeby'] = ($post['tempo'] === "tempo" ? $trunk_data['time_chargeby'] : "");
-    $trunk_data['time_initial_date'] = ($post['tempo'] === "tempo" ? $trunk_data['time_initial_date'] : "");
+    // TASK-0015A: was "" (empty string) when unchecked, unlike its
+    // sibling time_total two lines above which already correctly uses
+    // NULL. time_initial_date is `int(11) default NULL` -- binding ''
+    // to it hits the identical strict-mode "Incorrect integer value: ''"
+    // failure as the boolean columns above, just via an explicit literal
+    // instead of PDO's false-to-string coercion. NULL matches
+    // time_total's already-correct, already-nullable handling. See
+    // docs/tasks/0015a-trunk-crud-php84-strict-sql.md.
+    $trunk_data['time_initial_date'] = ($post['tempo'] === "tempo" ? $trunk_data['time_initial_date'] : NULL);
 
     // check type Qualify, (yes|no|specify)
     if ($trunk_data['qualify'] === 'specify') {
@@ -658,7 +700,33 @@ class TrunksController extends Zend_Controller_Action {
     }
     $ip_data['nat'] = $nat ;
 
-    $trunk_data['telco'] = $post['telco'];
+    // TASK-0015A: peers.password/trunk/lastms are NOT NULL with no
+    // schema default; this $ip_data build never included them, so
+    // db->insert("peers", $ip_data) fails under strict SQL mode
+    // (SQLSTATE[HY000] 1364) before a trunk's peers row can ever exist.
+    // Values match ExtensionsController::execAdd()'s own explicit INSERT
+    // for the identical columns (the only other, already-working write
+    // site for these columns in this codebase): password='' (this
+    // column is the unrelated numeric-PIN/padlock feature -- trunks have
+    // no such UI field at all, so "" matches a fresh row's "no PIN set"
+    // state exactly as it does for extensions); trunk='no' (chan_iax2's
+    // native trunk=yes/no directive -- see the still-present but
+    // commented-out consumer in Snep_InterfaceConf.php; 'no' is the
+    // non-trunking default, matching extensions' own literal value, not
+    // an arbitrary placeholder); lastms=0 (the "never qualified"
+    // placeholder, identical reasoning to TASK-0011's extensions fix).
+    // See docs/tasks/0015a-trunk-crud-php84-strict-sql.md.
+    $ip_data['password'] = '';
+    $ip_data['trunk'] = 'no';
+    $ip_data['lastms'] = 0;
+
+    // TASK-0015A: was the raw posted value verbatim -- "" when no Telco
+    // is selected (the form's own "No Telco" option has value=""). Same
+    // strict-mode failure as time_initial_date above: trunks.telco is
+    // `INT(10) DEFAULT NULL`, and '' is not a valid integer under strict
+    // SQL mode. NULL is the column's own correct "no telco" value. See
+    // docs/tasks/0015a-trunk-crud-php84-strict-sql.md.
+    $trunk_data['telco'] = ($post['telco'] === "" ? NULL : $post['telco']);
 
     return array("trunk" => $trunk_data, "ip" => $ip_data);
   }
