@@ -183,7 +183,14 @@ class Snep_PjsipTrunkConf {
         $out = "[$name]\n";
         $out .= "type=endpoint\n";
         $out .= "context=" . $peer['context'] . "\n";
-        $out .= "transport=$transportName\n";
+        // TASK-0018 correction: NULL transport_id means AUTO -- no
+        // transport= line, letting Asterisk pick the first configured
+        // transport compatible with the target URI (its own documented
+        // behavior). See Snep_PjsipConf::resolveTransportName()'s own
+        // comment and docs/tasks/0018-pjsip-transports.md.
+        if ($transportName !== null) {
+            $out .= "transport=$transportName\n";
+        }
         $out .= "disallow=all\n";
         $out .= "allow=$allow\n";
         $out .= "dtmf_mode=$dtmfMode\n";
@@ -247,7 +254,18 @@ class Snep_PjsipTrunkConf {
             $username = $peer['defaultuser'];
             $out .= "[$registration]\n";
             $out .= "type=registration\n";
-            $out .= "transport=$transportName\n";
+            // TASK-0018 correction: same AUTO-vs-pinned rule as the
+            // endpoint above, deliberately re-verified rather than
+            // assumed identical -- res_pjsip_outbound_registration's own
+            // built-in help text for this option: "this will use the
+            // first available transport of the appropriate type if
+            // unconfigured", and confirmed live (a registration with no
+            // transport= line registered successfully and placed a real
+            // call identically to one with it set). See
+            // docs/tasks/0018-pjsip-transports.md.
+            if ($transportName !== null) {
+                $out .= "transport=$transportName\n";
+            }
             $out .= "outbound_auth=$auth\n";
             $out .= "client_uri=sip:$username@$host:$port\n";
             $out .= "server_uri=sip:$host:$port\n";

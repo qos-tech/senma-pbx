@@ -58,7 +58,7 @@
         <label class="col-sm-3 control-label"><?php echo $this->translate("Default transport");?></label>
         <div class="col-sm-6">
           <input type="checkbox" name="is_default" value="1" <?php echo !empty($this->transport['is_default']) ? "checked" : ""; ?>/>
-          <span class="help-block"><?php echo $this->translate("Extensions/trunks with no transport explicitly assigned use whichever transport is marked default.");?></span>
+          <span class="help-block"><?php echo $this->translate("Marks this transport as the primary one shown in listings. Extensions and trunks with no transport explicitly pinned (Automatic) are NOT forced onto this transport -- Asterisk selects the first configured transport compatible with each request on its own.");?></span>
         </div>
       </div>
     </fieldset>

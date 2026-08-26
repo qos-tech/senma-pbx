@@ -198,7 +198,20 @@ class Snep_PjsipConf {
         $out = "[$name]\n";
         $out .= "type=endpoint\n";
         $out .= "context=" . $peer['context'] . "\n";
-        $out .= "transport=$transportName\n";
+        // TASK-0018 correction: transport_id=NULL means AUTO -- no
+        // transport= line at all, letting Asterisk's own documented
+        // fallback apply ("Not specifying a transport will select the
+        // first configured transport in pjsip.conf which is compatible
+        // with the URI we are trying to contact" -- res_pjsip:endpoint:
+        // transport's own built-in help text, Asterisk 22.10.1). This is
+        // required, not merely permitted: explicitly forcing transport=udp
+        // on every extension (the original TASK-0018 behavior) would
+        // actively break a device that registered over TCP, since
+        // "force" means exactly that -- see
+        // docs/tasks/0018-pjsip-transports.md's corrected §9.
+        if ($transportName !== null) {
+            $out .= "transport=$transportName\n";
+        }
         // Verbatim, exactly like Snep_InterfaceConf's own chan_sip
         // callerid= line -- the DB value is already the full
         // "Display Name <exten>" string (composed once in
@@ -247,41 +260,57 @@ class Snep_PjsipConf {
     }
 
     /**
-     * resolveTransportName - TASK-0018: explicit transport=<name> on
-     * every endpoint, never left to Asterisk's own implicit
-     * transport-matching heuristic (docs/tasks/0017-pjsip-transports-and-templates-architecture.md
-     * §12). $transportId is peers.transport_id -- NULL for every
-     * extension that existed before TASK-0018 (and for any new one
-     * created before a future task adds a transport picker to this
-     * form), which resolves to whichever pjsip_transports row is
-     * currently is_default. This is exactly the migration property
-     * TASK-0017 §3/§17 designed: no backfill needed, because the seeded
-     * default transport is byte-identical to the static transport every
-     * extension already implicitly used.
+     * resolveTransportName - TASK-0018 correction (post-commit semantic
+     * fix, see docs/tasks/0018-pjsip-transports.md's "final invariant"
+     * section). $transportId is peers.transport_id/trunks.transport_id.
+     *
+     * NULL/'' means AUTO -- "no explicit transport pinning", NOT
+     * "resolve to the default transport". Returns null in that case;
+     * callers must omit the transport= line entirely rather than
+     * substitute any name. This is a deliberate reversal of this
+     * method's original TASK-0018 behavior (which always resolved NULL
+     * to whichever transport was marked is_default and always emitted a
+     * transport= line) -- that behavior was a real functional bug, not
+     * just an architectural preference: `transport=` on an endpoint
+     * *forces* that transport ("This will *force* the endpoint to use
+     * the specified transport configuration to send SIP messages" --
+     * res_pjsip:endpoint:transport's own built-in help text, Asterisk
+     * 22.10.1), so pinning every extension to transport=udp would
+     * actively break a device that registered over TCP. Confirmed both
+     * from Asterisk's own documented fallback ("Not specifying a
+     * transport will select the first configured transport in
+     * pjsip.conf which is compatible with the URI we are trying to
+     * contact") and live: a trunk endpoint+registration pair with no
+     * transport= line at all registered and completed a real outbound
+     * call identically to one with transport= explicitly set.
+     *
+     * A non-null $transportId is an explicit pin: resolved to that
+     * transport's current name (never a stale one -- re-resolved fresh
+     * on every generation, so a rename needs no data migration).
      *
      * @param int|null $transportId
-     * @return string the resolved transport's name
-     * @throws PBX_Exception_NotFound if neither the referenced transport
-     *         nor any default transport exists (a misconfigured install,
-     *         not a normal runtime state).
+     * @return string|null the resolved transport's name, or null for AUTO
+     * @throws PBX_Exception_NotFound if $transportId is set but no such
+     *         transport exists -- a real data-integrity problem (the
+     *         FK's ON DELETE RESTRICT should make this unreachable
+     *         through the application), surfaced loudly rather than
+     *         silently downgraded to AUTO.
      *
      * Public: Snep_PjsipTrunkConf reuses this exact method rather than
-     * duplicating the resolution logic -- transport selection is
-     * technology-agnostic (TASK-0017 §12), unlike the NAT/codec
-     * translation each generator still keeps separate copies of.
+     * duplicating the resolution logic -- confirmed live (§ this task's
+     * own investigation) that endpoint and registration objects behave
+     * identically for this specific AUTO-vs-pinned question, so one
+     * shared implementation is correct, not an assumption.
      */
     public static function resolveTransportName($transportId) {
-        if ($transportId !== null && $transportId !== '') {
-            $transport = Snep_PjsipTransports_Manager::get($transportId);
-            if ($transport) {
-                return $transport['name'];
-            }
+        if ($transportId === null || $transportId === '') {
+            return null;
         }
-        $default = Snep_PjsipTransports_Manager::getDefault();
-        if (!$default) {
-            throw new PBX_Exception_NotFound("No default PJSIP transport configured.");
+        $transport = Snep_PjsipTransports_Manager::get($transportId);
+        if (!$transport) {
+            throw new PBX_Exception_NotFound("PJSIP transport id $transportId not found (referenced but missing).");
         }
-        return $default['name'];
+        return $transport['name'];
     }
 
     /**

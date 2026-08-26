@@ -113,9 +113,19 @@ class Snep_PjsipTransports_Manager {
     }
 
     /**
-     * getDefault - the transport currently marked is_default. Every
-     * PJSIP object with a NULL transport_id resolves to this one at
-     * generation time (TASK-0017 §3/§12).
+     * getDefault - the transport currently marked is_default.
+     *
+     * TASK-0018 correction: NO generator consumes this anymore.
+     * NULL transport_id means AUTO (no transport= line at all, letting
+     * Asterisk pick a compatible transport itself), not "resolve to the
+     * default" -- see Snep_PjsipConf::resolveTransportName(). is_default
+     * itself was traced and deliberately kept (not removed): it still
+     * has real, current responsibilities --
+     * PjsipTransportsController::removeAction() blocks deleting the
+     * default transport while others exist, and the UI highlights it in
+     * listings/pre-fills it as the suggested choice. This accessor is
+     * kept for exactly those UI-facing uses (and for a future
+     * transport-picker's initial selection), not for provisioning.
      */
     public static function getDefault() {
         $db = Zend_Registry::get('db');

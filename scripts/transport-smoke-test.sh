@@ -23,11 +23,33 @@
 #   -> edit the transport (a real Asterisk-confirmed hot-reloadable
 #      change, see docs/tasks/0018-pjsip-transports.md's reload-semantics
 #      findings) -> regenerated config + live runtime both reflect it
-#   -> a controlled extension fixture is pointed at this transport
-#      (peers.transport_id) -> Snep_PjsipConf emits transport=<name> for
-#      it instead of the system default -> deletion is blocked while
-#      referenced -> reference cleared -> deletion succeeds -> no stale
-#      transport remains anywhere.
+#   -> a fresh extension with transport_id still NULL (AUTO, the only
+#      state reachable through the real UI today, item 10) generates NO
+#      transport= line at all -> pointed at this transport
+#      (peers.transport_id, set directly -- no picker UI exists yet, see
+#      docs/tasks/0018-pjsip-transports.md's UI section) ->
+#      Snep_PjsipConf emits the exact transport=<name> pin -> deletion is
+#      blocked while referenced -> reference cleared -> the extension
+#      reverts to AUTO (no transport= line again, NOT transport=udp --
+#      see the corrected invariant below) -> deletion succeeds -> no
+#      stale transport remains anywhere. The identical AUTO-vs-pinned
+#      proof is repeated for a trunk's endpoint AND registration objects
+#      (§ below), since TASK-0018's correction verified -- rather than
+#      assumed -- that both behave the same way for this question.
+#
+# TASK-0018 correction (post-initial-commit): transport_id=NULL means
+# AUTO -- "no explicit transport pinning", never "resolve to the default
+# transport". The original implementation always resolved NULL to
+# whichever transport was marked is_default and always emitted a
+# transport= line; that was a real functional bug, not a style choice --
+# Asterisk's own documentation is explicit that an endpoint's transport=
+# option "will *force* the endpoint to use the specified transport... You
+# need to already know what kind of transport... the endpoint device will
+# use", so pinning every extension to transport=udp would break a device
+# that registered over TCP. Confirmed live (this task's own
+# investigation) that omitting transport= entirely lets a real
+# registration and a real call complete identically to having it set,
+# for both endpoint and registration objects.
 #
 # bind_port is 5070, NOT the literal 0.0.0.0:5060 the architecture doc's
 # illustrative example used -- 5060/udp is already bound by the real
@@ -66,11 +88,15 @@ TRANSPORT_LOCAL_NET_2="192.168.0.0/16"
 REF_EXT=1098
 REF_EXT_SECRET="${FIXTURE_MARKER}-ext"
 
+TRUNK_CALLERID="${FIXTURE_MARKER} trunk fixture"
+
 PASS=0
 FAIL=0
 declare -a RESULTS=()
 CREATED_TRANSPORT_ID=""
 CREATED_REF_EXT=0
+CREATED_TRUNK_ID=""
+CREATED_TRUNK_NAME=""
 COOKIEJAR=""
 
 log()  { printf '%s\n' "$*" >&2; }
@@ -221,6 +247,71 @@ delete_extension() {
     [ "$httpcode" = "302" ]
 }
 
+# create_trunk_fixture -- a minimal register-based PJSIP trunk (same
+# field shape as trunk-smoke-test.sh's own create_trunk()), used here
+# only to prove a trunk's endpoint AND registration objects can both be
+# pinned to an explicit transport. reverse_auth=1 so a registration
+# object actually exists to check.
+create_trunk_fixture() {
+    local body httpcode
+    body="$(mktemp)"
+    httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
+        --data-urlencode "callerid=${TRUNK_CALLERID}" \
+        --data-urlencode "technology=pjsip" \
+        --data-urlencode "dialmethod=normal" \
+        --data-urlencode "username=${TRUNK_TEST_USERNAME}" \
+        --data-urlencode "secret=${TRUNK_TEST_SECRET}" \
+        --data-urlencode "host=provider" \
+        --data-urlencode "fromuser=" \
+        --data-urlencode "fromdomain=" \
+        --data-urlencode "qualify=yes" \
+        --data-urlencode "qualify_value=" \
+        --data-urlencode "peer_type=friend" \
+        --data-urlencode "domain=" \
+        --data-urlencode "insecure=" \
+        --data-urlencode "port=5060" \
+        --data-urlencode "call-limit=" \
+        --data-urlencode "dtmfmode=rfc2833" \
+        --data-urlencode "nat_no=1" \
+        --data-urlencode "codec=ulaw" \
+        --data-urlencode "codec1=alaw" \
+        --data-urlencode "codec2=gsm" \
+        --data-urlencode "reverse_auth=reverse_auth" \
+        --data-urlencode "telco=" \
+        "${BASE_URL}/index.php/default/trunks/add")"
+    if [ "$httpcode" = "302" ]; then
+        rm -f "$body"
+        return 0
+    fi
+    log "create_trunk_fixture failed (HTTP $httpcode): $(head -c 300 "$body")"
+    rm -f "$body"
+    return 1
+}
+
+# delete_trunk_fixture -- deliberately looks up the trunk's real `name`
+# column from the DB rather than guessing/hardcoding it.
+# TrunksController::removeAction() deletes the matching `peers` row using
+# whatever `name` the request posts, NOT the trunk's actual stored name
+# -- trunk-smoke-test.sh has a real, pre-existing, documented bug here
+# (docs/tasks/0018-pjsip-transports.md §14, hardcodes "1"). Not fixed
+# there (out of this task's scope, per its own stop-rule), but correctly
+# avoided here by construction.
+delete_trunk_fixture() {
+    local id="$1" name
+    name="$(db_query "SELECT name FROM trunks WHERE id=${id};")"
+    if [ -z "$name" ]; then
+        log "WARNING: could not look up trunk id=${id}'s name for cleanup -- may already be gone"
+        return 1
+    fi
+    local httpcode
+    httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null -w '%{http_code}' \
+        --data-urlencode "id=${id}" \
+        --data-urlencode "name=${name}" \
+        --data-urlencode "delete=Delete" \
+        "${BASE_URL}/index.php/default/trunks/remove")"
+    [ "$httpcode" = "302" ]
+}
+
 regenerate_all() {
     # Same one-off bootstrap pattern used throughout this task's
     # implementation/validation -- no HTTP write action exists that
@@ -264,6 +355,11 @@ cleanup() {
             delete_extension "$REF_EXT" && log "removed reference extension ${REF_EXT} via HTTP" \
                 || log "WARNING: HTTP delete of extension ${REF_EXT} did not return 302 -- may need manual cleanup"
         fi
+        if [ -n "$CREATED_TRUNK_ID" ]; then
+            db_query "UPDATE trunks SET transport_id = NULL WHERE id = ${CREATED_TRUNK_ID};" >/dev/null 2>&1
+            delete_trunk_fixture "$CREATED_TRUNK_ID" && log "removed trunk fixture id=${CREATED_TRUNK_ID} via HTTP" \
+                || log "WARNING: HTTP delete of trunk id=${CREATED_TRUNK_ID} did not return 302 -- may need manual cleanup"
+        fi
         if [ -n "$CREATED_TRANSPORT_ID" ]; then
             delete_transport "$CREATED_TRANSPORT_ID"
             if [ "$DELETE_HTTPCODE" = "302" ]; then
@@ -298,6 +394,8 @@ fi
 : "${DB_USER:?DB_USER must be set (source .env first)}"
 : "${DB_PASSWORD:?DB_PASSWORD must be set (source .env first)}"
 : "${DB_NAME:?DB_NAME must be set (source .env first)}"
+: "${TRUNK_TEST_USERNAME:?TRUNK_TEST_USERNAME must be set (source .env first)}"
+: "${TRUNK_TEST_SECRET:?TRUNK_TEST_SECRET must be set (source .env first)}"
 
 if ! $COMPOSE exec -T asterisk asterisk -rx 'module show like res_pjsip.so' 2>&1 | grep -q "Running"; then
     bad "PJSIP module Running" "res_pjsip.so not Running"
@@ -329,6 +427,10 @@ if [ -n "$EXISTING_EXT_CANAL" ]; then
     else
         stop "peers row for extension '${REF_EXT}' already exists (canal='${EXISTING_EXT_CANAL}') and is NOT a transport-smoke fixture. Refusing to overwrite real/unknown data."
     fi
+fi
+EXISTING_TRUNK="$(db_query "SELECT id FROM trunks WHERE callerid='${TRUNK_CALLERID}';")"
+if [ -n "$EXISTING_TRUNK" ]; then
+    stop "a trunk with callerid '${TRUNK_CALLERID}' already exists (id=${EXISTING_TRUNK}) from a prior run that did not clean up. Remove it manually first."
 fi
 
 # --- 3. Create the Sercomtel-style transport via the real UI ---------------
@@ -405,21 +507,39 @@ fi
 
 # --- 7. Usage tracking + delete-blocked-while-in-use -----------------------
 
-log "==> creating a reference extension and pointing it at this transport"
+log "==> creating a reference extension (AUTO -- no transport pinned yet)"
 if create_ref_extension "$REF_EXT" "$REF_EXT_SECRET"; then
     CREATED_REF_EXT=1
 else
     stop "creating reference extension ${REF_EXT} failed -- see log above"
 fi
+
+# AUTO case (item: "generated endpoint contains no transport="). This is
+# the state every extension is in today through the real UI -- item 10
+# deliberately has no transport picker, so transport_id is NULL here,
+# not a test-only condition.
+EXT_SECTION_AUTO="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null | awk "/^\[${REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
+if ! echo "$EXT_SECTION_AUTO" | grep -q "^transport="; then
+    ok "AUTO extension has no transport= line" "[${REF_EXT}] correctly omits transport= entirely -- Asterisk selects a compatible transport itself"
+else
+    bad "AUTO extension has no transport= line" "unexpected transport= line found:\n${EXT_SECTION_AUTO}"
+fi
+if $COMPOSE exec -T asterisk asterisk -rx "pjsip show endpoint ${REF_EXT}" 2>&1 | grep -q "Endpoint:  ${REF_EXT}"; then
+    ok "AUTO endpoint remains valid in Asterisk" "pjsip show endpoint ${REF_EXT} loads correctly with no transport= at all"
+else
+    bad "AUTO endpoint remains valid in Asterisk" "endpoint did not load"
+fi
+
+log "==> pinning the reference extension to the custom transport"
 db_query "UPDATE peers SET transport_id = ${CREATED_TRANSPORT_ID} WHERE name = '${REF_EXT}';" >&2
 regenerate_all
 
 GENERATED_EXT_CONF="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null)"
 EXT_SECTION="$(echo "$GENERATED_EXT_CONF" | awk "/^\[${REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
 if echo "$EXT_SECTION" | grep -qF "transport=${TRANSPORT_NAME}"; then
-    ok "extension references the custom transport" "[${REF_EXT}] emits transport=${TRANSPORT_NAME} (not the system default)"
+    ok "EXPLICIT extension references the custom transport" "[${REF_EXT}] emits the exact transport=${TRANSPORT_NAME} pin"
 else
-    bad "extension references the custom transport" "expected transport=${TRANSPORT_NAME} not found:\n${EXT_SECTION}"
+    bad "EXPLICIT extension references the custom transport" "expected transport=${TRANSPORT_NAME} not found:\n${EXT_SECTION}"
 fi
 
 log "==> attempting to delete the transport while it is still referenced"
@@ -437,19 +557,72 @@ else
     bad "transport survives the blocked delete attempt" "transport disappeared despite the delete being blocked"
 fi
 
-# --- 8. Clear the reference, delete succeeds, no stale transport remains --
+# --- 8. Clear the reference, extension reverts to AUTO --------------------
 
-log "==> clearing the reference and deleting the transport for real"
+log "==> clearing the reference (back to AUTO)"
 db_query "UPDATE peers SET transport_id = NULL WHERE name = '${REF_EXT}';" >&2
 regenerate_all
 
 EXT_SECTION_AFTER="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null | awk "/^\[${REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
-if echo "$EXT_SECTION_AFTER" | grep -qF "transport=udp"; then
-    ok "extension reverts to the default transport" "[${REF_EXT}] now emits transport=udp (NULL transport_id resolves to is_default)"
+# TASK-0018 correction: NULL means AUTO, not "resolve to the default
+# transport" -- this must NOT show transport=udp (the original,
+# incorrect behavior). No transport= line at all is the correct,
+# corrected outcome.
+if ! echo "$EXT_SECTION_AFTER" | grep -q "^transport="; then
+    ok "extension reverts to AUTO (no transport= line)" "[${REF_EXT}] correctly has no transport= line again -- NULL never meant 'default', it means 'no pin'"
 else
-    bad "extension reverts to the default transport" "expected transport=udp not found:\n${EXT_SECTION_AFTER}"
+    bad "extension reverts to AUTO (no transport= line)" "unexpected transport= line found:\n${EXT_SECTION_AFTER}"
 fi
 
+# --- 9. EXPLICIT trunk: both endpoint AND registration honor the pin ------
+#
+# The task's own Sercomtel-style motivating example is a TRUNK, not an
+# extension -- proven here explicitly, and separately from the endpoint
+# case, per this task's own "do not assume endpoint and registration
+# semantics are identical" instruction (docs/tasks/0018-pjsip-transports.md's
+# corrected §9 documents why they turned out to behave the same way here,
+# verified rather than assumed).
+
+log "==> creating a trunk fixture and pinning it to the custom transport"
+if create_trunk_fixture; then
+    CREATED_TRUNK_ID="$(db_query "SELECT id FROM trunks WHERE callerid='${TRUNK_CALLERID}';")"
+    CREATED_TRUNK_NAME="$(db_query "SELECT name FROM trunks WHERE id=${CREATED_TRUNK_ID};")"
+    if [ -z "$CREATED_TRUNK_ID" ]; then
+        stop "trunk fixture creation returned 302 but no matching row was found afterward"
+    fi
+else
+    stop "creating the trunk fixture failed -- see log above"
+fi
+db_query "UPDATE trunks SET transport_id = ${CREATED_TRANSPORT_ID} WHERE id = ${CREATED_TRUNK_ID};" >&2
+regenerate_all
+
+TRUNK_OBJ="trunk-${CREATED_TRUNK_ID}"
+GENERATED_TRUNK_CONF="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip-trunks.conf 2>/dev/null)"
+TRUNK_ENDPOINT_SECTION="$(echo "$GENERATED_TRUNK_CONF" | awk "/^\[${TRUNK_OBJ}\]\$/{f=1} f{print} f&&/^\$/{exit}")"
+TRUNK_REG_SECTION="$(echo "$GENERATED_TRUNK_CONF" | awk "/^\[${TRUNK_OBJ}-registration\]/{f=1} f{print} f&&/^\$/{exit}")"
+
+if echo "$TRUNK_ENDPOINT_SECTION" | grep -qF "transport=${TRANSPORT_NAME}"; then
+    ok "EXPLICIT trunk endpoint references the custom transport" "[${TRUNK_OBJ}] emits the exact transport=${TRANSPORT_NAME} pin"
+else
+    bad "EXPLICIT trunk endpoint references the custom transport" "expected transport=${TRANSPORT_NAME} not found:\n${TRUNK_ENDPOINT_SECTION}"
+fi
+if echo "$TRUNK_REG_SECTION" | grep -qF "transport=${TRANSPORT_NAME}"; then
+    ok "EXPLICIT trunk registration references the custom transport" "[${TRUNK_OBJ}-registration] emits the exact transport=${TRANSPORT_NAME} pin"
+else
+    bad "EXPLICIT trunk registration references the custom transport" "expected transport=${TRANSPORT_NAME} not found:\n${TRUNK_REG_SECTION}"
+fi
+
+log "==> removing the trunk fixture"
+if delete_trunk_fixture "$CREATED_TRUNK_ID"; then
+    ok "trunk fixture removed" "HTTP 302, real TrunksController::removeAction() flow"
+    CREATED_TRUNK_ID=""
+else
+    bad "trunk fixture removed" "HTTP delete of trunk id=${CREATED_TRUNK_ID} did not return 302"
+fi
+
+# --- 10. Delete the transport, now unreferenced by both fixtures ----------
+
+log "==> deleting the transport now that nothing references it"
 delete_transport "$CREATED_TRANSPORT_ID"
 if [ "$DELETE_HTTPCODE" = "302" ]; then
     ok "delete succeeds once unreferenced" "HTTP 302"
