@@ -68,6 +68,39 @@ services:
       - mag
     restart: unless-stopped
 
+  # TASK-0015: a second, independent Asterisk 22/PJSIP instance acting as
+  # a deterministic local development trunk provider, so outbound PJSIP
+  # trunk provisioning can be proven with a real SIP dialog without any
+  # commercial carrier credentials. Reuses the same asterisk.Dockerfile
+  # image (already PJSIP-capable, TASK-0009) with a different, much
+  # smaller entrypoint/config (docker/provider-entrypoint.sh,
+  # docker/provider-config/) -- never runs SENMA's own PHP/AGI/ODBC
+  # stack. Own volumes, own network identity ("provider"), no host port
+  # published (only the "asterisk" service needs to reach it, over the
+  # internal "mag" network). See docs/tasks/0015-pjsip-trunk-provisioning.md.
+  provider:
+    build:
+      context: .
+      dockerfile: docker/asterisk.Dockerfile
+    env_file:
+      - .env
+    entrypoint: ["/provider-entrypoint.sh"]
+    command: ["asterisk", "-f", "-vvv"]
+    volumes:
+      - mag-provider-etc:/etc/asterisk
+      - mag-provider-var:/var/lib/asterisk
+      - ./docker/provider-entrypoint.sh:/provider-entrypoint.sh:ro
+      - ./docker/provider-config:/provider-config-src:ro
+    healthcheck:
+      test: ["CMD", "asterisk", "-rx", "core show version"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 15s
+    networks:
+      - mag
+    restart: unless-stopped
+
   db:
     image: mariadb:10.11
     env_file:
@@ -117,3 +150,8 @@ volumes:
   mag-asterisk-var:
   mag-asterisk-spool:
   mag-asterisk-log:
+  # TASK-0015: independent from asterisk-etc/mag-asterisk-var -- the
+  # provider simulator is a completely separate Asterisk instance with
+  # its own config/state, not a second copy of SENMA's own.
+  mag-provider-etc:
+  mag-provider-var:

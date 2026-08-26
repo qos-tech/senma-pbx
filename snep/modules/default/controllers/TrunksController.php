@@ -265,8 +265,14 @@ class TrunksController extends Zend_Controller_Action {
         
         if(!isset($_POST['trunk_disabled'])){
           Snep_InterfaceConf::loadConfFromDb();
+          // TASK-0015: called additively, mirroring ExtensionsController's
+          // existing Snep_InterfaceConf+Snep_PjsipConf pairing (TASK-0011).
+          // Harmless for non-PJSIP trunks: Snep_PjsipTrunkConf's own query
+          // filters to canal LIKE 'PJSIP/%', so a chan_sip/IAX2/KHOMP/
+          // VIRTUAL/SNEPSIP/SNEPIAX2 trunk is simply invisible to it.
+          Snep_PjsipTrunkConf::loadConfFromDb();
         }
-        
+
         $this->_redirect("trunks");
       }
     }
@@ -295,6 +301,8 @@ class TrunksController extends Zend_Controller_Action {
       Snep_Audit_Manager::SaveLog("Enabled", 'trunks', $exten, $this->view->translate("Trunk") ." ". $exten);
       Snep_Trunks_Manager::enable($exten);
       Snep_InterfaceConf::loadConfFromDb();
+      // TASK-0015: see the identical addAction() comment above.
+      Snep_PjsipTrunkConf::loadConfFromDb();
       $this->_redirect("trunks");
     }
   }
@@ -367,6 +375,8 @@ class TrunksController extends Zend_Controller_Action {
       $this->view->khomp = ($technologyTrunk === "khomp" ? "selected" : "");
       $this->view->snepsip = ($technologyTrunk === "snepsip" ? "selected" : "");
       $this->view->snepiax2 = ($technologyTrunk === "snepiax2" ? "selected" : "");
+      // TASK-0015
+      $this->view->pjsip = ($technologyTrunk === "pjsip" ? "selected" : "");
       $this->view->techType   = $technologyTrunk; //"selected";
       $this->view->technology = $technologyTrunk;
 
@@ -467,6 +477,8 @@ class TrunksController extends Zend_Controller_Action {
           
           if(!isset($_POST['trunk_disabled'])){
             Snep_InterfaceConf::loadConfFromDb();
+            // TASK-0015: see the identical comment in addAction() above.
+            Snep_PjsipTrunkConf::loadConfFromDb();
           }
           
           $this->_redirect("trunks");
@@ -531,6 +543,8 @@ class TrunksController extends Zend_Controller_Action {
           Snep_Trunks_Manager::removePeers($_POST['name']);
 
           Snep_InterfaceConf::loadConfFromDb();
+          // TASK-0015: see the identical comment in addAction() above.
+          Snep_PjsipTrunkConf::loadConfFromDb();
           $this->_redirect("trunks");
         }
       }
@@ -547,7 +561,11 @@ class TrunksController extends Zend_Controller_Action {
       $post = $post === null ? $_POST : $post;
       $tech = $post['technology'];
       $trunktype = $post['technology'] = strtoupper($tech);
-      $ip_trunks = array("sip", "iax2", "snepsip", "snepiax2");
+      // TASK-0015: "pjsip" added -- a PJSIP trunk gets a peers row too
+      // (peer_type='T'), same as every other IP-technology trunk;
+      // Snep_PjsipTrunkConf reads it via the same canal LIKE 'PJSIP/%'
+      // pattern Snep_PjsipConf already uses for extensions.
+      $ip_trunks = array("sip", "iax2", "snepsip", "snepiax2", "pjsip");
 
       // Only allowed fields for trunks table
       $trunk_fields = array(
@@ -628,6 +646,25 @@ class TrunksController extends Zend_Controller_Action {
       }
 
       $trunk_data['id_regex'] = $trunktype . "/" . $trunk_data['username'];
+
+    } else if ($trunktype == "PJSIP") {
+
+      // TASK-0015: outbound-only, register-based model (TASK-0014
+      // §4/§17/§20) -- dialmethod is stored but not specially
+      // interpreted here; Snep_PjsipTrunkConf's decision to emit a
+      // registration object is driven entirely by reverse_auth, not
+      // dialmethod. A NOAUTH-style PJSIP trunk (no auth, IP-matched) has
+      // no distinct effect in this milestone -- that requires a real new
+      // `identify` object, explicitly deferred to TASK-0016. The stored
+      // canal value below only needs to start with "PJSIP/" for
+      // Snep_PjsipTrunkConf's own filter to find it; the actual Asterisk
+      // object names are computed independently from trunks.id (an
+      // auto-increment primary key not yet known at this point in
+      // preparePost(), before the trunks row is inserted -- see
+      // docs/tasks/0015-pjsip-trunk-provisioning.md), not parsed back
+      // out of this string.
+      $trunk_data['dialmethod'] = strtoupper($trunk_data['dialmethod']);
+      $trunk_data['channel'] = $trunk_data['id_regex'] = "PJSIP/" . $trunk_data['username'];
 
     } else if ($trunktype === "SNEPSIP" || $trunktype === "SNEPIAX2") {
 

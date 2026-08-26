@@ -22,6 +22,7 @@ require_once "PBX/Asterisk/Interface/IAX2.php";
 require_once "PBX/Asterisk/Interface/IAX2/NoAuth.php";
 require_once "PBX/Asterisk/Interface/KHOMP.php";
 require_once "PBX/Asterisk/Interface/VIRTUAL.php";
+require_once "PBX/Asterisk/Interface/PJSIP.php";
 require_once "Snep/Trunk.php";
 
 /**
@@ -109,6 +110,23 @@ class PBX_Trunks {
                 "host" => $rawTrunk->host
             );
             $interface = new PBX_Asterisk_Interface_IAX2($config);
+        } else if ($tech == "PJSIP") {
+            // TASK-0015: 'username' here is SENMA's own PJSIP endpoint
+            // name (trunk-<id>, TASK-0014 §10's object-naming scheme) --
+            // NOT the provider-assigned auth username (a separate value,
+            // stored only in the auth object Snep_PjsipTrunkConf
+            // generates). getDialStringForDestination() is what actually
+            // reads this; getCanal()/getHost() aren't used on the trunk
+            // dial path. Outbound-only milestone: dialmethod=NOAUTH for
+            // a PJSIP trunk is not specially handled here, matching
+            // Snep_PjsipTrunkConf's own scope (no identify object) --
+            // see docs/tasks/0014-pjsip-trunk-provisioning-architecture.md §7/§20.
+            $config = array(
+                "username" => "trunk-" . $rawTrunk->id,
+                "secret" => $rawTrunk->secret,
+                "host" => $rawTrunk->host
+            );
+            $interface = new PBX_Asterisk_Interface_PJSIP($config);
         } else if ($tech == "KHOMP") {
             $khomp_id = substr($rawTrunk->channel, strpos($rawTrunk->channel, '/') + 1);
             $config = array(

@@ -61,4 +61,29 @@ class PBX_Asterisk_Interface_PJSIP extends PBX_Asterisk_Interface {
     public function getUsername() {
         return $this->config['username'];
     }
+
+    /**
+     * getDialStringForDestination - TASK-0015 override for trunk dialing.
+     *
+     * chan_pjsip's dial syntax places the destination FIRST
+     * ("PJSIP/<destination>@<endpoint>"), the reverse of chan_sip's
+     * "Peer/exten" order the base class's default implementation
+     * reproduces for every other interface. Config's 'username' here is
+     * the trunk's own endpoint name (e.g. "trunk-3", set by
+     * PBX_Trunks::get()'s PJSIP branch) -- not the provider-assigned
+     * auth username (a separate value, stored in the auth object
+     * Snep_PjsipTrunkConf generates, never consulted here). $postfix is
+     * accepted for signature compatibility with the base class but is
+     * not appended: it has no defined meaning in PJSIP's URI-style dial
+     * syntax and is not evidenced as needed for this milestone's model
+     * (chan_sip/Khomp-only KGSM options -- see
+     * docs/tasks/0014-pjsip-trunk-provisioning-architecture.md §7/§11).
+     *
+     * @param string $destination
+     * @param string $postfix unused for PJSIP, see above
+     * @return string
+     */
+    public function getDialStringForDestination($destination, $postfix = "") {
+        return $this->getTech() . "/" . $destination . "@" . $this->config['username'];
+    }
 }

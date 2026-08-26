@@ -134,6 +134,11 @@ if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
     touch "$ASTERISK_ETC/snep/senma-pjsip.conf"
     chmod 664 "$ASTERISK_ETC/snep/senma-pjsip.conf"
 
+    # TASK-0015: Snep_PjsipTrunkConf::loadConfFromDb() writes here -- same
+    # pre-create-and-chmod reasoning as senma-pjsip.conf immediately above.
+    touch "$ASTERISK_ETC/snep/senma-pjsip-trunks.conf"
+    chmod 664 "$ASTERISK_ETC/snep/senma-pjsip-trunks.conf"
+
     : "${AMI_USER:?AMI_USER must be set}"
     : "${AMI_PASSWORD:?AMI_PASSWORD must be set}"
     : "${ASTERISK_AMI_ACL_SUBNET:?ASTERISK_AMI_ACL_SUBNET must be set}"

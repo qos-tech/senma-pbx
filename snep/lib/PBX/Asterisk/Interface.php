@@ -106,6 +106,41 @@ abstract class PBX_Asterisk_Interface {
     }
 
     /**
+     * getDialStringForDestination - build the Dial() destination string
+     * DiscarTronco uses to place an outbound call through this interface
+     * to a given number.
+     *
+     * TASK-0015: extracted from what was previously inline concatenation
+     * in DiscarTronco.php ("$tronco->getInterface()->getCanal() . "/" .
+     * $dst_number . $postfix") -- this default implementation reproduces
+     * that exact expression byte for byte, so every existing interface
+     * (SIP, SIP/NoAuth, IAX2, IAX2/NoAuth, KHOMP, VIRTUAL) keeps its
+     * current, already-working dial behavior completely unchanged by not
+     * overriding this method. Only PBX_Asterisk_Interface_PJSIP overrides
+     * it: chan_sip's "Peer/exten" dial syntax has no PJSIP equivalent --
+     * chan_pjsip instead requires "exten@endpoint" (destination first),
+     * and a second "/"-delimited segment after a PJSIP endpoint name is
+     * parsed as an AOR selector, not a destination number, so reusing
+     * this same concatenation for PJSIP would silently misdial. See
+     * docs/tasks/0014-pjsip-trunk-provisioning-architecture.md §7/§11 and
+     * docs/tasks/0015-pjsip-trunk-provisioning.md.
+     *
+     * @param string $destination the number/extension to dial
+     * @param string $postfix     legacy chan_sip/Khomp-KGSM-specific
+     *                            suffix (DiscarTronco's omit_kgsm/
+     *                            carrier_msg options) -- appended
+     *                            verbatim here for every interface that
+     *                            doesn't override this method, exactly
+     *                            as before; not evidenced as meaningful
+     *                            for PJSIP and not specially handled by
+     *                            this milestone's PJSIP override.
+     * @return string
+     */
+    public function getDialStringForDestination($destination, $postfix = "") {
+        return $this->getCanal() . "/" . $destination . $postfix;
+    }
+
+    /**
      * Interface owner
      *
      * @return Object

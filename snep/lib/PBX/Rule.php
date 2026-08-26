@@ -127,6 +127,21 @@ class PBX_Rule {
   private $validade = array();
 
   /**
+  * TASK-0015: was never declared at all (unlike its siblings $src/$dst/
+  * $validade above, which all correctly default to array()) -- a plain
+  * omission. addValidDates()'s "$this->dates[] = $date" silently created
+  * an undefined dynamic property until first appended; getValidDatesList()
+  * then returned null (PHP 8: "Undefined property" warning) for any rule
+  * that never called addValidDates() -- the normal case for a rule with
+  * no date restriction -- which fataled PBX_Rules::register()'s
+  * "implode(',', $rule->getValidDatesList())" with a TypeError. Found
+  * while building TASK-0015's outbound route fixture through this same
+  * real API. See docs/tasks/0015-pjsip-trunk-provisioning.md.
+  * @var <array> dates Datas especificas em que a regra é válida
+  */
+  private $dates = array();
+
+  /**
   * Ex:
   * mon
   * tue

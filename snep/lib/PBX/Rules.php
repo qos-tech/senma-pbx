@@ -309,7 +309,20 @@ class PBX_Rules {
             "dates_alias" => $dates_list,
             "diasDaSemana" => $diasDaSemana,
             "type" => $rule->getTypeRule(),
-            "record" => $rule->isRecording()
+            // TASK-0015: was the raw PHP bool. Zend_Db::insert() binds
+            // values via PDO positional parameters with no explicit
+            // type; PDO implicitly binds PHP `false` as the empty string
+            // '' (not '0'), which strict MariaDB rejects for this NOT
+            // NULL boolean column ("Incorrect integer value: ''") --
+            // `true` happens to stringify to '1', which strict mode
+            // accepts, which is why this only ever surfaces for a
+            // non-recording rule (the common case). Identical mechanism
+            // and fix to TASK-0015A's dtmf_dial/map_extensions/
+            // reverse_auth fix in TrunksController.php -- found here
+            // while creating TASK-0015's outbound route fixture, in this
+            // routing-engine file, not a trunk file. See
+            // docs/tasks/0015-pjsip-trunk-provisioning.md.
+            "record" => $rule->isRecording() ? 1 : 0
         );
 
         $db = Snep_Db::getInstance();

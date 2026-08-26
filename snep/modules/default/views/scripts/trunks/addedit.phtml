@@ -67,6 +67,9 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
             <option value="virtual" <?php echo $this->virtual;?>><?php echo $this->translate("Virtual");?></option>
             <option value="snepsip" <?php echo $this->snepsip;?>><?php echo $this->translate("Snep SIP");?></option>
             <option value="snepiax2" <?php echo $this->snepiax2;?>><?php echo $this->translate("Snep IAX");?></option>
+            <!-- TASK-0015: outbound-only, register-based model. See
+                 docs/tasks/0015-pjsip-trunk-provisioning.md. -->
+            <option value="pjsip" <?php echo $this->pjsip;?>><?php echo $this->translate("PJSIP");?></option>
 
           </select>
         </div>
@@ -174,7 +177,8 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
           </div>
         </div>
 
-        <div class="form-group">
+        <!-- TASK-0015: no PJSIP equivalent (docs/tasks/0014-pjsip-trunk-provisioning-architecture.md §3) -- hidden via showDiv() for technology=pjsip. -->
+        <div class="form-group" id="trunk_type_group">
           <label class="col-sm-3 control-label"><?php echo $this->translate("Type")?></label>
           <div class="col-sm-6">
             <label class="radio-inline">
@@ -210,7 +214,8 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
           </div>
         </div>
 
-        <div class="form-group">
+        <!-- TASK-0015: not a flag translation, no PJSIP equivalent (docs/tasks/0014-pjsip-trunk-provisioning-architecture.md §3) -- hidden via showDiv() for technology=pjsip. -->
+        <div class="form-group" id="trunk_insecure_group">
           <label class="col-sm-3 control-label"><?php echo $this->translate("Insecure");?></label>
           <div class="col-sm-6">
             <input type="text" class="form-control" name="insecure" placeholder='<?php echo $this->translate("Insecure")?>' value='<?php echo $this->trunk['insecure'] ?>'/>
@@ -224,7 +229,8 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
           </div>
         </div>
 
-        <div class="form-group">
+        <!-- TASK-0015: no direct PJSIP config-level equivalent (docs/tasks/0014-pjsip-trunk-provisioning-architecture.md §3) -- hidden via showDiv() for technology=pjsip. -->
+        <div class="form-group" id="trunk_calllimit_group">
           <label class="col-sm-3 control-label"><?php echo $this->translate("Channel Limit");?></label>
           <div class="col-sm-6">
             <input type="text" class="form-control" name="call-limit" placeholder='<?php echo $this->translate("Channel Limit")?>' value='<?php echo $this->infoTrunk['call-limit'] ?>'/>
@@ -516,7 +522,18 @@ function showDiv(div){
   }
 
 
-  if(div == 'sip' || div == 'iax2'){
+  // TASK-0015: reuse the same #ip field group (host/username/secret/
+  // qualify/dialmethod/nat/reverse_auth/domain/codecs) SIP/IAX2 already
+  // show -- TASK-0014 §3 found PJSIP needs a subset of these fields,
+  // mapped differently server-side, not new fields collected from the
+  // admin (same reasoning TASK-0010 §12 already used for the extensions
+  // form's own technology dropdown).
+  var isPjsip = (div == 'pjsip');
+  document.getElementById("trunk_type_group").className = isPjsip ? "invisible" : "visible";
+  document.getElementById("trunk_insecure_group").className = isPjsip ? "invisible" : "visible";
+  document.getElementById("trunk_calllimit_group").className = isPjsip ? "invisible" : "visible";
+
+  if(div == 'sip' || div == 'iax2' || div == 'pjsip'){
 
     if(div == 'iax2'){
       document.getElementById("iax2").className = "visible";

@@ -269,7 +269,19 @@ XML;
     $sql = "SELECT * FROM trunks WHERE id='$trunkId' AND time_total IS NOT NULL";
     $trunk = $db->query($sql)->fetch();
 
-    if (count($trunk) > 1) {
+    // TASK-0015: was count($trunk) > 1 -- fetch() returns false (not an
+    // array) whenever time_total IS NOT NULL excludes the row, i.e.
+    // whenever this trunk has no minute limit configured, the default
+    // case for any trunk technology. count(false) is a PHP 8 fatal
+    // TypeError, uncaught by PBX_Rule::execute()'s catch (Exception $ex)
+    // (Error/TypeError aren't Exception subclasses), silently killing
+    // the AGI script before any Dial() was ever attempted -- reproduced
+    // live placing this task's own first real outbound trunk call.
+    // count() > 1 on the found case only "worked" by coincidence
+    // (counting the row's many columns, not verifying anything about
+    // count); the real intent was always a plain existence check. See
+    // docs/tasks/0015-pjsip-trunk-provisioning.md.
+    if ($trunk) {
 
         $sql = "SELECT * FROM time_history WHERE owner='$trunkId' && owner_type='T' ";
         switch ($trunk['time_chargeby']) {
@@ -354,7 +366,15 @@ XML;
         }
       }
 
-      $destiny = $tronco->getInterface()->getCanal() . "/" . $dst_number . $postfix;
+      // TASK-0015: was inline "getCanal() . '/' . $dst_number . $postfix"
+      // -- moved behind an overridable method because chan_pjsip's dial
+      // syntax ("exten@endpoint") is structurally incompatible with that
+      // chan_sip-shaped concatenation ("Peer/exten"). Every existing
+      // interface's behavior is unchanged: the base class's default
+      // implementation reproduces this exact expression. See
+      // PBX_Asterisk_Interface::getDialStringForDestination() and
+      // docs/tasks/0015-pjsip-trunk-provisioning.md.
+      $destiny = $tronco->getInterface()->getDialStringForDestination($dst_number, $postfix);
 
       $log->info("Dialing to $request->destino through trunk {$tronco->getName()}($destiny)");
 
