@@ -139,6 +139,13 @@ if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
     touch "$ASTERISK_ETC/snep/senma-pjsip-trunks.conf"
     chmod 664 "$ASTERISK_ETC/snep/senma-pjsip-trunks.conf"
 
+    # TASK-0018: Snep_PjsipTransportConf::loadConfFromDb() writes here --
+    # same pre-create-and-chmod reasoning as senma-pjsip.conf above. This
+    # is now the FIRST #include in pjsip.conf (docker/asterisk-config/
+    # pjsip.conf) -- the static [transport-udp] stanza it replaces is gone.
+    touch "$ASTERISK_ETC/snep/senma-pjsip-transports.conf"
+    chmod 664 "$ASTERISK_ETC/snep/senma-pjsip-transports.conf"
+
     : "${AMI_USER:?AMI_USER must be set}"
     : "${AMI_PASSWORD:?AMI_PASSWORD must be set}"
     : "${ASTERISK_AMI_ACL_SUBNET:?ASTERISK_AMI_ACL_SUBNET must be set}"

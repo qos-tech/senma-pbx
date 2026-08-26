@@ -1,0 +1,129 @@
+<div class="row">
+  <form id="defaultForm" method="post" class="form-horizontal" style="margin-top: 20px;" action="<?php echo $this->url(array("controller" => "pjsip-transports", "action" => $this->action), null, false); ?>" METHOD="post">
+
+    <?php if ($this->error_message): ?>
+      <div class="alert alert-danger"><?php echo $this->error_message; ?></div>
+    <?php endif; ?>
+
+    <?php if ($this->action === "edit" && $this->usageCount > 0): ?>
+      <div class="alert alert-warning">
+        <?php echo $this->translate("This transport is used by %s extension(s)/trunk(s). Changes apply on the next reload.", $this->usageCount); ?>
+      </div>
+    <?php endif; ?>
+
+    <fieldset>
+      <legend><?php echo $this->translate('Transport');?></legend>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Name");?></label>
+        <div class="col-sm-6">
+          <input type="text" class="form-control" name="name" placeholder='<?php echo $this->translate("Name")?>' value='<?php echo $this->escape($this->transport['name']);?>' <?php echo $this->action === "edit" ? "" : ""; ?>/>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Protocol");?></label>
+        <div class="col-sm-4">
+          <select class="form-control" name="protocol">
+            <?php foreach (array('udp', 'tcp', 'tls', 'wss', 'ws') as $proto): ?>
+              <option value="<?php echo $proto; ?>" <?php echo ($this->transport['protocol'] === $proto) ? "selected" : ""; ?>><?php echo strtoupper($proto); ?></option>
+            <?php endforeach; ?>
+          </select>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Bind Address");?></label>
+        <div class="col-sm-4">
+          <input type="text" class="form-control" name="bind_address" value='<?php echo $this->escape($this->transport['bind_address']);?>'/>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Bind Port");?></label>
+        <div class="col-sm-4">
+          <input type="text" class="form-control" name="bind_port" value='<?php echo $this->escape($this->transport['bind_port']);?>'/>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Enabled");?></label>
+        <div class="col-sm-6">
+          <input type="checkbox" name="enabled" value="1" <?php echo !empty($this->transport['enabled']) ? "checked" : ""; ?>/>
+          <span class="help-block"><?php echo $this->translate("A disabled transport exists as a record but is never emitted into Asterisk's live config (e.g. a WSS transport with no certificate configured yet).");?></span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Default transport");?></label>
+        <div class="col-sm-6">
+          <input type="checkbox" name="is_default" value="1" <?php echo !empty($this->transport['is_default']) ? "checked" : ""; ?>/>
+          <span class="help-block"><?php echo $this->translate("Extensions/trunks with no transport explicitly assigned use whichever transport is marked default.");?></span>
+        </div>
+      </div>
+    </fieldset>
+
+    <fieldset>
+      <legend><?php echo $this->translate('NAT / Advertised addresses');?></legend>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Domain");?></label>
+        <div class="col-sm-6">
+          <input type="text" class="form-control" name="domain" value='<?php echo $this->escape($this->transport['domain']);?>'/>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("External Signaling Address");?></label>
+        <div class="col-sm-6">
+          <input type="text" class="form-control" name="external_signaling_address" value='<?php echo $this->escape($this->transport['external_signaling_address']);?>'/>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("External Signaling Port");?></label>
+        <div class="col-sm-4">
+          <input type="text" class="form-control" name="external_signaling_port" value='<?php echo $this->escape($this->transport['external_signaling_port']);?>'/>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("External Media Address");?></label>
+        <div class="col-sm-6">
+          <input type="text" class="form-control" name="external_media_address" value='<?php echo $this->escape($this->transport['external_media_address']);?>'/>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Local Networks (CIDR)");?></label>
+        <div class="col-sm-6">
+          <textarea class="form-control" name="local_net" rows="4" placeholder="192.168.0.0/16"><?php echo $this->escape($this->networksText);?></textarea>
+          <span class="help-block"><?php echo $this->translate("One network per line. Each becomes an independent local_net= entry.");?></span>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Symmetric Transport");?></label>
+        <div class="col-sm-6">
+          <input type="checkbox" name="symmetric_transport" value="1" <?php echo !empty($this->transport['symmetric_transport']) ? "checked" : ""; ?>/>
+        </div>
+      </div>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Allow Reload");?></label>
+        <div class="col-sm-6">
+          <input type="checkbox" name="allow_reload" value="1" <?php echo !empty($this->transport['allow_reload']) ? "checked" : ""; ?>/>
+          <span class="help-block"><?php echo $this->translate("Not every field on this page can safely change on a running transport without a full container/process restart -- see docs/tasks/0018-pjsip-transports.md.");?></span>
+        </div>
+      </div>
+    </fieldset>
+
+    <br>
+    <div class="snep-body-footer-buttons">
+      <button type="submit" class="btn btn-add" name="save" value="save"><?php echo $this->translate("Save");?></button>
+      &nbsp;&nbsp;&nbsp;
+      <a class="btn btn-outline btn-add" href="<?php echo $this->baseUrl(); ?>/default/pjsip-transports" role="button"><?php echo $this->translate("Cancel")?></a>
+    </div>
+    <br>
+  </form>
+</div>

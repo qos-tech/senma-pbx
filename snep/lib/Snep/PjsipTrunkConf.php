@@ -178,10 +178,12 @@ class Snep_PjsipTrunkConf {
 
         $port = ($peer['port'] !== '' && $peer['port'] !== null) ? $peer['port'] : 5060;
         $host = $peer['host'];
+        $transportName = Snep_PjsipConf::resolveTransportName(isset($trunk['transport_id']) ? $trunk['transport_id'] : null);
 
         $out = "[$name]\n";
         $out .= "type=endpoint\n";
         $out .= "context=" . $peer['context'] . "\n";
+        $out .= "transport=$transportName\n";
         $out .= "disallow=all\n";
         $out .= "allow=$allow\n";
         $out .= "dtmf_mode=$dtmfMode\n";
@@ -245,6 +247,7 @@ class Snep_PjsipTrunkConf {
             $username = $peer['defaultuser'];
             $out .= "[$registration]\n";
             $out .= "type=registration\n";
+            $out .= "transport=$transportName\n";
             $out .= "outbound_auth=$auth\n";
             $out .= "client_uri=sip:$username@$host:$port\n";
             $out .= "server_uri=sip:$host:$port\n";

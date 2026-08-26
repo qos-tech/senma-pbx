@@ -279,6 +279,9 @@ class TrunksController extends Zend_Controller_Action {
           // Harmless for non-PJSIP trunks: Snep_PjsipTrunkConf's own query
           // filters to canal LIKE 'PJSIP/%', so a chan_sip/IAX2/KHOMP/
           // VIRTUAL/SNEPSIP/SNEPIAX2 trunk is simply invisible to it.
+          // TASK-0018: same reasoning as ExtensionsController -- transports must
+          // exist before Snep_PjsipTrunkConf renders a transport=<name> reference.
+          Snep_PjsipTransportConf::loadConfFromDb();
           Snep_PjsipTrunkConf::loadConfFromDb();
         }
 
@@ -311,6 +314,9 @@ class TrunksController extends Zend_Controller_Action {
       Snep_Trunks_Manager::enable($exten);
       Snep_InterfaceConf::loadConfFromDb();
       // TASK-0015: see the identical addAction() comment above.
+      // TASK-0018: same reasoning as ExtensionsController -- transports must
+      // exist before Snep_PjsipTrunkConf renders a transport=<name> reference.
+      Snep_PjsipTransportConf::loadConfFromDb();
       Snep_PjsipTrunkConf::loadConfFromDb();
       $this->_redirect("trunks");
     }
@@ -491,6 +497,9 @@ class TrunksController extends Zend_Controller_Action {
           if(!isset($_POST['trunk_disabled'])){
             Snep_InterfaceConf::loadConfFromDb();
             // TASK-0015: see the identical comment in addAction() above.
+            // TASK-0018: same reasoning as ExtensionsController -- transports must
+            // exist before Snep_PjsipTrunkConf renders a transport=<name> reference.
+            Snep_PjsipTransportConf::loadConfFromDb();
             Snep_PjsipTrunkConf::loadConfFromDb();
           }
           
@@ -557,6 +566,9 @@ class TrunksController extends Zend_Controller_Action {
 
           Snep_InterfaceConf::loadConfFromDb();
           // TASK-0015: see the identical comment in addAction() above.
+          // TASK-0018: same reasoning as ExtensionsController -- transports must
+          // exist before Snep_PjsipTrunkConf renders a transport=<name> reference.
+          Snep_PjsipTransportConf::loadConfFromDb();
           Snep_PjsipTrunkConf::loadConfFromDb();
           $this->_redirect("trunks");
         }

@@ -193,10 +193,12 @@ class Snep_PjsipConf {
         $language = $peer['language'] !== '' ? $peer['language'] : 'br';
 
         $auth = $name . self::AUTH_SUFFIX;
+        $transportName = self::resolveTransportName(isset($peer['transport_id']) ? $peer['transport_id'] : null);
 
         $out = "[$name]\n";
         $out .= "type=endpoint\n";
         $out .= "context=" . $peer['context'] . "\n";
+        $out .= "transport=$transportName\n";
         // Verbatim, exactly like Snep_InterfaceConf's own chan_sip
         // callerid= line -- the DB value is already the full
         // "Display Name <exten>" string (composed once in
@@ -242,6 +244,44 @@ class Snep_PjsipConf {
         $out .= "\n";
 
         return $out;
+    }
+
+    /**
+     * resolveTransportName - TASK-0018: explicit transport=<name> on
+     * every endpoint, never left to Asterisk's own implicit
+     * transport-matching heuristic (docs/tasks/0017-pjsip-transports-and-templates-architecture.md
+     * §12). $transportId is peers.transport_id -- NULL for every
+     * extension that existed before TASK-0018 (and for any new one
+     * created before a future task adds a transport picker to this
+     * form), which resolves to whichever pjsip_transports row is
+     * currently is_default. This is exactly the migration property
+     * TASK-0017 §3/§17 designed: no backfill needed, because the seeded
+     * default transport is byte-identical to the static transport every
+     * extension already implicitly used.
+     *
+     * @param int|null $transportId
+     * @return string the resolved transport's name
+     * @throws PBX_Exception_NotFound if neither the referenced transport
+     *         nor any default transport exists (a misconfigured install,
+     *         not a normal runtime state).
+     *
+     * Public: Snep_PjsipTrunkConf reuses this exact method rather than
+     * duplicating the resolution logic -- transport selection is
+     * technology-agnostic (TASK-0017 §12), unlike the NAT/codec
+     * translation each generator still keeps separate copies of.
+     */
+    public static function resolveTransportName($transportId) {
+        if ($transportId !== null && $transportId !== '') {
+            $transport = Snep_PjsipTransports_Manager::get($transportId);
+            if ($transport) {
+                return $transport['name'];
+            }
+        }
+        $default = Snep_PjsipTransports_Manager::getDefault();
+        if (!$default) {
+            throw new PBX_Exception_NotFound("No default PJSIP transport configured.");
+        }
+        return $default['name'];
     }
 
     /**

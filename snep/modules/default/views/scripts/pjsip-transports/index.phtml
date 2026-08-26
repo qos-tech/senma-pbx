@@ -1,0 +1,77 @@
+<div class= "row">
+  <div class="tab-content">
+    <div class="tab-pane active" id="demo">
+      <div class="panel panel-default">
+        <div class="panel-heading">
+          <div class="snep-body-top-buttons">
+            <a class="btn btn-add" href="<?php echo $this->url ?>/add/ " role="button"><?php echo $this->translate("Add Transport")?></a>
+            <div class="snep-body-search">
+              <?php if($this->key){ ?>
+                <a class='sn-dash-add' href="<?php echo $this->baseUrl(); ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>"></a>
+              <?php } ?>
+            </div>
+          </div>
+        </div><br>
+        <table class="table table-striped" id="listtable">
+          <thead>
+            <tr>
+              <th class="text-center"><?php echo $this->translate('Name');?></th>
+              <th class="text-center"><?php echo $this->translate('Protocol');?></th>
+              <th class="text-center"><?php echo $this->translate('Bind');?></th>
+              <th class="text-center"><?php echo $this->translate('External Signaling');?></th>
+              <th class="text-center"><?php echo $this->translate('External Media');?></th>
+              <th class="text-center"><?php echo $this->translate('Status');?></th>
+              <th class="text-center"><?php echo $this->translate('In Use');?></th>
+              <th class="text-center"><?php echo $this->translate('Actions');?></th>
+            </tr>
+          </thead>
+          <tbody>
+            <?php foreach($this->transports as $transport): ?>
+              <tr>
+                <td class="text-center">
+                  <?php echo $transport['name'] ?>
+                  <?php if ($transport['is_default']): ?>
+                    <span class="label label-info"><?php echo $this->translate('default')?></span>
+                  <?php endif ?>
+                </td>
+                <td class="text-center"><?php echo strtoupper($transport['protocol']) ?></td>
+                <td class="text-center"><?php echo $transport['bind_address'] . ':' . $transport['bind_port'] ?></td>
+                <td class="text-center">
+                  <?php echo $transport['external_signaling_address'] ? $transport['external_signaling_address'] . ($transport['external_signaling_port'] ? ':' . $transport['external_signaling_port'] : '') : '-' ?>
+                </td>
+                <td class="text-center"><?php echo $transport['external_media_address'] ?: '-' ?></td>
+                <td class="text-center">
+                  <?php if ($transport['enabled']): ?>
+                    <span class="label label-success"><?php echo $this->translate('Enabled')?></span>
+                  <?php else: ?>
+                    <span class="label label-default"><?php echo $this->translate('Disabled')?></span>
+                  <?php endif ?>
+                </td>
+                <td class="text-center"><?php echo (int) $transport['usage_count'] ?></td>
+                <td class="text-center">
+                  <a class="btn btn-edit btn-sm" href="<?php echo $this->url ."/edit/id/".  $transport['id'] ?>" role="button"><?php echo $this->translate('Edit')?></a>
+                  <a class="btn btn-danger btn-sm" href="<?php echo $this->url ."/remove/id/".  $transport['id'] ?>" role="button"><?php echo $this->translate('Delete')?></a>
+                </td>
+              </tr>
+            <?php endforeach ?>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script type="text/javascript">
+
+jQuery.noConflict();
+
+jQuery(document).ready(function() {
+  jQuery('#listtable').dataTable( {
+    "pageLength": <?php echo $this->lineNumber ?>,
+    "oLanguage": {
+      "sUrl": "<?php echo $this->baseUrl(); ?>/includes/javascript/datatables/media/language/pt-BR.json"
+    },
+    "bLengthChange": false,
+  });
+});
+</script>

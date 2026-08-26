@@ -83,4 +83,24 @@ INSERT INTO `regras_negocio` VALUES ('',0,'Internas - Ramal para Ramal','G:all',
 INSERT INTO `regras_negocio_actions` VALUES (1,0,'PBX_Rule_Action_CCustos'),(1,1,'PBX_Rule_Action_DiscarRamal');
 INSERT INTO `regras_negocio_actions_config` VALUES (1,0,'ccustos','9'),(1,1,'allow_voicemail','true'),(1,1,'dial_flags','twk'),(1,1,'dial_timeout','60'),(1,1,'diff_ring','false'),(1,1,'dont_overflow','false'),(1,1,'resolv_agent','false'),(1,1,'hangup_voicemail','true');
 
+--
+-- TASK-0018: default PJSIP transports (docs/tasks/0018-pjsip-transports.md).
+-- `udp` is byte-identical to the static [transport-udp] stanza every
+-- PJSIP extension/trunk already implicitly depended on
+-- (docker/asterisk-config/pjsip.conf, pre-TASK-0018) -- this is the
+-- migration target, not a new default (see
+-- docs/tasks/0017-pjsip-transports-and-templates-architecture.md §3).
+-- `tcp` is a normal, immediately-usable second transport. `wss` is
+-- seeded as a placeholder row only (enabled=false) -- a WSS transport
+-- with no TLS certificate configured cannot actually bind; the
+-- generator skips disabled rows entirely (task item 16: WSS exists only
+-- to the extent it can be represented safely, not broadened into
+-- WebRTC).
+INSERT INTO `pjsip_transports`
+  (`name`, `protocol`, `bind_address`, `bind_port`, `symmetric_transport`, `allow_reload`, `is_default`, `enabled`, `is_seed`)
+VALUES
+  ('udp', 'udp', '0.0.0.0', 5060, false, true, true,  true, true),
+  ('tcp', 'tcp', '0.0.0.0', 5060, false, true, false, true, true),
+  ('wss', 'wss', '0.0.0.0', 8089, false, true, false, false, true);
+
 INSERT INTO `core_config` (`config_module`, `config_name`, `config_value`) VALUES ('default', 'host_notification', 'http://api.opens.com.br/v2/notifications'), ("default","userfield","TS_AAMMDD_HHii_SR_DS"),("default","userfield_ud",""), ('default','host_inspect','http://api.opens.com.br/inspect'), ('default','update_server','http://api.opens.com.br/snep');

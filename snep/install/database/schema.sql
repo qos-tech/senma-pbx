@@ -167,6 +167,45 @@ CREATE TABLE IF NOT EXISTS `grupos` (
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8;
 
 --
+-- TASK-0018: first-class PJSIP transports (docs/tasks/0017-pjsip-transports-and-templates-architecture.md,
+-- docs/tasks/0018-pjsip-transports.md). Defined before `peers`/`trunks`
+-- since both gain a nullable transport_id FK referencing this table.
+--
+-- pjsip_transport_networks is a real child table for local_net (Asterisk
+-- supports repeating local_net= lines per transport) -- deliberately not
+-- a delimited string column, per TASK-0017 §2/§18's explicit instruction
+-- not to flatten a normalized concept back into opaque text.
+--
+CREATE TABLE IF NOT EXISTS `pjsip_transports` (
+  `id` int(11) NOT NULL auto_increment,
+  `name` varchar(80) NOT NULL,
+  `protocol` varchar(10) NOT NULL default 'udp',
+  `bind_address` varchar(45) NOT NULL default '0.0.0.0',
+  `bind_port` int(11) NOT NULL default 5060,
+  `domain` varchar(255) default NULL,
+  `external_signaling_address` varchar(255) default NULL,
+  `external_signaling_port` int(11) default NULL,
+  `external_media_address` varchar(255) default NULL,
+  `symmetric_transport` BOOLEAN NOT NULL default false,
+  `allow_reload` BOOLEAN NOT NULL default true,
+  `is_default` BOOLEAN NOT NULL default false,
+  `enabled` BOOLEAN NOT NULL default true,
+  `is_seed` BOOLEAN NOT NULL default false,
+  `created_at` timestamp NOT NULL default CURRENT_TIMESTAMP,
+  `updated_at` timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP,
+  PRIMARY KEY (`id`),
+  UNIQUE KEY `name` (`name`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+CREATE TABLE IF NOT EXISTS `pjsip_transport_networks` (
+  `id` int(11) NOT NULL auto_increment,
+  `transport_id` int(11) NOT NULL,
+  `network` varchar(43) NOT NULL,
+  PRIMARY KEY (`id`),
+  FOREIGN KEY (`transport_id`) REFERENCES pjsip_transports(`id`) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+--
 -- Table structure for table `peers`
 --
 CREATE TABLE IF NOT EXISTS `peers` (
@@ -232,10 +271,15 @@ CREATE TABLE IF NOT EXISTS `peers` (
   `useragent` VARCHAR(250) default NULL,
   `blf` VARCHAR(3) default NULL,
   `disabled` BOOLEAN DEFAULT false,
+  -- TASK-0018: NULL means "use whichever pjsip_transports row is
+  -- currently is_default" -- no backfill needed for existing rows, see
+  -- docs/tasks/0017-pjsip-transports-and-templates-architecture.md §3/§17.
+  `transport_id` int(11) DEFAULT NULL,
   PRIMARY KEY  (`id`),
   UNIQUE KEY `name` (`name`),
   KEY `name_2` (`name`),
-  FOREIGN KEY (`pickupgroup`) REFERENCES grupos(`cod_grupo`) ON UPDATE CASCADE ON DELETE SET NULL
+  FOREIGN KEY (`pickupgroup`) REFERENCES grupos(`cod_grupo`) ON UPDATE CASCADE ON DELETE SET NULL,
+  FOREIGN KEY (`transport_id`) REFERENCES pjsip_transports(`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB  DEFAULT CHARSET=utf8;
 
 
@@ -396,8 +440,11 @@ CREATE TABLE IF NOT EXISTS `trunks` (
   `technology` VARCHAR( 20 ) NOT NULL,
   `telco` INT(10) DEFAULT NULL,
   `disabled` BOOLEAN DEFAULT false,
+  -- TASK-0018: same nullable-defaults-to-system-default semantics as peers.transport_id.
+  `transport_id` int(11) DEFAULT NULL,
   PRIMARY KEY  (`id`),
-  UNIQUE KEY `name` (`name`)
+  UNIQUE KEY `name` (`name`),
+  FOREIGN KEY (`transport_id`) REFERENCES pjsip_transports(`id`) ON DELETE RESTRICT
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 

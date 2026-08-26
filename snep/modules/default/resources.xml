@@ -76,6 +76,13 @@
 
     </group>
 
+    <!-- TASK-0018: docs/tasks/0018-pjsip-transports.md -->
+    <group id="pjsip" label="PJSIP" font="sn-configuracao">
+        <resource id="pjsip-transports" label="Transports" font="sn-configuracao">
+            <resource id="write"></resource>
+        </resource>
+    </group>
+
     <group id="reports" label="Reports" font="sn-relatorios">
         <resource id="calls-report" label="Calls" font="sn-chamadas"></resource>
         <resource id="ranking-report" label="Call Ranking" font="sn-ranking"></resource>

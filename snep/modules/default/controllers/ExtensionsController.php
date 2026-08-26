@@ -777,6 +777,10 @@ class ExtensionsController extends Zend_Controller_Action {
             // internally (SIP%/IAX2% vs PJSIP/%), so calling both on
             // every write is harmless regardless of which technology this
             // particular extension actually uses (TASK-0010 §3/§11).
+            // TASK-0018: transports must exist before Snep_PjsipConf renders a
+            // transport=<name> reference to one -- same "call every generator
+            // additively" pattern already used for the trunk generator below.
+            Snep_PjsipTransportConf::loadConfFromDb();
             Snep_PjsipConf::loadConfFromDb();
           }
 
@@ -833,6 +837,10 @@ class ExtensionsController extends Zend_Controller_Action {
                     Snep_Extensions_Manager::removeVoicemail($exten);
                     Snep_ExtensionsGroups_Manager::deleteExtensionGroups($idExten);
                     Snep_InterfaceConf::loadConfFromDb();
+                    // TASK-0018: transports must exist before Snep_PjsipConf renders a
+                    // transport=<name> reference to one -- same "call every generator
+                    // additively" pattern already used for the trunk generator below.
+                    Snep_PjsipTransportConf::loadConfFromDb();
                     Snep_PjsipConf::loadConfFromDb();
 
                   } catch (PDOException $e) {
@@ -890,6 +898,10 @@ class ExtensionsController extends Zend_Controller_Action {
                     
                     Snep_Extensions_Manager::disable($exten);
                     Snep_InterfaceConf::loadConfFromDb();
+                    // TASK-0018: transports must exist before Snep_PjsipConf renders a
+                    // transport=<name> reference to one -- same "call every generator
+                    // additively" pattern already used for the trunk generator below.
+                    Snep_PjsipTransportConf::loadConfFromDb();
                     Snep_PjsipConf::loadConfFromDb();
 
                   } catch (PDOException $e) {
@@ -926,6 +938,10 @@ class ExtensionsController extends Zend_Controller_Action {
                 Snep_Audit_Manager::SaveLog("Enabled", 'peers', $exten, $this->view->translate("Extension") . " {$result['name']} ". $exten);
                 Snep_Extensions_Manager::enable($exten);
                 Snep_InterfaceConf::loadConfFromDb();
+                // TASK-0018: transports must exist before Snep_PjsipConf renders a
+                // transport=<name> reference to one -- same "call every generator
+                // additively" pattern already used for the trunk generator below.
+                Snep_PjsipTransportConf::loadConfFromDb();
                 Snep_PjsipConf::loadConfFromDb();
                 $this->_redirect("default/extensions");
               }
