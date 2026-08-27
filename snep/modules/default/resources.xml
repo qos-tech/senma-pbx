@@ -22,6 +22,17 @@
 
         <resource id="ip-status" label="IP Status" font="sn-status-ip"></resource>
         <resource id="inspector" label="System Status" font="sn-status-sistema"></resource>
+        <!-- TASK-0022: docs/tasks/0022-system-administration-authorization.md.
+             Checked directly by SystemstatusController::restartDispatchAction()
+             via Snep_Permission_Manager, NOT enforced by Snep_PermissionPlugin
+             (SystemstatusController's actions are outside its hardcoded
+             index/add/edit/remove/etc whitelist and the controller itself
+             was deliberately left unregistered elsewhere, so registering
+             this sibling resource does not newly gate systemstatus/index
+             or restartStatusAction). -->
+        <resource id="asterisk-operations" label="Operações do Asterisk" font="sn-status-sistema">
+            <resource id="write"></resource>
+        </resource>
         <resource id="tdm-links" label="TDM boards" font="sn-links"></resource>
         <resource id="errors-khomp" label="TDM links errors" font="sn-erros-links"></resource>
         <resource id="audit" label="Audit" font="sn-busca"></resource>

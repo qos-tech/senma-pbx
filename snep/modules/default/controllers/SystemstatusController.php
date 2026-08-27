@@ -29,6 +29,12 @@ require_once 'includes/functions.php';;
  */
 class SystemstatusController extends Zend_Controller_Action {
 
+    /**
+     * TASK-0022: the resources.xml-registered permission that gates
+     * destructive Asterisk operations. See
+     * docs/tasks/0022-system-administration-authorization.md.
+     */
+    const ASTERISK_OPERATIONS_PERMISSION = 'default_asterisk-operations_write';
 
     private $systemInfo = array();
     private $sysInfo = array() ;
@@ -138,6 +144,85 @@ class SystemstatusController extends Zend_Controller_Action {
         $this->view->restart_csrf_token = $_SESSION['snep_restart_csrf_token'];
         $this->view->active_call_count = Snep_Asterisk_Operations::getActiveCallCount();
         $this->view->restart_state = Snep_Asterisk_Operations::getRestartState();
+        // TASK-0022: server-side only -- drives whether the destructive
+        // restart buttons render at all. This is a UX nicety, NOT the
+        // enforcement boundary: restartDispatchAction() re-checks this
+        // exact same authorization independently, since a hidden button
+        // is never a security control. See
+        // docs/tasks/0022-system-administration-authorization.md §6/§13.
+        $this->view->can_restart_asterisk = $this->userCanOperateAsterisk();
+    }
+
+    /**
+     * userCanOperateAsterisk - TASK-0022. Server-side authorization for
+     * destructive Asterisk operations, checked directly via the existing
+     * Snep_Permission_Manager data layer (profiles_permissions +
+     * users_permissions, per-user override wins), exactly like
+     * Snep_PermissionPlugin::preDispatch()'s own logic -- but invoked
+     * directly here rather than through that plugin, since the
+     * investigation proved the plugin structurally cannot protect this
+     * action (SystemstatusController has no resources.xml entry of its
+     * own, and the plugin's action-name whitelist does not include
+     * "restart-dispatch" regardless). See
+     * docs/tasks/0022-system-administration-authorization.md §2/§5/§7.
+     *
+     * Preserves the application's existing, pre-existing legacy
+     * superuser convention ($_SESSION['id_user'] == "1" bypasses every
+     * permission check in this codebase already -- Snep_PermissionPlugin,
+     * Snep_Menu, Snep_Profiles_Manager's own user-exclusion queries all
+     * do this same comparison). This is documented compatibility
+     * behavior and remaining RBAC debt (§7/§17), not a new special case
+     * introduced by this task.
+     *
+     * @return bool
+     */
+    private function userCanOperateAsterisk() {
+        if (empty($_SESSION['id_user'])) {
+            return false;
+        }
+        if ($_SESSION['id_user'] == "1") {
+            return true;
+        }
+
+        $profileId = Snep_Profiles_Manager::getIdProfile($_SESSION['id_user']);
+        $groupPermission = Snep_Permission_Manager::get($profileId, self::ASTERISK_OPERATIONS_PERMISSION);
+        $userPermission = Snep_Permission_Manager::getUser($_SESSION['id_user'], self::ASTERISK_OPERATIONS_PERMISSION);
+
+        // Per-user override wins over the profile/group default, exactly
+        // matching Snep_PermissionPlugin::preDispatch()'s own precedence.
+        $effective = ($userPermission !== false) ? $userPermission : $groupPermission;
+
+        return $effective && $effective['allow'];
+    }
+
+    /**
+     * logRestartAuthorizationDenied - TASK-0022. Uses the exact same
+     * proven mechanism as Snep_Asterisk_Operations::logRestart()
+     * (Snep_Audit_Manager + error_log(), never Zend_Registry::get('log')
+     * -- TASK-0019/0020 already proved that is never registered in the
+     * real bootstrap). Logs only user id/username/IP/attempted mode --
+     * never the CSRF token, a password, or an AMI credential. See
+     * docs/tasks/0022-system-administration-authorization.md §15.
+     */
+    private function logRestartAuthorizationDenied($mode) {
+        $auth = Zend_Auth::getInstance();
+        $username = $auth->hasIdentity() ? $auth->getIdentity() : 'unknown';
+        $userId = $_SESSION['id_user'] ?? 'unknown';
+        $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+        $description = sprintf(
+            'Restart dispatch denied -- user_id=%s user=%s ip=%s mode=%s missing_permission=%s',
+            $userId,
+            $username,
+            $ip,
+            $mode ?: 'unknown',
+            self::ASTERISK_OPERATIONS_PERMISSION
+        );
+        try {
+            Snep_Audit_Manager::SaveLog('RestartDenied', 'asterisk', $userId, $description);
+        } catch (Exception $e) {
+            error_log('SystemstatusController: failed to write audit log: ' . $e->getMessage());
+        }
+        error_log('SystemstatusController: ' . $description);
     }
 
     /**
@@ -162,10 +247,26 @@ class SystemstatusController extends Zend_Controller_Action {
             return;
         }
 
+        // TASK-0022: authorization before CSRF, before mode validation,
+        // before any Asterisk contact -- an unauthorized session is
+        // rejected here, unconditionally, with no side effect and no
+        // information about CSRF-token validity ever computed for it.
+        // See docs/tasks/0022-system-administration-authorization.md §10.
+        if (!$this->userCanOperateAsterisk()) {
+            $this->logRestartAuthorizationDenied($this->getRequest()->getPost('mode'));
+            $this->getResponse()->setHttpResponseCode(403);
+            echo json_encode(array('ok' => false, 'error' => 'forbidden'));
+            return;
+        }
+
         $token = $this->getRequest()->getPost('csrf_token');
         if (empty($token) || empty($_SESSION['snep_restart_csrf_token']) || !hash_equals($_SESSION['snep_restart_csrf_token'], $token)) {
             $this->getResponse()->setHttpResponseCode(403);
-            echo json_encode(array('ok' => false, 'error' => 'invalid or missing CSRF token'));
+            // TASK-0022: identical status/body to the authorization
+            // rejection above -- an attacker probing with a stolen or
+            // guessed CSRF token learns nothing about permission state
+            // either way. See §10 of the investigation doc.
+            echo json_encode(array('ok' => false, 'error' => 'forbidden'));
             return;
         }
         // One-shot: consume it, then immediately issue a fresh one so the

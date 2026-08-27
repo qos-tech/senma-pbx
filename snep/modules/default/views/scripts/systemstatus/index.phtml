@@ -135,6 +135,16 @@
                             — <span id="restartStateDetail"><?php echo $this->escape($this->restart_state['detail']); ?></span>
                         </p>
 
+                        <?php /* TASK-0022: server-side-only gate. This hides
+                              the destructive controls for a UX nicety --
+                              it is NOT the security boundary.
+                              restartDispatchAction() independently
+                              re-checks the exact same authorization on
+                              every request, since a hidden button was
+                              never enforcement. See
+                              docs/tasks/0022-system-administration-authorization.md
+                              §6/§13. */ ?>
+                        <?php if ($this->can_restart_asterisk): ?>
                         <div id="restartActions">
                             <button type="button" class="btn btn-primary" id="btnShowGraceful"><?php echo $this->translate("Reiniciar após finalizar chamadas ativas"); ?></button>
                             <button type="button" class="btn btn-danger" id="btnShowNow"><?php echo $this->translate("Reiniciar agora — chamadas ativas serão encerradas"); ?></button>
@@ -151,6 +161,7 @@
                             <button type="button" class="btn btn-danger restart-confirm-btn" data-mode="now"><?php echo $this->translate("Confirmar reinício imediato"); ?></button>
                             <button type="button" class="btn restart-cancel-btn"><?php echo $this->translate("Cancelar"); ?></button>
                         </div>
+                        <?php endif; ?>
                     </div>
                 </div>
 
