@@ -152,6 +152,17 @@ class Snep_PjsipTransportConf {
      * silently assuming success. Identical mechanism to
      * Snep_PjsipConf::reload()/Snep_PjsipTrunkConf::reload().
      *
+     * TASK-0020 item 9 / investigation §11: this used to log via
+     * Zend_Registry::get('log'), which is NOT registered in this
+     * application's real HTTP request bootstrap -- confirmed live
+     * (TASK-0019) that hitting this exact line throws an unrelated
+     * "No entry is registered for key 'log'" Zend_Exception, masking
+     * whatever the real reload failure was. error_log() has no such
+     * dependency and still reaches the same container log every other
+     * PHP warning in this app already does (same fix TASK-0019 already
+     * applied to the disabled-transport skip paths in
+     * Snep_PjsipConf/Snep_PjsipTrunkConf).
+     *
      * @throws PBX_Exception_IO if the reload did not report success.
      */
     private static function reload(Zend_View $view) {
@@ -161,10 +172,71 @@ class Snep_PjsipTransportConf {
         $data = isset($result['data']) ? $result['data'] : '';
 
         if (stripos($data, 'reloaded successfully') === false) {
-            $log = Zend_Registry::get('log');
-            $log->err("Snep_PjsipTransportConf: 'module reload res_pjsip.so' did not report success: " . $data);
+            error_log("Snep_PjsipTransportConf: 'module reload res_pjsip.so' did not report success: " . $data);
             throw new PBX_Exception_IO($view->translate("Failed to reload Asterisk PJSIP configuration: %s", $data));
         }
+    }
+
+    /**
+     * isRuntimeActive - TASK-0020 item 4: post-save runtime verification.
+     * Never trust "reloaded successfully" alone as proof a transport is
+     * live -- the investigation proved that response reflects
+     * module-level command acceptance, not per-object success (§11): a
+     * genuinely colliding transport, or one referencing an invalid
+     * protocol, or even a transport section following a syntactically
+     * broken one in the same file, all still produce "reloaded
+     * successfully" while the specific object silently never loads.
+     * This asks Asterisk directly, by name, using the exact `pjsip show
+     * transport <name>` CLI command already proven reliable throughout
+     * the investigation's own live testing.
+     *
+     * @param string $name
+     * @param string $bindAddress
+     * @param int    $bindPort
+     * @return bool true only if Asterisk's own runtime reports this
+     *         exact name bound at this exact address:port right now
+     */
+    public static function isRuntimeActive($name, $bindAddress, $bindPort) {
+        $asteriskAmi = PBX_Asterisk_AMI::getInstance();
+        $result = $asteriskAmi->Command("pjsip show transport " . $name);
+        $data = isset($result['data']) ? $result['data'] : '';
+
+        if (stripos($data, 'Unable to find object') !== false) {
+            return false;
+        }
+        return stripos($data, "$bindAddress:$bindPort") !== false;
+    }
+
+    /**
+     * getRuntimeTransportNames - TASK-0020 item 6/§15: the transport
+     * list page's runtime-mismatch check needs to know exactly which
+     * transport names Asterisk currently has loaded. No structured AMI
+     * action exists for transports (confirmed, investigation §15 --
+     * `manager show commands` lists PJSIPShowEndpoints/Aors/Auths/
+     * Contacts/RegistrationsOutbound, but no PJSIPShowTransports) --
+     * `pjsip show transports`'s own CLI text is the only source,
+     * parsed the same deliberate way every other AMI Command response
+     * in this codebase already is. Matches only real data rows (name
+     * followed immediately by a known protocol token), which
+     * structurally excludes the header row, the "====" separator, and
+     * the trailing "Objects found: N" line without needing to special-
+     * case any of them.
+     *
+     * @return array transport names currently loaded in Asterisk's
+     *         live PJSIP runtime
+     */
+    public static function getRuntimeTransportNames() {
+        $asteriskAmi = PBX_Asterisk_AMI::getInstance();
+        $result = $asteriskAmi->Command("pjsip show transports");
+        $data = isset($result['data']) ? $result['data'] : '';
+
+        $names = array();
+        foreach (explode("\n", $data) as $line) {
+            if (preg_match('/^Transport:\s+(\S+)\s+(udp|tcp|tls|ws|wss)\s/i', rtrim($line), $m)) {
+                $names[] = $m[1];
+            }
+        }
+        return $names;
     }
 
 }

@@ -288,6 +288,65 @@ class Snep_PjsipTransports_Manager {
     }
 
     /**
+     * socketFamily - TASK-0020 investigation §5: confirmed live,
+     * repeatedly, that socket identity is (protocol-family, bind_address,
+     * bind_port), where "protocol-family" groups by the underlying BSD
+     * socket type, not the PJSIP protocol= string verbatim -- UDP and TCP
+     * freely coexist on an identical port (independently proven both
+     * directions), while two transports both requesting UDP (or both
+     * TCP) on the same bind collide. Only udp/tcp were empirically
+     * exercised; tls/ws/wss are grouped with tcp here on ordinary POSIX
+     * socket semantics (all four ride a SOCK_STREAM socket) rather than
+     * independent Asterisk-specific testing -- documented as such,
+     * not asserted as evidence-backed to the same degree as the udp/tcp
+     * finding (docs/tasks/0020-pjsip-transport-runtime-lifecycle.md §5).
+     *
+     * @return string 'datagram' or 'stream'
+     */
+    public static function socketFamily($protocol) {
+        return ($protocol === 'udp') ? 'datagram' : 'stream';
+    }
+
+    /**
+     * findCollision - TASK-0020 item 1: is $protocol/$bindAddress/$bindPort
+     * already claimed by a DIFFERENT transport row? Checks every other
+     * row regardless of enabled/disabled (TASK-0020 investigation §8/§9:
+     * a disabled transport's socket was proven to stay silently bound at
+     * the OS level, exactly like a deleted one -- so a disabled row can
+     * still be the thing a new save would collide with). Exact
+     * bind_address string match only (not a wildcard/overlap check) --
+     * the investigation only empirically proved exact-address collisions;
+     * inventing a broader 0.0.0.0-overlap rule was deliberately avoided
+     * per the task's own "do not invent, use the audit result"
+     * instruction. The post-save runtime verification
+     * (Snep_PjsipTransportConf::isRuntimeActive()) is the deliberate
+     * defense-in-depth backstop for any address-overlap case this
+     * narrower, evidence-strict check does not catch.
+     *
+     * @param string   $protocol
+     * @param string   $bindAddress
+     * @param int      $bindPort
+     * @param int|null $excludeId the row being saved, excluded from the
+     *                  comparison so an unchanged self-edit never
+     *                  "collides with itself"
+     * @return array|false the colliding row, or false if none
+     */
+    public static function findCollision($protocol, $bindAddress, $bindPort, $excludeId = null) {
+        $db = Zend_Registry::get('db');
+        $family = self::socketFamily($protocol);
+        $familyProtocols = ($family === 'datagram') ? array('udp') : array('tcp', 'tls', 'ws', 'wss');
+
+        $select = $db->select()->from('pjsip_transports')
+            ->where('protocol IN (?)', $familyProtocols)
+            ->where('bind_address = ?', $bindAddress)
+            ->where('bind_port = ?', (int) $bindPort);
+        if ($excludeId !== null && $excludeId !== '') {
+            $select->where('id != ?', (int) $excludeId);
+        }
+        return $db->query($select)->fetch();
+    }
+
+    /**
      * validateName - non-empty, safe-for-a-sorcery-object-name (alnum,
      * dash, underscore only -- this string becomes a literal
      * "[name]" section header in generated Asterisk config, so it must

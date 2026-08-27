@@ -321,6 +321,11 @@ class Snep_PjsipTrunkConf {
      * reimplemented.
      *
      * @throws PBX_Exception_IO if the reload did not report success.
+     *
+     * TASK-0020 item 9 / investigation §11: was Zend_Registry::get('log'),
+     * which is NOT registered in this application's real HTTP request
+     * bootstrap -- see the identical fix/reasoning in
+     * Snep_PjsipConf::reload().
      */
     private static function reload(Zend_View $view) {
         $asteriskAmi = PBX_Asterisk_AMI::getInstance();
@@ -329,8 +334,7 @@ class Snep_PjsipTrunkConf {
         $data = isset($result['data']) ? $result['data'] : '';
 
         if (stripos($data, 'reloaded successfully') === false) {
-            $log = Zend_Registry::get('log');
-            $log->err("Snep_PjsipTrunkConf: 'module reload res_pjsip.so' did not report success: " . $data);
+            error_log("Snep_PjsipTrunkConf: 'module reload res_pjsip.so' did not report success: " . $data);
             throw new PBX_Exception_IO($view->translate("Failed to reload Asterisk PJSIP configuration: %s", $data));
         }
     }

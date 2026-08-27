@@ -5,6 +5,15 @@
         <?php if ($this->alert_message): ?>
           <div class="alert alert-warning"><?php echo $this->alert_message; ?></div>
         <?php endif; ?>
+        <?php // TASK-0020 items 2-4/7: one-shot post-save messages -- never
+              // claim "active" when the investigation proved that is not
+              // always true. See PjsipTransportsController::reportApplyResult(). ?>
+        <?php foreach ($this->restart_required_messages as $msg): ?>
+          <div class="alert alert-warning"><?php echo $this->escape($msg); ?></div>
+        <?php endforeach; ?>
+        <?php foreach ($this->apply_failed_messages as $msg): ?>
+          <div class="alert alert-danger"><?php echo $this->escape($msg); ?></div>
+        <?php endforeach; ?>
         <div class="panel-heading">
           <div class="snep-body-top-buttons">
             <a class="btn btn-add" href="<?php echo $this->url ?>/add/ " role="button"><?php echo $this->translate("Add Transport")?></a>
@@ -24,6 +33,7 @@
               <th class="text-center"><?php echo $this->translate('External Signaling');?></th>
               <th class="text-center"><?php echo $this->translate('External Media');?></th>
               <th class="text-center"><?php echo $this->translate('Status');?></th>
+              <th class="text-center"><?php echo $this->translate('Runtime');?></th>
               <th class="text-center"><?php echo $this->translate('In Use');?></th>
               <th class="text-center"><?php echo $this->translate('Actions');?></th>
             </tr>
@@ -48,6 +58,25 @@
                     <span class="label label-success"><?php echo $this->translate('Enabled')?></span>
                   <?php else: ?>
                     <span class="label label-default"><?php echo $this->translate('Disabled')?></span>
+                  <?php endif ?>
+                </td>
+                <td class="text-center" data-runtime-state="<?php echo $this->escape($transport['runtime_state']); ?>">
+                  <?php // TASK-0020 item 6: derived every page load from a
+                        // real pjsip show transports call -- never inferred
+                        // from enabled=1 alone. See
+                        // PjsipTransportsController::indexAction(). The
+                        // data-runtime-state attribute gives this column an
+                        // unambiguous marker distinct from the Status
+                        // column's own label-success/"Enabled" badge (which
+                        // uses the identical Bootstrap class for an
+                        // unrelated concept) -- for any future automated
+                        // check, and for anyone inspecting the page source. ?>
+                  <?php if ($transport['runtime_state'] === 'active'): ?>
+                    <span class="label label-success" title="<?php echo $this->translate('Asterisk currently has this transport loaded, matching its saved configuration.')?>"><?php echo $this->translate('Active')?></span>
+                  <?php elseif ($transport['runtime_state'] === 'restart_required'): ?>
+                    <span class="label label-warning" title="<?php echo $this->translate('Configuration does not match what Asterisk currently has loaded. A restart is required.')?>"><?php echo $this->translate('Restart required')?></span>
+                  <?php else: ?>
+                    <span class="text-muted">&mdash;</span>
                   <?php endif ?>
                 </td>
                 <td class="text-center"><?php echo (int) $transport['usage_count'] ?></td>

@@ -1185,6 +1185,425 @@ fi
 curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null --data-urlencode "id=${UX_REF_EXT}" --data-urlencode "delete=Delete" "${BASE_URL}/index.php/default/extensions/remove" >/dev/null
 UX_CREATED_EXT=0
 
+# ===========================================================================
+# PART 3 (TASK-0020): runtime lifecycle -- collision validation, rename/
+# delete restart-required semantics, post-save runtime verification,
+# list-page runtime-mismatch visibility, and controlled restart recovery.
+#
+# WARNING, READ BEFORE RUNNING: unlike checks 1-40, this part performs a
+# REAL, controlled `core restart now` against the shared dev Asterisk
+# container (initiated only by this test harness, never by application
+# code -- see docs/tasks/0020-pjsip-transport-runtime-lifecycle.md item 12).
+# It is necessary to prove the investigation's own restart-recovery
+# findings and is not optional/skippable, per this task's own explicit
+# instruction to expand `make transport-smoke` itself rather than carve
+# out a separate opt-in target. Do not run `make transport-smoke`
+# expecting the Asterisk container's uptime/registration state to survive
+# unchanged -- it will not, briefly, exactly like a real administrator
+# restarting Asterisk after a transport rename would experience.
+#
+# Uses its own independent fixtures (task0020-* transports, extension
+# 1094, its own trunk fixture) so it cannot interfere with checks 1-40's
+# fixtures or ordering, and cleans up thoroughly via t20_cleanup() below.
+# ===========================================================================
+
+T20_COL_A="task0020-col-a"
+T20_COL_B="task0020-col-b"
+T20_COL_C="task0020-col-c"
+T20_RENAME_OLD="task0020-rename-old"
+T20_RENAME_NEW="task0020-rename-new"
+T20_DELDIS="task0020-deldis"
+T20_REUSE="task0020-reuse"
+T20_REF_EXT=1094
+T20_REF_EXT_SECRET="${FIXTURE_MARKER}-t20-ext"
+T20_TRUNK_CALLERID="${FIXTURE_MARKER} t20 lifecycle trunk fixture"
+
+T20_COL_A_ID=""
+T20_COL_C_ID=""
+T20_RENAME_ID=""
+T20_DELDIS_ID=""
+T20_REUSE_ID=""
+T20_CREATED_EXT=0
+T20_CREATED_TRUNK_ID=""
+
+t20_cleanup() {
+    log "==> TASK-0020 lifecycle cleanup"
+    if [ "$T20_CREATED_EXT" = "1" ]; then
+        db_query "UPDATE peers SET transport_id = NULL WHERE name='${T20_REF_EXT}';" >/dev/null 2>&1
+        delete_extension "$T20_REF_EXT" || log "WARNING: HTTP delete of extension ${T20_REF_EXT} did not return 302 -- may need manual cleanup"
+    fi
+    if [ -n "$T20_CREATED_TRUNK_ID" ]; then
+        db_query "UPDATE trunks SET transport_id = NULL WHERE id=${T20_CREATED_TRUNK_ID};" >/dev/null 2>&1
+        delete_trunk_fixture "$T20_CREATED_TRUNK_ID" || log "WARNING: HTTP delete of t20 trunk id=${T20_CREATED_TRUNK_ID} did not return 302 -- may need manual cleanup"
+    fi
+    for tid in "$T20_COL_A_ID" "$T20_COL_C_ID" "$T20_RENAME_ID" "$T20_DELDIS_ID" "$T20_REUSE_ID"; do
+        if [ -n "$tid" ]; then
+            delete_transport "$tid"
+            [ "$DELETE_HTTPCODE" = "302" ] || log "WARNING: HTTP delete of t20 transport id=${tid} did not return 302 -- may need manual cleanup"
+        fi
+    done
+    # item 16: never leave a deliberately-malformed row behind.
+    db_query "DELETE FROM pjsip_transports WHERE name='task0020-badproto';" >/dev/null 2>&1
+}
+# Combines with the earlier traps (checks 1-18's own cleanup(), and
+# Part 2's ux_cleanup()) -- bash traps don't stack, so this replaces the
+# earlier `trap 'ux_cleanup; cleanup' EXIT` with one that runs all three.
+trap 't20_cleanup; ux_cleanup; cleanup' EXIT
+
+# t20_wait_for_asterisk -- poll after a real restart until the CLI
+# connection is answering again. Up to 20s, matching the "within 15-20s"
+# settling window already established elsewhere in this project's own
+# smoke tests (e.g. call-smoke-test.sh's registration wait).
+t20_wait_for_asterisk() {
+    local attempt
+    for attempt in $(seq 1 20); do
+        if $COMPOSE exec -T asterisk asterisk -rx "core show uptime" 2>&1 | grep -q "System uptime"; then
+            return 0
+        fi
+        sleep 1
+    done
+    return 1
+}
+
+# t20_list_html -- fetch the transports list page HTML into a temp file,
+# print its path. Used to inspect flash-message banners and the new
+# per-row runtime badge (docs/tasks/0020-pjsip-transport-runtime-lifecycle.md
+# items 2-4/6/7) without guessing at exact markup by hand each time.
+t20_list_html() {
+    local f
+    f="$(mktemp)"
+    curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" "${BASE_URL}/index.php/default/pjsip-transports" -o "$f"
+    echo "$f"
+}
+
+# t20_runtime_badge <html_file> <transport_name> -- prints "active",
+# "restart_required", "disabled", or "" (not found), read from the row's
+# own Runtime column's data-runtime-state="..." attribute (index.phtml).
+# Deliberately NOT grepping for the label-success/label-warning CSS
+# classes directly: label-success is ALSO the Status column's own
+# "Enabled" badge (an unrelated concept using the identical Bootstrap
+# class), which sits earlier in the same row and would produce a false
+# "active" match every time -- confirmed by hand during implementation.
+# Uses the LAST occurrence of the name in the page, not the first -- a
+# flash banner (which can also legitimately mention the same transport
+# name, e.g. the rename/delete messages) always renders ABOVE the table.
+t20_runtime_badge() {
+    local f="$1" name="$2" lineno window
+    lineno="$(grep -n "$name" "$f" | tail -1 | cut -d: -f1)"
+    if [ -z "$lineno" ]; then
+        echo ""
+        return
+    fi
+    window="$(sed -n "${lineno},$((lineno + 15))p" "$f")"
+    echo "$window" | grep -o 'data-runtime-state="[a-z_]*"' | head -1 | sed -e 's/data-runtime-state="//' -e 's/"$//'
+}
+
+log "==> [T20] checking for pre-existing fixtures"
+for n in "$T20_COL_A" "$T20_COL_B" "$T20_COL_C" "$T20_RENAME_OLD" "$T20_RENAME_NEW" "$T20_DELDIS" "$T20_REUSE"; do
+    existing="$(db_query "SELECT id FROM pjsip_transports WHERE name='${n}';")"
+    if [ -n "$existing" ]; then
+        stop "a transport named '${n}' already exists (id=${existing}) from a prior run that did not clean up. Remove it manually first."
+    fi
+done
+existing="$(db_query "SELECT canal FROM peers WHERE name='${T20_REF_EXT}';")"
+if [ -n "$existing" ]; then
+    stop "peers row for extension '${T20_REF_EXT}' already exists. Remove it manually first."
+fi
+existing="$(db_query "SELECT id FROM trunks WHERE callerid='${T20_TRUNK_CALLERID}';")"
+if [ -n "$existing" ]; then
+    stop "a trunk with callerid '${T20_TRUNK_CALLERID}' already exists (id=${existing}) from a prior run. Remove it manually first."
+fi
+
+# --- 41. Pre-save collision rejected on create ------------------------------
+
+log "==> [T20] creating ${T20_COL_A} (udp 0.0.0.0:5211)"
+save_transport add "" "$T20_COL_A" udp 5211 1
+[ "$SAVE_TRANSPORT_HTTPCODE" = "302" ] || stop "creating ${T20_COL_A} failed (HTTP $SAVE_TRANSPORT_HTTPCODE)"
+T20_COL_A_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='${T20_COL_A}';")"
+
+log "==> [T20] attempting to create ${T20_COL_B} on the identical udp 0.0.0.0:5211 (must be rejected BEFORE persistence)"
+save_transport add "" "$T20_COL_B" udp 5211 1
+COL_B_EXISTS="$(db_query "SELECT COUNT(*) FROM pjsip_transports WHERE name='${T20_COL_B}';")"
+if [ "$SAVE_TRANSPORT_HTTPCODE" != "302" ] && echo "$SAVE_TRANSPORT_BODY" | grep -qi "already used by transport" && [ "$COL_B_EXISTS" = "0" ]; then
+    ok "pre-save collision rejected (create)" "HTTP $SAVE_TRANSPORT_HTTPCODE, no DB row created for ${T20_COL_B}, error names the colliding transport"
+else
+    bad "pre-save collision rejected (create)" "HTTP=$SAVE_TRANSPORT_HTTPCODE db_rows=$COL_B_EXISTS body:\n$(echo "$SAVE_TRANSPORT_BODY" | head -c 300)"
+fi
+
+GENERATED_AFTER_COLLISION="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip-transports.conf 2>/dev/null)"
+if echo "$GENERATED_AFTER_COLLISION" | grep -qF "[${T20_COL_A}]" && ! echo "$GENERATED_AFTER_COLLISION" | grep -qF "[${T20_COL_B}]"; then
+    ok "A's config unchanged, B never generated" "[${T20_COL_A}] present, [${T20_COL_B}] absent from senma-pjsip-transports.conf"
+else
+    bad "A's config unchanged, B never generated" "unexpected content:\n$(echo "$GENERATED_AFTER_COLLISION" | grep -F "$T20_COL_A" -A6)"
+fi
+
+RUNTIME_A="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show transport ${T20_COL_A}" 2>&1)"
+RUNTIME_B="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show transport ${T20_COL_B}" 2>&1)"
+if echo "$RUNTIME_A" | grep -q "bind " && echo "$RUNTIME_B" | grep -qi "Unable to find"; then
+    ok "A's runtime unchanged, B never reaches Asterisk" "A still live, B never attempted at all (rejected pre-save, not merely post-save)"
+else
+    bad "A's runtime unchanged, B never reaches Asterisk" "A:\n${RUNTIME_A}\nB:\n${RUNTIME_B}"
+fi
+
+# --- 42. Non-collision accepted: UDP/TCP share a numeric port cleanly ------
+
+log "==> [T20] creating ${T20_COL_C} (tcp 0.0.0.0:5211 -- same port, different socket family)"
+save_transport add "" "$T20_COL_C" tcp 5211 1
+T20_COL_C_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='${T20_COL_C}';")"
+if [ "$SAVE_TRANSPORT_HTTPCODE" = "302" ] && [ -n "$T20_COL_C_ID" ]; then
+    ok "non-collision accepted (udp+tcp, same numeric port)" "HTTP 302, ${T20_COL_C} created -- confirms the collision rule is protocol-family-scoped, not bare-port-scoped"
+else
+    stop "creating ${T20_COL_C} failed (HTTP $SAVE_TRANSPORT_HTTPCODE) -- unexpected, this must not collide per the investigation's own §5 finding"
+fi
+RUNTIME_C="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show transport ${T20_COL_C}" 2>&1)"
+if echo "$RUNTIME_C" | grep -q "bind "; then
+    ok "non-colliding transport is live" "pjsip show transport ${T20_COL_C} found, bind 0.0.0.0:5211/tcp alongside ${T20_COL_A}'s udp on the same port"
+else
+    bad "non-colliding transport is live" "not found:\n${RUNTIME_C}"
+fi
+
+# --- 43. A plain hot-applied edit is reported ACTIVE, no spurious banner ---
+
+log "==> [T20] editing ${T20_COL_C}'s domain (no identity change) -- must stay ACTIVE, no restart-required/apply-failed banner"
+curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null -w '' \
+    --data-urlencode "name=${T20_COL_C}" --data-urlencode "protocol=tcp" \
+    --data-urlencode "bind_address=0.0.0.0" --data-urlencode "bind_port=5211" \
+    --data-urlencode "domain=task0020.example.test" --data-urlencode "external_signaling_address=" \
+    --data-urlencode "external_signaling_port=" --data-urlencode "external_media_address=" \
+    --data-urlencode "local_net=" --data-urlencode "allow_reload=1" --data-urlencode "enabled=1" \
+    "${BASE_URL}/index.php/default/pjsip-transports/edit/id/${T20_COL_C_ID}"
+LIST_HTML="$(t20_list_html)"
+BADGE_C="$(t20_runtime_badge "$LIST_HTML" "$T20_COL_C")"
+HAS_BANNER="$(grep -c "alert alert-warning\|alert alert-danger" "$LIST_HTML")"
+if [ "$BADGE_C" = "active" ] && [ "$HAS_BANNER" = "0" ]; then
+    ok "hot-applied edit reported ACTIVE, no spurious banner" "runtime badge=active, zero restart-required/apply-failed banners present"
+else
+    bad "hot-applied edit reported ACTIVE, no spurious banner" "badge=$BADGE_C banners=$HAS_BANNER"
+fi
+rm -f "$LIST_HTML"
+
+# --- 44. Rename setup: dependent extension + trunk pinned to the pre-rename name
+
+log "==> [T20] creating ${T20_RENAME_OLD} (udp 0.0.0.0:5212) and pinning a reference extension + trunk to it"
+save_transport add "" "$T20_RENAME_OLD" udp 5212 1
+T20_RENAME_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='${T20_RENAME_OLD}';")"
+[ "$SAVE_TRANSPORT_HTTPCODE" = "302" ] || stop "creating ${T20_RENAME_OLD} failed (HTTP $SAVE_TRANSPORT_HTTPCODE)"
+
+save_ref_extension add "$T20_REF_EXT" "$T20_REF_EXT_SECRET" "$T20_RENAME_ID"
+[ "$SAVE_EXT_HTTPCODE" = "302" ] || stop "creating+pinning extension ${T20_REF_EXT} failed (HTTP $SAVE_EXT_HTTPCODE)"
+T20_CREATED_EXT=1
+
+UX_TRUNK_CALLERID="$T20_TRUNK_CALLERID"
+if create_ux_trunk_fixture; then
+    T20_CREATED_TRUNK_ID="$(db_query "SELECT id FROM trunks WHERE callerid='${T20_TRUNK_CALLERID}';")"
+    [ -n "$T20_CREATED_TRUNK_ID" ] || stop "t20 trunk fixture creation returned 302 but no matching row was found afterward"
+else
+    stop "creating the t20 trunk fixture failed -- see log above"
+fi
+edit_ux_trunk_fixture "$T20_CREATED_TRUNK_ID" "$T20_RENAME_ID"
+[ "$EDIT_TRUNK_HTTPCODE" = "302" ] || stop "pinning t20 trunk to ${T20_RENAME_OLD} failed (HTTP $EDIT_TRUNK_HTTPCODE)"
+
+EXT_SECTION_BEFORE="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null | awk "/^\[${T20_REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
+T20_TRUNK_OBJ="trunk-${T20_CREATED_TRUNK_ID}"
+TRUNK_CONF_BEFORE="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip-trunks.conf 2>/dev/null)"
+TRUNK_EP_BEFORE="$(echo "$TRUNK_CONF_BEFORE" | awk "/^\[${T20_TRUNK_OBJ}\]\$/{f=1} f{print} f&&/^\$/{exit}")"
+TRUNK_REG_BEFORE="$(echo "$TRUNK_CONF_BEFORE" | awk "/^\[${T20_TRUNK_OBJ}-registration\]/{f=1} f{print} f&&/^\$/{exit}")"
+if echo "$EXT_SECTION_BEFORE" | grep -qF "transport=${T20_RENAME_OLD}" \
+    && echo "$TRUNK_EP_BEFORE" | grep -qF "transport=${T20_RENAME_OLD}" \
+    && echo "$TRUNK_REG_BEFORE" | grep -qF "transport=${T20_RENAME_OLD}"; then
+    ok "dependents correctly pinned before rename" "extension ${T20_REF_EXT} and trunk ${T20_TRUNK_OBJ} (endpoint+registration) all reference ${T20_RENAME_OLD}"
+else
+    stop "dependents not correctly pinned before rename -- aborting the rename test, see sections above"
+fi
+
+# --- 45/46. Rename executed: restart-required, config-level cascade, runtime NOT falsely active
+
+log "==> [T20] renaming ${T20_RENAME_OLD} -> ${T20_RENAME_NEW} (same bind 0.0.0.0:5212)"
+save_transport edit "$T20_RENAME_ID" "$T20_RENAME_NEW" udp 5212 1
+[ "$SAVE_TRANSPORT_HTTPCODE" = "302" ] || bad "rename save succeeds" "HTTP $SAVE_TRANSPORT_HTTPCODE"
+
+LIST_HTML="$(t20_list_html)"
+if grep -qi "restart required\|restart-required\|Asterisk restart required" "$LIST_HTML"; then
+    ok "rename reports restart-required" "the flash-message banner naming the restart requirement is present on the list page"
+else
+    bad "rename reports restart-required" "no restart-required banner found on the list page after renaming"
+fi
+
+EXT_SECTION_AFTER="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null | awk "/^\[${T20_REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
+TRUNK_CONF_AFTER="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip-trunks.conf 2>/dev/null)"
+TRUNK_EP_AFTER="$(echo "$TRUNK_CONF_AFTER" | awk "/^\[${T20_TRUNK_OBJ}\]\$/{f=1} f{print} f&&/^\$/{exit}")"
+TRUNK_REG_AFTER="$(echo "$TRUNK_CONF_AFTER" | awk "/^\[${T20_TRUNK_OBJ}-registration\]/{f=1} f{print} f&&/^\$/{exit}")"
+if echo "$EXT_SECTION_AFTER" | grep -qF "transport=${T20_RENAME_NEW}" \
+    && echo "$TRUNK_EP_AFTER" | grep -qF "transport=${T20_RENAME_NEW}" \
+    && echo "$TRUNK_REG_AFTER" | grep -qF "transport=${T20_RENAME_NEW}"; then
+    ok "dependent regeneration cascades to the new name (configured state)" "extension and trunk (endpoint+registration) all updated to transport=${T20_RENAME_NEW} immediately, at the file level"
+else
+    bad "dependent regeneration cascades to the new name (configured state)" "ext:\n${EXT_SECTION_AFTER}\ntrunk ep:\n${TRUNK_EP_AFTER}\ntrunk reg:\n${TRUNK_REG_AFTER}"
+fi
+
+RUNTIME_NEW_BEFORE_RESTART="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show transport ${T20_RENAME_NEW}" 2>&1)"
+if echo "$RUNTIME_NEW_BEFORE_RESTART" | grep -qi "Unable to find"; then
+    ok "runtime NOT falsely reported active before restart" "pjsip show transport ${T20_RENAME_NEW} correctly still 'Unable to find object' -- matches the investigation's proven rename behavior"
+else
+    bad "runtime NOT falsely reported active before restart" "expected 'Unable to find', got:\n${RUNTIME_NEW_BEFORE_RESTART}"
+fi
+
+BADGE_NEW_BEFORE="$(t20_runtime_badge "$LIST_HTML" "$T20_RENAME_NEW")"
+if [ "$BADGE_NEW_BEFORE" = "restart_required" ]; then
+    ok "list-page badge shows restart_required, not active, before restart" "the list page never lies about runtime state -- badge=$BADGE_NEW_BEFORE"
+else
+    bad "list-page badge shows restart_required, not active, before restart" "badge=$BADGE_NEW_BEFORE"
+fi
+rm -f "$LIST_HTML"
+
+# --- 47/48. Delete leaves a stale socket; reusing it before restart is never claimed active
+
+log "==> [T20] creating ${T20_DELDIS} (udp 0.0.0.0:5213), then deleting it"
+save_transport add "" "$T20_DELDIS" udp 5213 1
+T20_DELDIS_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='${T20_DELDIS}';")"
+[ "$SAVE_TRANSPORT_HTTPCODE" = "302" ] || stop "creating ${T20_DELDIS} failed (HTTP $SAVE_TRANSPORT_HTTPCODE)"
+
+delete_transport "$T20_DELDIS_ID"
+LIST_HTML="$(t20_list_html)"
+if [ "$DELETE_HTTPCODE" = "302" ] && grep -qi "restart" "$LIST_HTML"; then
+    ok "delete reports restart-required" "HTTP 302, list page shows the restart-required banner naming the stale socket risk"
+else
+    bad "delete reports restart-required" "HTTP=$DELETE_HTTPCODE banner_present=$(grep -ci "restart" "$LIST_HTML")"
+fi
+T20_DELDIS_ID=""
+rm -f "$LIST_HTML"
+
+log "==> [T20] attempting to reuse the just-deleted socket under a new name (${T20_REUSE}, udp 0.0.0.0:5213)"
+save_transport add "" "$T20_REUSE" udp 5213 1
+T20_REUSE_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='${T20_REUSE}';")"
+LIST_HTML="$(t20_list_html)"
+BADGE_REUSE_BEFORE="$(t20_runtime_badge "$LIST_HTML" "$T20_REUSE")"
+if [ "$SAVE_TRANSPORT_HTTPCODE" = "302" ] && grep -qi "could not apply\|previous configuration may still be active" "$LIST_HTML" && [ "$BADGE_REUSE_BEFORE" != "active" ]; then
+    ok "socket reuse before restart is never claimed active" "HTTP 302 (DB save succeeded, no DB-level collision -- ${T20_DELDIS_ID:-the deleted row} is gone), but the apply-failed banner appears and the runtime badge is '$BADGE_REUSE_BEFORE', not 'active'"
+else
+    bad "socket reuse before restart is never claimed active" "HTTP=$SAVE_TRANSPORT_HTTPCODE badge=$BADGE_REUSE_BEFORE banner=$(grep -ci "could not apply" "$LIST_HTML")"
+fi
+rm -f "$LIST_HTML"
+
+# --- 49. Controlled restart -- TEST HARNESS ONLY, never application code --
+
+log "==> [T20] performing a REAL, test-harness-controlled Asterisk restart to prove recovery (docs/tasks/0020-pjsip-transport-runtime-lifecycle.md item 12)"
+$COMPOSE exec -T asterisk asterisk -rx "core restart now" >/dev/null 2>&1
+if t20_wait_for_asterisk; then
+    ok "controlled restart completes" "Asterisk answering the CLI again within 20s"
+else
+    stop "Asterisk did not come back within 20s after the controlled restart -- environment needs manual attention"
+fi
+
+# --- 50. Post-restart: renamed transport active, old name gone -------------
+
+RUNTIME_NEW_AFTER="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show transport ${T20_RENAME_NEW}" 2>&1)"
+RUNTIME_OLD_AFTER="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show transport ${T20_RENAME_OLD}" 2>&1)"
+if echo "$RUNTIME_NEW_AFTER" | grep -q "bind " && echo "$RUNTIME_OLD_AFTER" | grep -qi "Unable to find"; then
+    ok "restart recovery: renamed transport active, old name absent" "${T20_RENAME_NEW} live with the correct bind, ${T20_RENAME_OLD} correctly gone"
+else
+    bad "restart recovery: renamed transport active, old name absent" "new:\n${RUNTIME_NEW_AFTER}\nold:\n${RUNTIME_OLD_AFTER}"
+fi
+LIST_HTML="$(t20_list_html)"
+BADGE_NEW_AFTER="$(t20_runtime_badge "$LIST_HTML" "$T20_RENAME_NEW")"
+if [ "$BADGE_NEW_AFTER" = "active" ]; then
+    ok "list-page badge flips to active after restart" "badge=$BADGE_NEW_AFTER -- the same derived check that correctly said restart_required before now correctly says active, with no persisted flag anywhere"
+else
+    bad "list-page badge flips to active after restart" "badge=$BADGE_NEW_AFTER"
+fi
+rm -f "$LIST_HTML"
+
+# --- 51/52. Post-restart: dependent extension + trunk functionality recovers
+
+RUNTIME_EXT="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show endpoint ${T20_REF_EXT}" 2>&1)"
+if echo "$RUNTIME_EXT" | grep -qE "^ *transport +: ${T20_RENAME_NEW}$"; then
+    ok "dependent extension functionality recovers after restart" "pjsip show endpoint ${T20_REF_EXT} reports transport: ${T20_RENAME_NEW}"
+else
+    bad "dependent extension functionality recovers after restart" "$RUNTIME_EXT"
+fi
+
+RUNTIME_TRUNK_EP="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show endpoint ${T20_TRUNK_OBJ}" 2>&1)"
+if echo "$RUNTIME_TRUNK_EP" | grep -qE "^ *transport +: ${T20_RENAME_NEW}$"; then
+    ok "dependent trunk endpoint functionality recovers after restart" "pjsip show endpoint ${T20_TRUNK_OBJ} reports transport: ${T20_RENAME_NEW}"
+else
+    bad "dependent trunk endpoint functionality recovers after restart" "$RUNTIME_TRUNK_EP"
+fi
+
+# Same command/assertion shape trunk-smoke-test.sh already uses and
+# proves reliable ("outbound registration Registered" -- up to 15s to
+# settle, matching that established convention exactly).
+T20_REG_OK=0
+for _attempt in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+    RUNTIME_TRUNK_REG="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show registrations outbound" 2>&1)"
+    if echo "$RUNTIME_TRUNK_REG" | grep "${T20_TRUNK_OBJ}-registration" | grep -q "Registered"; then
+        T20_REG_OK=1
+        break
+    fi
+    sleep 1
+done
+if [ "$T20_REG_OK" = "1" ]; then
+    ok "dependent trunk outbound registration recovers after restart" "${T20_TRUNK_OBJ}-registration reached Registered again within 15s"
+else
+    bad "dependent trunk outbound registration recovers after restart" "did not reach Registered within 15s:\n$RUNTIME_TRUNK_REG"
+fi
+
+# --- 53. Post-restart: the previously-stuck socket reuse now succeeds ------
+
+RUNTIME_REUSE_AFTER="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show transport ${T20_REUSE}" 2>&1)"
+if echo "$RUNTIME_REUSE_AFTER" | grep -q "bind "; then
+    ok "socket reuse succeeds after restart" "pjsip show transport ${T20_REUSE} now live at 0.0.0.0:5213 -- the exact socket ${T20_DELDIS} left stuck is now free"
+else
+    bad "socket reuse succeeds after restart" "$RUNTIME_REUSE_AFTER"
+fi
+
+# --- 54. Reload-error-masking fix: a genuine per-object failure must not be
+#         replaced by a secondary Zend_Registry exception, and must leave a
+#         useful trace in /var/log/asterisk/full (item 9/16). ---------------
+
+log "==> [T20] triggering a deliberate, malformed transport row to validate the reload-failure-masking fix"
+db_query "INSERT INTO pjsip_transports (name, protocol, bind_address, bind_port, symmetric_transport, allow_reload, is_default, enabled, is_seed) VALUES ('task0020-badproto', 'garbage123', '0.0.0.0', 5299, 0, 1, 0, 1, 0);" >/dev/null
+REGEN_OUTPUT="$(regenerate_all 2>&1)"
+if echo "$REGEN_OUTPUT" | grep -qi "No entry is registered for key 'log'\|Zend_Exception"; then
+    bad "reload failure does not mask as a secondary Zend_Registry exception" "found the exact masking exception this fix removes:\n$(echo "$REGEN_OUTPUT" | grep -i "zend\|log" | head -5)"
+else
+    ok "reload failure does not mask as a secondary Zend_Registry exception" "regenerateAll() completed without the pre-existing 'No entry is registered for key log' exception"
+fi
+ASTERISK_LOG_DETAIL="$($COMPOSE exec -T asterisk grep -c "task0020-badproto" /var/log/asterisk/full 2>/dev/null)"
+if [ "${ASTERISK_LOG_DETAIL:-0}" -gt 0 ]; then
+    ok "useful failure detail exists in /var/log/asterisk/full" "found ${ASTERISK_LOG_DETAIL} log line(s) naming the malformed object -- confirms this class of failure is only ever visible there, never in docker compose logs (investigation §11/§19)"
+else
+    bad "useful failure detail exists in /var/log/asterisk/full" "no log line found naming task0020-badproto"
+fi
+GOOD_TRANSPORT_SURVIVED="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip-transports.conf 2>/dev/null | grep -c "^\[${T20_RENAME_NEW}\]")"
+if [ "$GOOD_TRANSPORT_SURVIVED" -gt 0 ]; then
+    ok "a malformed row does not corrupt generation of everything else" "[${T20_RENAME_NEW}] still present in the regenerated file alongside the malformed row"
+else
+    bad "a malformed row does not corrupt generation of everything else" "[${T20_RENAME_NEW}] missing after regeneration"
+fi
+db_query "DELETE FROM pjsip_transports WHERE name='task0020-badproto';" >/dev/null
+regenerate_all >/dev/null
+
+log "==> [T20] final cleanup"
+# Dependents FIRST -- task0020-rename-new is still explicitly referenced
+# by both the reference extension and the trunk fixture at this point,
+# and PjsipTransportsController::removeAction() correctly blocks
+# deleting a referenced transport (same protection §7 of the
+# investigation already documented) -- attempting the transport deletes
+# before clearing/removing what references them would silently fail
+# every time, exactly as first discovered running this suite twice in a
+# row during implementation.
+if [ -n "$T20_CREATED_TRUNK_ID" ]; then
+    db_query "UPDATE trunks SET transport_id = NULL WHERE id=${T20_CREATED_TRUNK_ID};" >/dev/null 2>&1
+    delete_trunk_fixture "$T20_CREATED_TRUNK_ID" && T20_CREATED_TRUNK_ID=""
+fi
+db_query "UPDATE peers SET transport_id = NULL WHERE name='${T20_REF_EXT}';" >/dev/null 2>&1
+delete_extension "$T20_REF_EXT" && T20_CREATED_EXT=0
+
+delete_transport "$T20_COL_A_ID"; T20_COL_A_ID=""
+delete_transport "$T20_COL_C_ID"; T20_COL_C_ID=""
+delete_transport "$T20_RENAME_ID"; T20_RENAME_ID=""
+delete_transport "$T20_REUSE_ID"; T20_REUSE_ID=""
+
 print_report
 
 if [ "$FAIL" -gt 0 ]; then

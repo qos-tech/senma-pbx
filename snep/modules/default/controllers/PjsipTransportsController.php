@@ -41,7 +41,45 @@ class PjsipTransportsController extends Zend_Controller_Action {
         $this->view->breadcrumb = Snep_Breadcrumb::renderPath(array($this->view->translate("PJSIP Transports")));
 
         $transports = Snep_PjsipTransports_Manager::getAll();
+
+        // TASK-0020 item 6 / investigation §17: runtime-state visibility
+        // derived fresh on every list view -- one `pjsip show transports`
+        // call, cross-referenced against enabled/disabled DB rows. Never
+        // persisted, never inferred from `enabled` alone (the investigation
+        // proved enabled=1 is NOT sufficient proof of an active runtime
+        // object -- a collision, or a rename never followed by a restart,
+        // both leave an enabled=1 row with no live runtime counterpart).
+        $runtimeNames = Snep_PjsipTransportConf::getRuntimeTransportNames();
+        foreach ($transports as &$transport) {
+            $inRuntime = in_array($transport['name'], $runtimeNames, true);
+            if ($transport['enabled']) {
+                // enabled and live -> active. enabled but absent from
+                // Asterisk's own runtime -> exactly the RESTART REQUIRED/
+                // RUNTIME MISMATCH state the investigation's §K/§6/§8
+                // findings prove is real and silent otherwise.
+                $transport['runtime_state'] = $inRuntime ? 'active' : 'restart_required';
+            } else {
+                // disabled, but Asterisk still has it loaded -> the
+                // proven-real "socket may still be bound" case (§9) --
+                // do not claim it is fully gone.
+                $transport['runtime_state'] = $inRuntime ? 'restart_required' : 'disabled';
+            }
+        }
+        unset($transport);
         $this->view->transports = $transports;
+
+        // TASK-0020 items 2-4: surface whatever the last create/edit/
+        // delete on this page determined (see reportApplyResult()) --
+        // FlashMessenger, not a new persistence mechanism (item 21: no
+        // schema change). Already-vendored, standard Zend Framework 1
+        // action helper (snep/lib/Zend/Controller/Action/Helper/
+        // FlashMessenger.php) -- never used elsewhere in this app before,
+        // but exactly the framework's own intended tool for a one-shot,
+        // post-redirect message, so this is not a new pattern invented
+        // for this task.
+        $flash = $this->_helper->FlashMessenger;
+        $this->view->restart_required_messages = $flash->getMessages('restart_required');
+        $this->view->apply_failed_messages = $flash->getMessages('apply_failed');
 
         // TASK-0019 item 12/§0: disabling a referenced transport is a
         // deliberately allowed admin action (unlike delete), but the
@@ -112,6 +150,9 @@ class PjsipTransportsController extends Zend_Controller_Action {
                 Snep_Audit_Manager::SaveLog("Added", 'pjsip_transports', $data['name'], $this->view->translate("Transport") . " " . $data['name']);
 
                 $this->regenerateAll();
+                // TASK-0020: a create has no "before" state to compare
+                // against -- never a rename, never a disable transition.
+                $this->reportApplyResult(null, $data);
                 $this->_redirect("pjsip-transports");
             } else {
                 $this->view->error_message = $error;
@@ -154,6 +195,12 @@ class PjsipTransportsController extends Zend_Controller_Action {
                 Snep_Audit_Manager::SaveLog("Updated", 'pjsip_transports', $id, $this->view->translate("Transport") . " " . $data['name']);
 
                 $this->regenerateAll();
+                // TASK-0020: $transport (loaded above, BEFORE this
+                // request's own mutation) is the "before" state --
+                // needed to detect a rename or an enabled->disabled
+                // transition, neither of which the "after" row alone
+                // could reveal.
+                $this->reportApplyResult($transport, $data);
                 $this->_redirect("pjsip-transports");
             } else {
                 $this->view->error_message = $error;
@@ -208,8 +255,81 @@ class PjsipTransportsController extends Zend_Controller_Action {
             Snep_PjsipTransports_Manager::remove($id);
             Snep_Audit_Manager::SaveLog("Deleted", 'pjsip_transports', $id, $this->view->translate("Transport") . " " . $transport['name']);
             $this->regenerateAll();
+            // TASK-0020 item 3 / investigation §8: delete NEVER actually
+            // frees the OS socket via a plain reload -- proven live,
+            // no exception found (unchanged /proc/net/{udp,tcp} inode
+            // before/after; a later transport on the same bind fails
+            // with Asterisk's own "Address already in use"). Unlike a
+            // rename or a disable, there is no "after" row left to run
+            // isRuntimeActive() against, so this is unconditional, exactly
+            // like the rename case.
+            $flash = $this->_helper->FlashMessenger;
+            $flash->setNamespace('restart_required');
+            $flash->addMessage($this->view->translate("Transport '%s' removed. Its previous socket may remain reserved until Asterisk is restarted -- until then, the same address/port cannot be reused by another transport.", $transport['name']));
             $this->_redirect("pjsip-transports");
         }
+    }
+
+    /**
+     * reportApplyResult - TASK-0020 items 2-4: after a create/edit's own
+     * regenerateAll() has already run, determine and report which of
+     * the three states (docs/tasks/0020-pjsip-transport-runtime-lifecycle.md
+     * §1) actually applies -- never let a bare HTTP 302 imply "active"
+     * when the investigation proved that's not always true.
+     *
+     * @param array|false $before the row as it was BEFORE this save
+     *                     (false/null for a create -- nothing to compare)
+     * @param array       $after  the just-persisted column values
+     *                     ($this->buildData()'s output)
+     */
+    protected function reportApplyResult($before, array $after) {
+        $flash = $this->_helper->FlashMessenger;
+
+        $renamed = ($before && $before['name'] !== $after['name']);
+        if ($renamed) {
+            // TASK-0020 investigation §6: renaming ALWAYS left the
+            // transport unreachable under either name until a restart,
+            // with zero exceptions found across every attempt -- this is
+            // an unconditional rule, not a "maybe," so it is reported
+            // unconditionally too.
+            $flash->setNamespace('restart_required');
+            $flash->addMessage($this->view->translate("Configuration saved. Asterisk restart required for the transport to become active under its new name ('%s').", $after['name']));
+            return;
+        }
+
+        $wasEnabled = $before ? (bool) $before['enabled'] : false;
+        $nowEnabled = (bool) $after['enabled'];
+        if ($wasEnabled && !$nowEnabled) {
+            // TASK-0020 investigation §9: disabling was proven to behave
+            // exactly like delete at the socket level -- the object
+            // disappears from Asterisk's own bookkeeping, but the OS
+            // socket was proven to stay bound (unchanged /proc/net
+            // inode across disable+re-enable). Only fires on the actual
+            // transition, not on every save of an already-disabled row
+            // (nothing new happened in that case -- see the docblock on
+            // the disabled-and-staying-disabled branch below).
+            $flash->setNamespace('restart_required');
+            $flash->addMessage($this->view->translate("Configuration saved. Transport '%s' is now disabled, but its previous socket may remain in use until Asterisk is restarted.", $after['name']));
+            return;
+        }
+
+        if (!$nowEnabled) {
+            // Created disabled, or edited while already disabled and
+            // staying that way (e.g. the seeded wss placeholder) --
+            // nothing to verify, this is the expected, intentionally
+            // inert state, not a failure of anything.
+            return;
+        }
+
+        // TASK-0020 item 4: never trust HTTP 302 / config generation /
+        // AMI command submission / "reloaded successfully" as proof of
+        // anything -- ask Asterisk directly, by name.
+        if (Snep_PjsipTransportConf::isRuntimeActive($after['name'], $after['bind_address'], $after['bind_port'])) {
+            return; // ACTIVE -- matches the existing, already-correct silent-redirect behavior
+        }
+
+        $flash->setNamespace('apply_failed');
+        $flash->addMessage($this->view->translate("Configuration saved, but Asterisk could not apply it (the address/port may already be in use by another transport). The previous configuration may still be active."));
     }
 
     /**
@@ -232,6 +352,19 @@ class PjsipTransportsController extends Zend_Controller_Action {
         }
         if (!Snep_PjsipTransports_Manager::validatePort($post['bind_port']) || $post['bind_port'] === '') {
             return $this->view->translate("Invalid bind port.");
+        }
+        // TASK-0020 item 1: server-side is the ONLY authority here (per
+        // the task's own explicit instruction) -- reject a collision
+        // BEFORE any DB/config mutation, using the exact socket-identity
+        // semantics the investigation proved live (protocol-family +
+        // exact bind_address + bind_port; checked against every other
+        // row regardless of enabled/disabled, since a disabled row's
+        // socket was proven to stay silently bound). Never rely on
+        // Asterisk's own log as the validation mechanism -- this must
+        // catch it before Asterisk ever sees the config.
+        $collision = Snep_PjsipTransports_Manager::findCollision($post['protocol'], $post['bind_address'], $post['bind_port'], $editingId);
+        if ($collision) {
+            return $this->view->translate("This protocol/address/port is already used by transport '%s'. Choose a different bind address, port, or protocol.", $collision['name']);
         }
         if (!Snep_PjsipTransports_Manager::validateIpOrHostname($post['domain'])) {
             return $this->view->translate("Invalid domain.");

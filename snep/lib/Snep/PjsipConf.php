@@ -360,6 +360,14 @@ class Snep_PjsipConf {
      * rather than silently swallowed.
      *
      * @throws PBX_Exception_IO if the reload did not report success.
+     *
+     * TASK-0020 item 9 / investigation §11: was Zend_Registry::get('log'),
+     * which is NOT registered in this application's real HTTP request
+     * bootstrap -- confirmed live (TASK-0019) that hitting this line
+     * throws an unrelated "No entry is registered for key 'log'"
+     * Zend_Exception, masking whatever the real reload failure was.
+     * error_log() has no such dependency (same fix TASK-0019 already
+     * applied to this class's own disabled-transport skip path above).
      */
     private static function reload(Zend_View $view) {
         $asteriskAmi = PBX_Asterisk_AMI::getInstance();
@@ -368,8 +376,7 @@ class Snep_PjsipConf {
         $data = isset($result['data']) ? $result['data'] : '';
 
         if (stripos($data, 'reloaded successfully') === false) {
-            $log = Zend_Registry::get('log');
-            $log->err("Snep_PjsipConf: 'module reload res_pjsip.so' did not report success: " . $data);
+            error_log("Snep_PjsipConf: 'module reload res_pjsip.so' did not report success: " . $data);
             throw new PBX_Exception_IO($view->translate("Failed to reload Asterisk PJSIP configuration: %s", $data));
         }
     }
