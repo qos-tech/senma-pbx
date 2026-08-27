@@ -236,7 +236,12 @@ class ExtensionsController extends Zend_Controller_Action {
           "cancallforward" => "",
           "authenticate" => 0);
           $extension['qualify'] = 'yes';
+          // TASK-0019: no existing extension to preserve a stale
+          // reference for -- a fresh add always offers exactly the
+          // currently-enabled transports plus Automatic.
+          $extension['transport_id'] = '';
           $this->view->extension = $extension;
+          $this->view->transports = Snep_PjsipTransports_Manager::getEnabled();
 
           $this->renderScript( $this->getRequest()->getControllerName().'/addedit.phtml' );
 
@@ -287,6 +292,12 @@ class ExtensionsController extends Zend_Controller_Action {
             };
 
             $this->view->extension = $exten ;
+            // TASK-0019: item 3's edit-pre-select requirement -- includes
+            // the currently-persisted transport even if it has since been
+            // disabled (flagged, see getSelectableWithCurrent()'s own
+            // docblock), so this <select> always reflects what's actually
+            // saved instead of silently defaulting to its first option.
+            $this->view->transports = Snep_PjsipTransports_Manager::getSelectableWithCurrent($exten['transport_id']);
 
             // Groups
             $this->view->pickupGroups = $this->pickupGroups;
@@ -583,6 +594,27 @@ class ExtensionsController extends Zend_Controller_Action {
             $directmedia = $formData["directmedia"];
             $callLimit = $formData["calllimit"];
 
+            // TASK-0019: transport_id is a PJSIP-only concept -- every
+            // other technology must persist NULL regardless of what a
+            // stale/hidden form field might carry (the selector is only
+            // ever rendered, and only ever meant to be read, for
+            // technology=pjsip). Validated here (exists + enabled-unless-
+            // unchanged, see Snep_PjsipTransports_Manager::validateSelection()'s
+            // own docblock for the "unless unchanged" reasoning) rather
+            // than left for Snep_PjsipConf to discover at generation time.
+            $transportId = null;
+            if ($techType === 'pjsip' && isset($formData['transport_id']) && $formData['transport_id'] !== '') {
+              $transportId = (int) $formData['transport_id'];
+              $currentTransportId = ($update && isset($resultGetId['transport_id'])) ? $resultGetId['transport_id'] : null;
+              $reason = Snep_PjsipTransports_Manager::validateSelection($transportId, $currentTransportId);
+              if ($reason === 'not_found') {
+                return $this->view->translate('Selected PJSIP transport does not exist.');
+              } else if ($reason === 'disabled') {
+                return $this->view->translate('Selected PJSIP transport is disabled and cannot be newly assigned.');
+              }
+            }
+            $transportIdSql = ($transportId === null) ? "NULL" : $transportId;
+
             if ($techType == 'sip' || $techType == 'iax2' || $techType == 'pjsip') {
               $nat_types = array('no','comedia','force_rport','auto_comedia','auto_force_rport');
               $nat = "" ;
@@ -728,7 +760,13 @@ class ExtensionsController extends Zend_Controller_Action {
               $sql.= "usa_vc='$advVoiceMail',pickupgroup=$extenPickGrp,callgroup='$extenPickGrp',";
               $sql.= "nat='$nat',canal='$channel', authenticate=$advPadLock, ";
               $sql.= "`directmedia`='$directmedia',";
-              $sql.= "time_total=$advTimeTotal, time_chargeby='$advCtrlType', cancallforward='$advCancallforward', blf='$blf'";
+              $sql.= "time_total=$advTimeTotal, time_chargeby='$advCtrlType', cancallforward='$advCancallforward', blf='$blf',";
+              // TASK-0019: written explicitly on every UPDATE, including
+              // the literal NULL case -- this UPDATE is a hand-built
+              // column allow-list, so omitting transport_id when
+              // switching EXPLICIT->AUTO would silently preserve the old
+              // explicit value while the UI claims Automatic was saved.
+              $sql.= "transport_id=$transportIdSql";
               $sql.= "  WHERE id=$idExten";
             } else {
               $sql = "INSERT INTO peers (";
@@ -737,14 +775,18 @@ class ExtensionsController extends Zend_Controller_Action {
               $sql.= "dtmfmode,email,`call-limit`,incominglimit,";
               $sql.= "outgoinglimit, usa_vc, pickupgroup, canal,nat,peer_type, authenticate,";
               $sql.= "trunk, callgroup, time_total, cancallforward, directmedia, ";
-              $sql.= "time_chargeby, blf " . $sqlFieldsExten;
+              // TASK-0019: transport_id always written explicitly (NULL
+              // for AUTO, same reasoning as the UPDATE branch above) --
+              // never omitted, so a fresh non-PJSIP extension is
+              // unambiguously AUTO from the moment it's created.
+              $sql.= "time_chargeby, blf, transport_id " . $sqlFieldsExten;
               $sql.= ") values (";
               $sql.= "'$exten','$extenPass','$extenName','$context','$exten','$qualify',";
               $sql.= "'$secret','$type','$allow','$exten','$fullcontact',";
               $sql.= "'$dtmfmode','$advEmail','$callLimit','1',";
               $sql.= "'1', '$advVoiceMail', $extenPickGrp ,'$channel','$nat', '$peerType',$advPadLock,";
               $sql.= "'no','$extenPickGrp', $advTimeTotal, '$advCancallforward', '$directmedia', ";
-              $sql.= "'$advCtrlType', '$blf' " . $sqlDefaultValues;
+              $sql.= "'$advCtrlType', '$blf', $transportIdSql " . $sqlDefaultValues;
               $sql.= ")";
             }
 

@@ -214,6 +214,27 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
           </div>
         </div>
 
+        <!-- TASK-0019: PJSIP-only transport selection. One selector
+             drives BOTH the generated endpoint AND registration object
+             (Snep_PjsipTrunkConf::renderTrunk() resolves transport_id
+             once) -- see
+             docs/tasks/0019-pjsip-transport-selection-ux.md. Hidden for
+             non-PJSIP technologies via showDiv() below. -->
+        <div class="form-group" id="trunk_transport_group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("PJSIP Transport");?></label>
+          <div class="col-sm-6">
+            <select class="form-control" name="transport_id">
+              <option value="" <?php echo ($this->trunk['transport_id'] === '' || $this->trunk['transport_id'] === null) ? "selected" : ""; ?>><?php echo $this->translate("Automatic (Asterisk selects a compatible transport)");?></option>
+              <?php foreach ($this->transports as $transport): ?>
+                <option value="<?php echo $transport['id']; ?>" <?php echo ((string) $transport['id'] === (string) $this->trunk['transport_id']) ? "selected" : ""; ?>>
+                  <?php echo $this->escape($transport['name']); ?><?php echo $transport['is_default'] ? ' (' . $this->translate('default') . ')' : ''; ?><?php echo !empty($transport['stale_disabled']) ? ' -- ' . $this->translate('disabled, please pick another option') : ''; ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            <span class="help-block"><?php echo $this->translate("Applies to both the endpoint and the outbound registration. Automatic lets Asterisk pick a compatible transport on its own -- this is NOT the same as the 'default' transport shown on the Transports page.");?></span>
+          </div>
+        </div>
+
         <!-- TASK-0015: not a flag translation, no PJSIP equivalent (docs/tasks/0014-pjsip-trunk-provisioning-architecture.md §3) -- hidden via showDiv() for technology=pjsip. -->
         <div class="form-group" id="trunk_insecure_group">
           <label class="col-sm-3 control-label"><?php echo $this->translate("Insecure");?></label>
@@ -532,6 +553,8 @@ function showDiv(div){
   document.getElementById("trunk_type_group").className = isPjsip ? "invisible" : "visible";
   document.getElementById("trunk_insecure_group").className = isPjsip ? "invisible" : "visible";
   document.getElementById("trunk_calllimit_group").className = isPjsip ? "invisible" : "visible";
+  // TASK-0019: transport selection has no chan_sip/IAX2/etc. equivalent.
+  document.getElementById("trunk_transport_group").className = isPjsip ? "visible" : "invisible";
 
   if(div == 'sip' || div == 'iax2' || div == 'pjsip'){
 

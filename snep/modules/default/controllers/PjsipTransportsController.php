@@ -40,7 +40,29 @@ class PjsipTransportsController extends Zend_Controller_Action {
     public function indexAction() {
         $this->view->breadcrumb = Snep_Breadcrumb::renderPath(array($this->view->translate("PJSIP Transports")));
 
-        $this->view->transports = Snep_PjsipTransports_Manager::getAll();
+        $transports = Snep_PjsipTransports_Manager::getAll();
+        $this->view->transports = $transports;
+
+        // TASK-0019 item 12/§0: disabling a referenced transport is a
+        // deliberately allowed admin action (unlike delete), but the
+        // resulting invalid state (a dangling transport=<name> reference
+        // the generator will now refuse to emit -- see
+        // Snep_PjsipConf::resolveTransportName()) must be surfaced
+        // clearly, not just logged. Reusing the exact same
+        // view->alert_message convention ExtensionsController::indexAction()
+        // already uses for its own weak-password warning.
+        $staleWarnings = array();
+        foreach ($transports as $transport) {
+            if (!$transport['enabled'] && $transport['usage_count'] > 0) {
+                $staleWarnings[] = $this->view->translate(
+                    "Transport %s is disabled but still explicitly referenced by %s object(s). Affected extensions/trunks will NOT be generated until this is fixed.",
+                    $transport['name'], $transport['usage_count']
+                );
+            }
+        }
+        if (count($staleWarnings) > 0) {
+            $this->view->alert_message = implode("<br />\n", $staleWarnings);
+        }
         $this->view->url = "{$this->getFrontController()->getBaseUrl()}/{$this->getRequest()->getControllerName()}";
 
         $config = Zend_Registry::get('config');

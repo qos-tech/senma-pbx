@@ -2,6 +2,9 @@
   <div class="tab-content">
     <div class="tab-pane active" id="demo">
       <div class="panel panel-default">
+        <?php if ($this->alert_message): ?>
+          <div class="alert alert-warning"><?php echo $this->alert_message; ?></div>
+        <?php endif; ?>
         <div class="panel-heading">
           <div class="snep-body-top-buttons">
             <a class="btn btn-add" href="<?php echo $this->url ?>/add/ " role="button"><?php echo $this->translate("Add Transport")?></a>

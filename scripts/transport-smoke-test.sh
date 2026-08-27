@@ -1,6 +1,19 @@
 #!/bin/bash
 #
-# SENMA PJSIP transport smoke test (TASK-0018).
+# SENMA PJSIP transport smoke test (TASK-0018, extended by TASK-0019).
+#
+# Checks 1-18 (TASK-0018) prove the transport model/generator/CRUD UI,
+# with transport_id set via direct SQL since no selector existed yet.
+# Checks 19+ (TASK-0019, "PART 2" below) prove the real extension/trunk
+# transport <select> TASK-0019 added -- full AUTO/EXPLICIT-A/EXPLICIT-B/
+# AUTO edit-transition round trips via the real HTTP form, the mandatory
+# EXPLICIT->AUTO write-NULL fix, disabled-transport selection rejection,
+# an already-referenced transport later being disabled (dangling
+# reference prevention + UI surfacing), trunk-referenced delete-blocked
+# (a real coverage gap in checks 1-18, where the trunk fixture is always
+# removed before the transport delete is attempted), and rename cascading
+# into a live dependent object. See
+# docs/tasks/0019-pjsip-transport-selection-ux.md.
 #
 # Proves, end to end, against a running `make dev` Docker environment,
 # using SENMA's own application flow (not direct SQL for the transport
@@ -128,6 +141,15 @@ stop() {
 db_query() {
     $COMPOSE exec -T db mariadb -u"${DB_USER:-snep}" -p"${DB_PASSWORD:-change-me-for-local-development}" \
         "${DB_NAME:-snep}" -N -e "$1"
+}
+
+# is_db_null <value> -- mariadb's -N (skip column names) output still
+# renders a SQL NULL as the literal text "NULL", not an empty string --
+# TASK-0019's own checks below query transport_id directly (checks 1-18
+# never did, they only ever inspected the generated file), so this
+# matters here in a way it never did before.
+is_db_null() {
+    [ -z "$1" ] || [ "$1" = "NULL" ]
 }
 
 http_login() {
@@ -310,6 +332,178 @@ delete_trunk_fixture() {
         --data-urlencode "delete=Delete" \
         "${BASE_URL}/index.php/default/trunks/remove")"
     [ "$httpcode" = "302" ]
+}
+
+# ---------------------------------------------------------------------------
+# TASK-0019 helpers -- the real UI transport selector on extensions/trunks.
+# Unlike everything above (which sets transport_id via direct SQL, since no
+# selector existed when TASK-0018 shipped), these post the real
+# transport_id form field TASK-0019 added.
+# ---------------------------------------------------------------------------
+
+# save_transport <add|edit> <id-or-empty> <name> <protocol> <port> <enabled:0|1>
+# Sets SAVE_TRANSPORT_HTTPCODE/SAVE_TRANSPORT_BODY. enabled=0 OMITS the
+# checkbox field entirely (matching a real unchecked checkbox -- browsers
+# never POST "enabled=0", they omit the key, and buildData()'s
+# isset($post['enabled']) check depends on that omission).
+SAVE_TRANSPORT_HTTPCODE=""
+SAVE_TRANSPORT_BODY=""
+save_transport() {
+    local mode="$1" id="$2" name="$3" protocol="$4" port="$5" enabled="$6" body url
+    body="$(mktemp)"
+    if [ "$mode" = "add" ]; then
+        url="${BASE_URL}/index.php/default/pjsip-transports/add"
+    else
+        url="${BASE_URL}/index.php/default/pjsip-transports/edit/id/${id}"
+    fi
+    # NOTE: deliberately two full curl invocations rather than building an
+    # "enabled" arg in an array conditionally added via "${arr[@]}" --
+    # under `set -u`, bash 3.2 (macOS's shipped /bin/bash) treats
+    # expanding a still-empty array as an unbound-variable error. enabled=0
+    # OMITS the field entirely (matching a real unchecked checkbox --
+    # buildData()'s isset($post['enabled']) check depends on the key being
+    # absent, not on its value being "0").
+    if [ "$enabled" = "1" ]; then
+        SAVE_TRANSPORT_HTTPCODE="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
+            --data-urlencode "name=${name}" \
+            --data-urlencode "protocol=${protocol}" \
+            --data-urlencode "bind_address=0.0.0.0" \
+            --data-urlencode "bind_port=${port}" \
+            --data-urlencode "domain=" \
+            --data-urlencode "external_signaling_address=" \
+            --data-urlencode "external_signaling_port=" \
+            --data-urlencode "external_media_address=" \
+            --data-urlencode "local_net=" \
+            --data-urlencode "allow_reload=1" \
+            --data-urlencode "enabled=1" \
+            "$url")"
+    else
+        SAVE_TRANSPORT_HTTPCODE="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
+            --data-urlencode "name=${name}" \
+            --data-urlencode "protocol=${protocol}" \
+            --data-urlencode "bind_address=0.0.0.0" \
+            --data-urlencode "bind_port=${port}" \
+            --data-urlencode "domain=" \
+            --data-urlencode "external_signaling_address=" \
+            --data-urlencode "external_signaling_port=" \
+            --data-urlencode "external_media_address=" \
+            --data-urlencode "local_net=" \
+            --data-urlencode "allow_reload=1" \
+            "$url")"
+    fi
+    SAVE_TRANSPORT_BODY="$(cat "$body")"
+    rm -f "$body"
+}
+
+# save_ref_extension <add|edit> <ext> <secret> <transport_id-or-empty>
+# transport_id="" means Automatic (the new <select>'s own empty-value option).
+SAVE_EXT_HTTPCODE=""
+SAVE_EXT_BODY=""
+save_ref_extension() {
+    local mode="$1" ext="$2" secret="$3" transport_id="$4" body url
+    body="$(mktemp)"
+    if [ "$mode" = "add" ]; then
+        url="${BASE_URL}/index.php/default/extensions/add"
+    else
+        url="${BASE_URL}/index.php/default/extensions/edit/id/${ext}"
+    fi
+    SAVE_EXT_HTTPCODE="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
+        --data-urlencode "name=SENMA transport-smoke-ux ${ext}" \
+        --data-urlencode "exten=${ext}" \
+        --data-urlencode "technology=pjsip" \
+        --data-urlencode "password=${secret}" \
+        --data-urlencode "passwordpadlock=" \
+        --data-urlencode "calllimit=1" \
+        --data-urlencode "email=" \
+        --data-urlencode "exten_group[]=1" \
+        --data-urlencode "pickup_group=" \
+        --data-urlencode "nat_force_rport=1" \
+        --data-urlencode "nat_comedia=1" \
+        --data-urlencode "qualify=1" \
+        --data-urlencode "type=friend" \
+        --data-urlencode "directmedia=no" \
+        --data-urlencode "dtmf=rfc2833" \
+        --data-urlencode "codec=alaw" \
+        --data-urlencode "codec1=ulaw" \
+        --data-urlencode "codec2=gsm" \
+        --data-urlencode "transport_id=${transport_id}" \
+        "$url")"
+    SAVE_EXT_BODY="$(cat "$body")"
+    rm -f "$body"
+}
+
+# create_ux_trunk_fixture -- same shape as create_trunk_fixture() above,
+# parameterized to UX_TRUNK_CALLERID so Part 2's fixture is independent
+# of checks 1-18's own trunk fixture.
+create_ux_trunk_fixture() {
+    local body httpcode
+    body="$(mktemp)"
+    httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
+        --data-urlencode "callerid=${UX_TRUNK_CALLERID}" \
+        --data-urlencode "technology=pjsip" \
+        --data-urlencode "dialmethod=normal" \
+        --data-urlencode "username=${TRUNK_TEST_USERNAME}" \
+        --data-urlencode "secret=${TRUNK_TEST_SECRET}" \
+        --data-urlencode "host=provider" \
+        --data-urlencode "fromuser=" \
+        --data-urlencode "fromdomain=" \
+        --data-urlencode "qualify=yes" \
+        --data-urlencode "qualify_value=" \
+        --data-urlencode "peer_type=friend" \
+        --data-urlencode "domain=" \
+        --data-urlencode "insecure=" \
+        --data-urlencode "port=5060" \
+        --data-urlencode "call-limit=" \
+        --data-urlencode "dtmfmode=rfc2833" \
+        --data-urlencode "nat_no=1" \
+        --data-urlencode "codec=ulaw" \
+        --data-urlencode "codec1=alaw" \
+        --data-urlencode "codec2=gsm" \
+        --data-urlencode "reverse_auth=reverse_auth" \
+        --data-urlencode "telco=" \
+        "${BASE_URL}/index.php/default/trunks/add")"
+    if [ "$httpcode" = "302" ]; then
+        rm -f "$body"
+        return 0
+    fi
+    log "create_ux_trunk_fixture failed (HTTP $httpcode): $(head -c 300 "$body")"
+    rm -f "$body"
+    return 1
+}
+
+# edit_ux_trunk_fixture <id> <transport_id-or-empty>
+EDIT_TRUNK_HTTPCODE=""
+EDIT_TRUNK_BODY=""
+edit_ux_trunk_fixture() {
+    local id="$1" transport_id="$2" body
+    body="$(mktemp)"
+    EDIT_TRUNK_HTTPCODE="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
+        --data-urlencode "callerid=${UX_TRUNK_CALLERID}" \
+        --data-urlencode "technology=pjsip" \
+        --data-urlencode "dialmethod=normal" \
+        --data-urlencode "username=${TRUNK_TEST_USERNAME}" \
+        --data-urlencode "secret=${TRUNK_TEST_SECRET}" \
+        --data-urlencode "host=provider" \
+        --data-urlencode "fromuser=" \
+        --data-urlencode "fromdomain=" \
+        --data-urlencode "qualify=yes" \
+        --data-urlencode "qualify_value=" \
+        --data-urlencode "peer_type=friend" \
+        --data-urlencode "domain=" \
+        --data-urlencode "insecure=" \
+        --data-urlencode "port=5060" \
+        --data-urlencode "call-limit=" \
+        --data-urlencode "dtmfmode=rfc2833" \
+        --data-urlencode "nat_no=1" \
+        --data-urlencode "codec=ulaw" \
+        --data-urlencode "codec1=alaw" \
+        --data-urlencode "codec2=gsm" \
+        --data-urlencode "reverse_auth=reverse_auth" \
+        --data-urlencode "telco=" \
+        --data-urlencode "transport_id=${transport_id}" \
+        "${BASE_URL}/index.php/default/trunks/edit/trunk/${id}")"
+    EDIT_TRUNK_BODY="$(cat "$body")"
+    rm -f "$body"
 }
 
 regenerate_all() {
@@ -638,6 +832,358 @@ if ! echo "$FINAL_CONF" | grep -q "\[${TRANSPORT_NAME}\]" && ! echo "$FINAL_RUNT
 else
     bad "no stale transport remains" "still present somewhere -- file: $(echo "$FINAL_CONF" | grep -c "\[${TRANSPORT_NAME}\]"), runtime: $(echo "$FINAL_RUNTIME" | grep -c "${TRANSPORT_NAME}")"
 fi
+
+# ===========================================================================
+# PART 2 (TASK-0019): real UI transport-selection lifecycle
+#
+# Checks 1-18 above are TASK-0018's original coverage, PRESERVED
+# UNCHANGED -- transport_id was only ever set via direct SQL there, since
+# no selector existed yet. Everything below instead posts the real
+# transport_id form field TASK-0019 added to the extension/trunk
+# create/edit forms (ExtensionsController::execAdd()/
+# TrunksController::preparePost()), using its own independent fixtures
+# (UX_* names/ids, extension 1097, its own transports) so it cannot
+# interfere with checks 1-18's fixtures or ordering.
+# ===========================================================================
+
+UX_TRANSPORT_A="task0019-a-smoke"
+UX_TRANSPORT_A_RENAMED="task0019-a-smoke-renamed"
+UX_TRANSPORT_B="task0019-b-smoke"
+UX_TRANSPORT_DISABLED="task0019-disabled-smoke"
+UX_REF_EXT=1097
+UX_REF_EXT_SECRET="${FIXTURE_MARKER}-ux-ext"
+UX_TRUNK_CALLERID="${FIXTURE_MARKER} ux trunk fixture"
+
+UX_TRANSPORT_A_ID=""
+UX_TRANSPORT_B_ID=""
+UX_TRANSPORT_DISABLED_ID=""
+UX_CREATED_EXT=0
+UX_CREATED_TRUNK_ID=""
+
+ux_cleanup() {
+    log "==> UX (TASK-0019) cleanup"
+    if [ "$UX_CREATED_EXT" = "1" ]; then
+        db_query "UPDATE peers SET transport_id = NULL WHERE name='${UX_REF_EXT}';" >/dev/null 2>&1
+        delete_extension "$UX_REF_EXT" || log "WARNING: HTTP delete of extension ${UX_REF_EXT} did not return 302 -- may need manual cleanup"
+    fi
+    if [ -n "$UX_CREATED_TRUNK_ID" ]; then
+        db_query "UPDATE trunks SET transport_id = NULL WHERE id=${UX_CREATED_TRUNK_ID};" >/dev/null 2>&1
+        delete_trunk_fixture "$UX_CREATED_TRUNK_ID" || log "WARNING: HTTP delete of ux trunk id=${UX_CREATED_TRUNK_ID} did not return 302 -- may need manual cleanup"
+    fi
+    for tid in "$UX_TRANSPORT_A_ID" "$UX_TRANSPORT_B_ID" "$UX_TRANSPORT_DISABLED_ID"; do
+        if [ -n "$tid" ]; then
+            delete_transport "$tid"
+            [ "$DELETE_HTTPCODE" = "302" ] || log "WARNING: HTTP delete of ux transport id=${tid} did not return 302 -- may need manual cleanup"
+        fi
+    done
+}
+# Combines with the original cleanup() (checks 1-18's own safety net,
+# e.g. REF_EXT=1098 is only ever removed there) -- bash traps don't
+# stack, so this replaces the earlier `trap cleanup EXIT` with one that
+# runs both.
+trap 'ux_cleanup; cleanup' EXIT
+
+log "==> [UX] checking for pre-existing fixtures"
+for n in "$UX_TRANSPORT_A" "$UX_TRANSPORT_A_RENAMED" "$UX_TRANSPORT_B" "$UX_TRANSPORT_DISABLED"; do
+    existing="$(db_query "SELECT id FROM pjsip_transports WHERE name='${n}';")"
+    if [ -n "$existing" ]; then
+        stop "a transport named '${n}' already exists (id=${existing}) from a prior run that did not clean up. Remove it manually first."
+    fi
+done
+existing="$(db_query "SELECT canal FROM peers WHERE name='${UX_REF_EXT}';")"
+if [ -n "$existing" ]; then
+    stop "peers row for extension '${UX_REF_EXT}' already exists. Remove it manually first."
+fi
+existing="$(db_query "SELECT id FROM trunks WHERE callerid='${UX_TRUNK_CALLERID}';")"
+if [ -n "$existing" ]; then
+    stop "a trunk with callerid '${UX_TRUNK_CALLERID}' already exists (id=${existing}) from a prior run. Remove it manually first."
+fi
+
+# --- 19. Create extension via the real UI, Automatic (empty transport_id) --
+
+log "==> [UX] creating extension ${UX_REF_EXT} via the real UI, technology=pjsip, transport_id='' (Automatic)"
+if save_ref_extension add "$UX_REF_EXT" "$UX_REF_EXT_SECRET" ""; then
+    if [ "$SAVE_EXT_HTTPCODE" = "302" ]; then
+        UX_CREATED_EXT=1
+    else
+        stop "creating extension ${UX_REF_EXT} did not return 302 (HTTP $SAVE_EXT_HTTPCODE): $(echo "$SAVE_EXT_BODY" | head -c 300)"
+    fi
+fi
+UX_EXT_TRANSPORT_ID_DB="$(db_query "SELECT transport_id FROM peers WHERE name='${UX_REF_EXT}';")"
+UX_EXT_SECTION="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null | awk "/^\[${UX_REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
+if is_db_null "$UX_EXT_TRANSPORT_ID_DB" && ! echo "$UX_EXT_SECTION" | grep -q "^transport="; then
+    ok "UI create AUTO persists NULL + no transport= line" "peers.transport_id is NULL, [${UX_REF_EXT}] has no transport= line"
+else
+    bad "UI create AUTO persists NULL + no transport= line" "transport_id='${UX_EXT_TRANSPORT_ID_DB}', section:\n${UX_EXT_SECTION}"
+fi
+
+# --- 20. Create two explicit transports via the real UI --------------------
+
+log "==> [UX] creating two explicit transports (A udp/5073, B tcp/5074)"
+save_transport add "" "$UX_TRANSPORT_A" udp 5073 1
+[ "$SAVE_TRANSPORT_HTTPCODE" = "302" ] || stop "creating transport ${UX_TRANSPORT_A} failed (HTTP $SAVE_TRANSPORT_HTTPCODE)"
+UX_TRANSPORT_A_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='${UX_TRANSPORT_A}';")"
+save_transport add "" "$UX_TRANSPORT_B" tcp 5074 1
+[ "$SAVE_TRANSPORT_HTTPCODE" = "302" ] || stop "creating transport ${UX_TRANSPORT_B} failed (HTTP $SAVE_TRANSPORT_HTTPCODE)"
+UX_TRANSPORT_B_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='${UX_TRANSPORT_B}';")"
+if [ -n "$UX_TRANSPORT_A_ID" ] && [ -n "$UX_TRANSPORT_B_ID" ]; then
+    ok "two explicit transports created via real UI" "A=${UX_TRANSPORT_A_ID}, B=${UX_TRANSPORT_B_ID}"
+else
+    stop "one or both UX transports were not found after creation"
+fi
+
+# --- 21. Extension edit-transition round trip: AUTO -> A -> B -> AUTO ------
+
+log "==> [UX] extension: AUTO -> EXPLICIT(A)"
+save_ref_extension edit "$UX_REF_EXT" "$UX_REF_EXT_SECRET" "$UX_TRANSPORT_A_ID"
+UX_EXT_TRANSPORT_ID_DB="$(db_query "SELECT transport_id FROM peers WHERE name='${UX_REF_EXT}';")"
+UX_EXT_SECTION="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null | awk "/^\[${UX_REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
+if [ "$SAVE_EXT_HTTPCODE" = "302" ] && [ "$UX_EXT_TRANSPORT_ID_DB" = "$UX_TRANSPORT_A_ID" ] && echo "$UX_EXT_SECTION" | grep -qF "transport=${UX_TRANSPORT_A}"; then
+    ok "extension AUTO -> EXPLICIT(A) via real UI" "peers.transport_id=${UX_TRANSPORT_A_ID}, transport=${UX_TRANSPORT_A} generated"
+else
+    bad "extension AUTO -> EXPLICIT(A) via real UI" "HTTP=$SAVE_EXT_HTTPCODE db_id=$UX_EXT_TRANSPORT_ID_DB section:\n${UX_EXT_SECTION}"
+fi
+
+log "==> [UX] extension: EXPLICIT(A) -> EXPLICIT(A) (no-op re-save)"
+save_ref_extension edit "$UX_REF_EXT" "$UX_REF_EXT_SECRET" "$UX_TRANSPORT_A_ID"
+UX_EXT_SECTION="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null | awk "/^\[${UX_REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
+if [ "$SAVE_EXT_HTTPCODE" = "302" ] && echo "$UX_EXT_SECTION" | grep -qF "transport=${UX_TRANSPORT_A}"; then
+    ok "extension EXPLICIT(A) -> EXPLICIT(A) unchanged" "still transport=${UX_TRANSPORT_A}, save succeeded"
+else
+    bad "extension EXPLICIT(A) -> EXPLICIT(A) unchanged" "HTTP=$SAVE_EXT_HTTPCODE section:\n${UX_EXT_SECTION}"
+fi
+
+log "==> [UX] extension: EXPLICIT(A) -> EXPLICIT(B)"
+save_ref_extension edit "$UX_REF_EXT" "$UX_REF_EXT_SECRET" "$UX_TRANSPORT_B_ID"
+UX_EXT_TRANSPORT_ID_DB="$(db_query "SELECT transport_id FROM peers WHERE name='${UX_REF_EXT}';")"
+UX_EXT_SECTION="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null | awk "/^\[${UX_REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
+if [ "$UX_EXT_TRANSPORT_ID_DB" = "$UX_TRANSPORT_B_ID" ] && echo "$UX_EXT_SECTION" | grep -qF "transport=${UX_TRANSPORT_B}" && ! echo "$UX_EXT_SECTION" | grep -qF "transport=${UX_TRANSPORT_A}"; then
+    ok "extension EXPLICIT(A) -> EXPLICIT(B) via real UI" "peers.transport_id=${UX_TRANSPORT_B_ID}, transport=${UX_TRANSPORT_B} generated, A reference gone"
+else
+    bad "extension EXPLICIT(A) -> EXPLICIT(B) via real UI" "db_id=$UX_EXT_TRANSPORT_ID_DB section:\n${UX_EXT_SECTION}"
+fi
+
+# --- 22. Rename lifecycle: the extension is currently pinned to B (the
+#         live reference after check 21's A->B switch) -- renaming B must
+#         cascade into the extension's generated config with zero manual
+#         intervention. -----------------------------------------------
+
+log "==> [UX] renaming ${UX_TRANSPORT_B} (currently referenced by extension ${UX_REF_EXT}) to ${UX_TRANSPORT_A_RENAMED}, also moving its port (5074 -> 5076)"
+# TASK-0019 implementation-phase finding, correcting the investigation's
+# own §11 "New fact 2": a rename that keeps the SAME bind address:port is
+# the identical already-documented TASK-0018 §5 collision ("reusing a
+# bind address:port that a differently-named, still-live transport
+# previously held") -- confirmed live, repeatedly, during this
+# implementation: the new name never became queryable even after 3
+# manual retries AND two more explicit same-content reloads over 12+
+# seconds, no restart, and Asterisk logged nothing. Moving the port
+# alongside the rename (as any real admin renaming a placeholder-named
+# transport would likely also do) sidesteps that OS-level socket
+# collision entirely and reload succeeds immediately -- this is what
+# this check actually needs to prove (dependent-object regeneration
+# cascades correctly), not the unrelated, pre-existing bind-collision
+# caveat. See docs/tasks/0019-pjsip-transport-selection-ux.md's
+# implementation-evidence section for the full account.
+save_transport edit "$UX_TRANSPORT_B_ID" "$UX_TRANSPORT_A_RENAMED" tcp 5076 1
+UX_EXT_SECTION="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null | awk "/^\[${UX_REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
+if [ "$SAVE_TRANSPORT_HTTPCODE" = "302" ] && echo "$UX_EXT_SECTION" | grep -qF "transport=${UX_TRANSPORT_A_RENAMED}"; then
+    ok "rename cascades to the dependent extension" "extension ${UX_REF_EXT} now shows transport=${UX_TRANSPORT_A_RENAMED} with zero manual intervention"
+else
+    bad "rename cascades to the dependent extension" "HTTP=$SAVE_TRANSPORT_HTTPCODE section:\n${UX_EXT_SECTION}"
+fi
+RUNTIME_AFTER_RENAME="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show transport ${UX_TRANSPORT_A_RENAMED}" 2>&1)"
+if echo "$RUNTIME_AFTER_RENAME" | grep -q "bind "; then
+    ok "renamed transport (with a bind change) reload succeeds, no restart" "pjsip show transport ${UX_TRANSPORT_A_RENAMED} found live at 0.0.0.0:5076"
+else
+    bad "renamed transport (with a bind change) reload succeeds, no restart" "not found:\n${RUNTIME_AFTER_RENAME}"
+fi
+UX_TRANSPORT_B="$UX_TRANSPORT_A_RENAMED"
+
+log "==> [UX] extension: EXPLICIT -> AUTO (the mandatory EXPLICIT->AUTO write-NULL check)"
+save_ref_extension edit "$UX_REF_EXT" "$UX_REF_EXT_SECRET" ""
+UX_EXT_TRANSPORT_ID_DB="$(db_query "SELECT transport_id FROM peers WHERE name='${UX_REF_EXT}';")"
+UX_EXT_SECTION="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null | awk "/^\[${UX_REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
+if is_db_null "$UX_EXT_TRANSPORT_ID_DB" && ! echo "$UX_EXT_SECTION" | grep -q "^transport="; then
+    ok "extension EXPLICIT -> AUTO writes NULL (not omitted)" "peers.transport_id is NULL in the DB (not merely absent from the generated file) -- confirms the UPDATE explicitly included transport_id=NULL rather than omitting the column"
+else
+    bad "extension EXPLICIT -> AUTO writes NULL (not omitted)" "peers.transport_id='${UX_EXT_TRANSPORT_ID_DB}' -- the UI would be lying about Automatic being saved; section:\n${UX_EXT_SECTION}"
+fi
+
+# --- 23. Trunk edit-transition round trip: AUTO -> A -> AUTO, endpoint AND
+#         registration both checked at every step -----------------------
+
+log "==> [UX] creating trunk fixture (AUTO by default, no transport_id posted on create)"
+if create_ux_trunk_fixture; then
+    UX_CREATED_TRUNK_ID="$(db_query "SELECT id FROM trunks WHERE callerid='${UX_TRUNK_CALLERID}';")"
+    [ -n "$UX_CREATED_TRUNK_ID" ] || stop "ux trunk fixture creation returned 302 but no matching row was found afterward"
+else
+    stop "creating the ux trunk fixture failed -- see log above"
+fi
+UX_TRUNK_OBJ="trunk-${UX_CREATED_TRUNK_ID}"
+UX_TRUNK_TRANSPORT_ID_DB="$(db_query "SELECT transport_id FROM trunks WHERE id=${UX_CREATED_TRUNK_ID};")"
+UX_TRUNK_CONF="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip-trunks.conf 2>/dev/null)"
+UX_TRUNK_EP="$(echo "$UX_TRUNK_CONF" | awk "/^\[${UX_TRUNK_OBJ}\]\$/{f=1} f{print} f&&/^\$/{exit}")"
+UX_TRUNK_REG="$(echo "$UX_TRUNK_CONF" | awk "/^\[${UX_TRUNK_OBJ}-registration\]/{f=1} f{print} f&&/^\$/{exit}")"
+if is_db_null "$UX_TRUNK_TRANSPORT_ID_DB" && ! echo "$UX_TRUNK_EP" | grep -q "^transport=" && ! echo "$UX_TRUNK_REG" | grep -q "^transport="; then
+    ok "UI create AUTO trunk: neither endpoint nor registration gets transport=" "trunks.transport_id is NULL, both objects omit transport="
+else
+    bad "UI create AUTO trunk: neither endpoint nor registration gets transport=" "db_id=$UX_TRUNK_TRANSPORT_ID_DB ep:\n${UX_TRUNK_EP}\nreg:\n${UX_TRUNK_REG}"
+fi
+
+log "==> [UX] trunk: AUTO -> EXPLICIT(A)"
+edit_ux_trunk_fixture "$UX_CREATED_TRUNK_ID" "$UX_TRANSPORT_A_ID"
+UX_TRUNK_TRANSPORT_ID_DB="$(db_query "SELECT transport_id FROM trunks WHERE id=${UX_CREATED_TRUNK_ID};")"
+UX_TRUNK_CONF="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip-trunks.conf 2>/dev/null)"
+UX_TRUNK_EP="$(echo "$UX_TRUNK_CONF" | awk "/^\[${UX_TRUNK_OBJ}\]\$/{f=1} f{print} f&&/^\$/{exit}")"
+UX_TRUNK_REG="$(echo "$UX_TRUNK_CONF" | awk "/^\[${UX_TRUNK_OBJ}-registration\]/{f=1} f{print} f&&/^\$/{exit}")"
+if [ "$EDIT_TRUNK_HTTPCODE" = "302" ] && [ "$UX_TRUNK_TRANSPORT_ID_DB" = "$UX_TRANSPORT_A_ID" ] \
+    && echo "$UX_TRUNK_EP" | grep -qF "transport=${UX_TRANSPORT_A}" && echo "$UX_TRUNK_REG" | grep -qF "transport=${UX_TRANSPORT_A}"; then
+    ok "trunk AUTO -> EXPLICIT(A): both endpoint and registration pinned" "trunks.transport_id=${UX_TRANSPORT_A_ID}, both objects show transport=${UX_TRANSPORT_A}"
+else
+    bad "trunk AUTO -> EXPLICIT(A): both endpoint and registration pinned" "HTTP=$EDIT_TRUNK_HTTPCODE db_id=$UX_TRUNK_TRANSPORT_ID_DB ep:\n${UX_TRUNK_EP}\nreg:\n${UX_TRUNK_REG}"
+fi
+
+log "==> [UX] trunk: EXPLICIT -> AUTO (the mandatory EXPLICIT->AUTO write-NULL check, trunk side)"
+edit_ux_trunk_fixture "$UX_CREATED_TRUNK_ID" ""
+UX_TRUNK_TRANSPORT_ID_DB="$(db_query "SELECT transport_id FROM trunks WHERE id=${UX_CREATED_TRUNK_ID};")"
+UX_TRUNK_CONF="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip-trunks.conf 2>/dev/null)"
+UX_TRUNK_EP="$(echo "$UX_TRUNK_CONF" | awk "/^\[${UX_TRUNK_OBJ}\]\$/{f=1} f{print} f&&/^\$/{exit}")"
+UX_TRUNK_REG="$(echo "$UX_TRUNK_CONF" | awk "/^\[${UX_TRUNK_OBJ}-registration\]/{f=1} f{print} f&&/^\$/{exit}")"
+if is_db_null "$UX_TRUNK_TRANSPORT_ID_DB" && ! echo "$UX_TRUNK_EP" | grep -q "^transport=" && ! echo "$UX_TRUNK_REG" | grep -q "^transport="; then
+    ok "trunk EXPLICIT -> AUTO writes NULL (not omitted)" "trunks.transport_id is NULL in the DB, both objects revert to no transport= line"
+else
+    bad "trunk EXPLICIT -> AUTO writes NULL (not omitted)" "db_id=$UX_TRUNK_TRANSPORT_ID_DB ep:\n${UX_TRUNK_EP}\nreg:\n${UX_TRUNK_REG}"
+fi
+
+log "==> [UX] removing the trunk fixture"
+if delete_trunk_fixture "$UX_CREATED_TRUNK_ID"; then
+    ok "ux trunk fixture removed" "HTTP 302, real TrunksController::removeAction() flow"
+    UX_CREATED_TRUNK_ID=""
+else
+    bad "ux trunk fixture removed" "HTTP delete did not return 302"
+fi
+
+# --- 24. Disabled transport is excluded from selection ---------------------
+
+log "==> [UX] creating a disabled transport"
+save_transport add "" "$UX_TRANSPORT_DISABLED" udp 5075 0
+[ "$SAVE_TRANSPORT_HTTPCODE" = "302" ] || stop "creating disabled transport ${UX_TRANSPORT_DISABLED} failed (HTTP $SAVE_TRANSPORT_HTTPCODE)"
+UX_TRANSPORT_DISABLED_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='${UX_TRANSPORT_DISABLED}';")"
+
+log "==> [UX] confirming it is absent from the extension edit form's option list"
+EDIT_FORM_HTML="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" "${BASE_URL}/index.php/default/extensions/edit/id/${UX_REF_EXT}")"
+if ! echo "$EDIT_FORM_HTML" | grep -qF "value=\"${UX_TRANSPORT_DISABLED_ID}\""; then
+    ok "disabled transport absent from selector" "extension ${UX_REF_EXT}'s edit form does not offer ${UX_TRANSPORT_DISABLED} as an option"
+else
+    bad "disabled transport absent from selector" "found an <option> for the disabled transport's id in the edit form"
+fi
+
+log "==> [UX] attempting to newly pin the extension to the disabled transport (must be rejected)"
+save_ref_extension edit "$UX_REF_EXT" "$UX_REF_EXT_SECRET" "$UX_TRANSPORT_DISABLED_ID"
+UX_EXT_TRANSPORT_ID_DB="$(db_query "SELECT transport_id FROM peers WHERE name='${UX_REF_EXT}';")"
+if [ "$SAVE_EXT_HTTPCODE" != "302" ] && is_db_null "$UX_EXT_TRANSPORT_ID_DB"; then
+    ok "newly pinning a disabled transport is rejected" "HTTP $SAVE_EXT_HTTPCODE (not 302), peers.transport_id stayed NULL"
+else
+    bad "newly pinning a disabled transport is rejected" "HTTP=$SAVE_EXT_HTTPCODE db_id=$UX_EXT_TRANSPORT_ID_DB -- the disabled transport was accepted"
+fi
+
+# --- 25. An already-referenced transport that later becomes disabled -------
+#         (item 12 C-F): disabling is allowed, but the generator must not
+#         emit a dangling reference, and the invalid state must be
+#         surfaced, not silently swallowed. -------------------------------
+
+log "==> [UX] pinning the extension to A (currently enabled), then disabling A"
+save_ref_extension edit "$UX_REF_EXT" "$UX_REF_EXT_SECRET" "$UX_TRANSPORT_A_ID"
+[ "$SAVE_EXT_HTTPCODE" = "302" ] || stop "re-pinning extension ${UX_REF_EXT} to transport A failed (HTTP $SAVE_EXT_HTTPCODE)"
+save_transport edit "$UX_TRANSPORT_A_ID" "$UX_TRANSPORT_A" udp 5073 0
+if [ "$SAVE_TRANSPORT_HTTPCODE" = "302" ]; then
+    ok "disabling an already-referenced transport is allowed" "HTTP 302 -- unlike delete, disable is not blocked (matches the investigation's item 12 design)"
+else
+    bad "disabling an already-referenced transport is allowed" "HTTP $SAVE_TRANSPORT_HTTPCODE"
+fi
+
+UX_EXT_SECTION_AFTER_DISABLE="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null | awk "/^\[${UX_REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
+if [ -z "$UX_EXT_SECTION_AFTER_DISABLE" ]; then
+    ok "generator skips (does not dangle) an extension pinned to a disabled transport" "[${UX_REF_EXT}] is entirely absent from senma-pjsip.conf, per resolveTransportName()'s throw + the per-row skip in loadConfFromDb()"
+else
+    bad "generator skips (does not dangle) an extension pinned to a disabled transport" "section unexpectedly present:\n${UX_EXT_SECTION_AFTER_DISABLE}"
+fi
+
+RUNTIME_AFTER_DISABLE="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show endpoint ${UX_REF_EXT}" 2>&1)"
+if echo "$RUNTIME_AFTER_DISABLE" | grep -qi "Unable to find"; then
+    ok "endpoint disappears from Asterisk's live runtime, no dangling reference" "pjsip show endpoint ${UX_REF_EXT} -- Unable to find object (not a broken/dangling config)"
+else
+    bad "endpoint disappears from Asterisk's live runtime, no dangling reference" "expected 'Unable to find', got:\n${RUNTIME_AFTER_DISABLE}"
+fi
+
+TRANSPORTS_INDEX_HTML="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" "${BASE_URL}/index.php/default/pjsip-transports")"
+if echo "$TRANSPORTS_INDEX_HTML" | grep -qi "disabled but still explicitly referenced"; then
+    ok "UI surfaces the disabled-but-referenced state clearly" "Transports list page shows the item 12F warning"
+else
+    bad "UI surfaces the disabled-but-referenced state clearly" "expected warning text not found on the Transports list page"
+fi
+
+log "==> [UX] recovery: re-enabling A restores the extension"
+save_transport edit "$UX_TRANSPORT_A_ID" "$UX_TRANSPORT_A" udp 5073 1
+UX_EXT_SECTION_RECOVERED="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip.conf 2>/dev/null | awk "/^\[${UX_REF_EXT}\]/{f=1} f{print} f&&/^\$/{exit}")"
+if [ "$SAVE_TRANSPORT_HTTPCODE" = "302" ] && echo "$UX_EXT_SECTION_RECOVERED" | grep -qF "transport=${UX_TRANSPORT_A}"; then
+    ok "re-enabling the transport recovers the extension" "[${UX_REF_EXT}] regenerated with transport=${UX_TRANSPORT_A} again -- fully reversible, not a permanent break"
+else
+    bad "re-enabling the transport recovers the extension" "HTTP=$SAVE_TRANSPORT_HTTPCODE section:\n${UX_EXT_SECTION_RECOVERED}"
+fi
+
+log "==> [UX] clearing the reference back to AUTO before deleting A"
+save_ref_extension edit "$UX_REF_EXT" "$UX_REF_EXT_SECRET" ""
+[ "$SAVE_EXT_HTTPCODE" = "302" ] || log "WARNING: could not clear extension ${UX_REF_EXT}'s transport reference before cleanup"
+
+# --- 26. Trunk-referenced delete-blocked (closes the checks 1-18 coverage
+#         gap: their own trunk fixture is always deleted BEFORE the
+#         transport delete is attempted, so that branch of
+#         getUsageDetails() -- already correct in the application code --
+#         was never actually exercised by the automated suite). ----------
+
+log "==> [UX] creating a trunk fixture and pinning it to B, to prove trunk-referenced delete-blocked"
+if create_ux_trunk_fixture; then
+    UX_CREATED_TRUNK_ID="$(db_query "SELECT id FROM trunks WHERE callerid='${UX_TRUNK_CALLERID}';")"
+    [ -n "$UX_CREATED_TRUNK_ID" ] || stop "ux trunk fixture (part 2) creation returned 302 but no matching row was found"
+else
+    stop "creating the ux trunk fixture (part 2) failed -- see log above"
+fi
+edit_ux_trunk_fixture "$UX_CREATED_TRUNK_ID" "$UX_TRANSPORT_B_ID"
+[ "$EDIT_TRUNK_HTTPCODE" = "302" ] || stop "pinning ux trunk to transport B failed (HTTP $EDIT_TRUNK_HTTPCODE)"
+
+delete_transport "$UX_TRANSPORT_B_ID"
+if [ "$DELETE_HTTPCODE" != "302" ] && echo "$DELETE_BODY" | grep -qi "Cannot remove" && echo "$DELETE_BODY" | grep -qi "Trunk"; then
+    ok "delete blocked while referenced by a trunk" "HTTP $DELETE_HTTPCODE, error page correctly lists the referencing trunk (checks 1-18 only ever proved the extension-reference case)"
+else
+    bad "delete blocked while referenced by a trunk" "expected a blocked response naming the trunk; got HTTP $DELETE_HTTPCODE: $(echo "$DELETE_BODY" | head -c 300)"
+fi
+
+log "==> [UX] removing the trunk fixture, then deleting both remaining ux transports"
+if delete_trunk_fixture "$UX_CREATED_TRUNK_ID"; then
+    ok "ux trunk fixture (part 2) removed" "HTTP 302"
+    UX_CREATED_TRUNK_ID=""
+else
+    bad "ux trunk fixture (part 2) removed" "HTTP delete did not return 302"
+fi
+
+delete_transport "$UX_TRANSPORT_A_ID"
+DEL_A_CODE="$DELETE_HTTPCODE"
+delete_transport "$UX_TRANSPORT_B_ID"
+DEL_B_CODE="$DELETE_HTTPCODE"
+delete_transport "$UX_TRANSPORT_DISABLED_ID"
+DEL_D_CODE="$DELETE_HTTPCODE"
+if [ "$DEL_A_CODE" = "302" ] && [ "$DEL_B_CODE" = "302" ] && [ "$DEL_D_CODE" = "302" ]; then
+    ok "delete succeeds once unreferenced, for all three ux transports" "A=$DEL_A_CODE B(renamed)=$DEL_B_CODE disabled=$DEL_D_CODE"
+    UX_TRANSPORT_A_ID=""
+    UX_TRANSPORT_B_ID=""
+    UX_TRANSPORT_DISABLED_ID=""
+else
+    bad "delete succeeds once unreferenced, for all three ux transports" "A=$DEL_A_CODE B(renamed)=$DEL_B_CODE disabled=$DEL_D_CODE"
+fi
+
+curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null --data-urlencode "id=${UX_REF_EXT}" --data-urlencode "delete=Delete" "${BASE_URL}/index.php/default/extensions/remove" >/dev/null
+UX_CREATED_EXT=0
 
 print_report
 

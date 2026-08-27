@@ -113,6 +113,85 @@ class Snep_PjsipTransports_Manager {
     }
 
     /**
+     * getEnabled - transports valid for NEW explicit selection (TASK-0019
+     * item 4/6: a disabled transport must never be newly pinned by an
+     * extension/trunk, and every selector view pulls from this one
+     * method rather than filtering getAll() itself).
+     */
+    public static function getEnabled() {
+        $db = Zend_Registry::get('db');
+        $select = $db->select()->from('pjsip_transports')->where('enabled = 1')->order('id');
+        return $db->query($select)->fetchAll();
+    }
+
+    /**
+     * getSelectableWithCurrent - the enabled list (for a <select>), plus
+     * the object's own already-persisted transport if it is no longer
+     * enabled. TASK-0019 item 3/4: an edit form must still be able to
+     * show/pre-select a stale disabled reference (flagged via the added
+     * 'stale_disabled' key) instead of a raw HTML <select> silently
+     * falling back to its first <option> because the persisted value
+     * isn't among the rendered ones -- that would make the form lie
+     * about what's actually saved.
+     *
+     * @param int|null $currentTransportId the object's current transport_id, or null
+     * @return array pjsip_transports rows, each with an added boolean 'stale_disabled'
+     */
+    public static function getSelectableWithCurrent($currentTransportId) {
+        $transports = self::getEnabled();
+        foreach ($transports as &$t) {
+            $t['stale_disabled'] = false;
+        }
+        unset($t);
+
+        if ($currentTransportId !== null && $currentTransportId !== '') {
+            $found = false;
+            foreach ($transports as $t) {
+                if ((int) $t['id'] === (int) $currentTransportId) {
+                    $found = true;
+                    break;
+                }
+            }
+            if (!$found) {
+                $current = self::get($currentTransportId);
+                if ($current) {
+                    $current['stale_disabled'] = true;
+                    $transports[] = $current;
+                }
+            }
+        }
+
+        return $transports;
+    }
+
+    /**
+     * validateSelection - TASK-0019 item 4: may $transportId be
+     * persisted as an explicit pin right now? It must exist, and --
+     * unless it is simply being left unchanged from what this exact
+     * object already had ("newly pinned" is the operative word in the
+     * product requirement, not "currently pinned") -- it must be
+     * enabled. Translation-agnostic on purpose, matching this class's
+     * existing validators (validateName()/validateProtocol()/...) --
+     * callers translate the returned reason themselves.
+     *
+     * @param int      $transportId
+     * @param int|null $currentTransportId the object's own already-persisted value, or null
+     * @return string|null 'not_found', 'disabled', or null if valid
+     */
+    public static function validateSelection($transportId, $currentTransportId = null) {
+        $transport = self::get($transportId);
+        if (!$transport) {
+            return 'not_found';
+        }
+        $unchanged = ($currentTransportId !== null && $currentTransportId !== ''
+            && (int) $currentTransportId === (int) $transportId);
+        if (!$transport['enabled'] && !$unchanged) {
+            return 'disabled';
+        }
+        return null;
+    }
+
+    /**
      * getDefault - the transport currently marked is_default.
      *
      * TASK-0018 correction: NO generator consumes this anymore.

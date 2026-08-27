@@ -131,7 +131,18 @@ class Snep_PjsipTrunkConf {
                 // trunk behind it.
                 continue;
             }
-            $sections .= self::renderTrunk($peer, $trunk);
+            // TASK-0019: same per-object skip-and-log discipline as
+            // Snep_PjsipConf::loadConfFromDb() -- a trunk pinned to a
+            // since-disabled transport must not block every other
+            // trunk's provisioning. See
+            // Snep_PjsipConf::resolveTransportName()'s own docblock.
+            try {
+                $sections .= self::renderTrunk($peer, $trunk);
+            } catch (PBX_Exception_NotFound $ex) {
+                // error_log(), not Zend_Registry::get('log') -- see the
+                // identical comment in Snep_PjsipConf::loadConfFromDb().
+                error_log("Snep_PjsipTrunkConf: skipping trunk '{$peer['name']}' -- " . $ex->getMessage());
+            }
         }
 
         $content = $header . $sections;

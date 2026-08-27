@@ -103,7 +103,26 @@ class Snep_PjsipConf {
         $sections = "\n";
 
         foreach ($peer_data as $peer) {
-            $sections .= self::renderExtension($peer);
+            // TASK-0019: a single extension pinned to a transport that
+            // was since disabled must not take down provisioning for
+            // every other extension -- skip just this one row (logged,
+            // not silent) rather than let the whole file write fail.
+            // See resolveTransportName()'s own docblock.
+            try {
+                $sections .= self::renderExtension($peer);
+            } catch (PBX_Exception_NotFound $ex) {
+                // error_log(), not Zend_Registry::get('log') -- that key
+                // is NOT actually registered in this application's real
+                // request bootstrap (confirmed live: hitting this exact
+                // path with Zend_Registry::get('log') produced an
+                // uncaught "No entry is registered for key 'log'" 500,
+                // even though Snep_PjsipConf::reload() elsewhere assumes
+                // it is -- that pre-existing assumption has apparently
+                // just never been exercised in practice). error_log() has
+                // no such dependency and still reaches the same
+                // container log this project's other PHP warnings do.
+                error_log("Snep_PjsipConf: skipping extension '{$peer['name']}' -- " . $ex->getMessage());
+            }
         }
 
         $content = $header . $sections;
@@ -294,7 +313,20 @@ class Snep_PjsipConf {
      *         transport exists -- a real data-integrity problem (the
      *         FK's ON DELETE RESTRICT should make this unreachable
      *         through the application), surfaced loudly rather than
-     *         silently downgraded to AUTO.
+     *         silently downgraded to AUTO. Also thrown (TASK-0019 item 4)
+     *         if the transport exists but is currently disabled: an
+     *         explicit pin to a disabled transport would otherwise
+     *         generate a dangling transport=<name> reference to an
+     *         object that Snep_PjsipTransportConf never actually emits
+     *         (it skips disabled rows) -- callers (loadConfFromDb()
+     *         below, and Snep_PjsipTrunkConf's own loop) catch this
+     *         per-object and skip just that one row rather than let one
+     *         stale reference block every other extension/trunk's
+     *         provisioning. Disabling an already-referenced transport is
+     *         a deliberately allowed admin action (TASK-0019
+     *         investigation §12/docs/tasks/0019-pjsip-transport-selection-ux.md)
+     *         -- this is how the resulting invalid state is surfaced,
+     *         not prevented up front the way delete is.
      *
      * Public: Snep_PjsipTrunkConf reuses this exact method rather than
      * duplicating the resolution logic -- confirmed live (§ this task's
@@ -309,6 +341,9 @@ class Snep_PjsipConf {
         $transport = Snep_PjsipTransports_Manager::get($transportId);
         if (!$transport) {
             throw new PBX_Exception_NotFound("PJSIP transport id $transportId not found (referenced but missing).");
+        }
+        if (!$transport['enabled']) {
+            throw new PBX_Exception_NotFound("PJSIP transport '{$transport['name']}' (id $transportId) is referenced but is currently disabled. Enable it or update the referencing extension/trunk's transport selection.");
         }
         return $transport['name'];
     }

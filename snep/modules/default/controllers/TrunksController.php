@@ -204,6 +204,11 @@ class TrunksController extends Zend_Controller_Action {
       $this->view->telcos = array();
     }
 
+    // TASK-0019: a fresh trunk has no persisted transport_id to
+    // preserve -- offer exactly the currently-enabled transports plus
+    // Automatic.
+    $this->view->transports = Snep_PjsipTransports_Manager::getEnabled();
+
     //Define the action and load form
     $this->view->action = "add" ;
     $this->view->techType = "sip";
@@ -238,6 +243,14 @@ class TrunksController extends Zend_Controller_Action {
 
         // Mount array whith trunk data
         $trunk_data = $this->preparePost();
+        // TASK-0019: preparePost() now returns a translated error string
+        // (mirroring ExtensionsController::execAdd()'s own return-a-
+        // string-on-failure convention) when the posted transport_id is
+        // invalid -- must not fall through to the transaction below.
+        if (is_string($trunk_data)) {
+          $this->_helper->redirector('sneperror','error',null,array('error_message'=>$trunk_data));
+          return;
+        }
         if(isset($_POST['trunk_disabled'])){
           $trunk_data['trunk']["disabled"] = true;
         }
@@ -448,6 +461,11 @@ class TrunksController extends Zend_Controller_Action {
 
       $this->view->boards = $boards;
       $this->view->trunk = $trunk;
+      // TASK-0019: item 2's edit-pre-select requirement -- includes the
+      // currently-persisted transport even if it has since been
+      // disabled (flagged, see
+      // Snep_PjsipTransports_Manager::getSelectableWithCurrent()).
+      $this->view->transports = Snep_PjsipTransports_Manager::getSelectableWithCurrent($trunk['transport_id']);
 
       //Define the action and load form
       $this->view->action = "edit" ;
@@ -476,7 +494,16 @@ class TrunksController extends Zend_Controller_Action {
           // param) -- pass it through so preparePost()'s PJSIP branch
           // can compute the real id_regex directly, no follow-up UPDATE
           // needed (unlike addAction(), where the row doesn't exist yet).
-          $trunk_data = $this->preparePost(null, $idTrunk);
+          // TASK-0019: $trunk['transport_id'] (the row loaded above,
+          // before this POST was applied) is also passed through, so
+          // preparePost() can tell "unchanged" from "newly pinned" when
+          // validating a posted transport_id against §4's disabled-
+          // transport rule.
+          $trunk_data = $this->preparePost(null, $idTrunk, $trunk['transport_id']);
+          if (is_string($trunk_data)) {
+            $this->_helper->redirector('sneperror','error',null,array('error_message'=>$trunk_data));
+            return;
+          }
 
           $db = Snep_Db::getInstance();
           $db->beginTransaction();
@@ -581,7 +608,7 @@ class TrunksController extends Zend_Controller_Action {
     * @param <string> $post
     * @return type
     */
-    protected function preparePost($post = null, $trunkId = null) {
+    protected function preparePost($post = null, $trunkId = null, $currentTransportId = null) {
 
       $post = $post === null ? $_POST : $post;
       $tech = $post['technology'];
@@ -595,7 +622,7 @@ class TrunksController extends Zend_Controller_Action {
       // Only allowed fields for trunks table
       $trunk_fields = array(
         "callerid","type","username","secret","host","dtmfmode","reverse_auth","domain","insecure","map_extensions","dtmf_dial","dtmf_dial_number",
-        "time_total","time_chargeby","time_initial_date","dialmethod","trunktype","context","name","allow","id_regex","channel","technology");
+        "time_total","time_chargeby","time_initial_date","dialmethod","trunktype","context","name","allow","id_regex","channel","technology","transport_id");
 
       // Only allowed fields for peers table
       $ip_fields = array(
@@ -660,6 +687,16 @@ class TrunksController extends Zend_Controller_Action {
     // codecs
     $trunk_data['allow'] = trim(sprintf("%s;%s;%s", $trunk_data['codec'], $trunk_data['codec1'], $trunk_data['codec2']), ";");
 
+    // TASK-0019: transport_id is a PJSIP-only concept -- default to NULL
+    // (AUTO) here so every non-PJSIP technology persists NULL
+    // unconditionally, regardless of what a stale/hidden form field
+    // might carry (the selector is only ever rendered for
+    // technology=pjsip). The PJSIP branch below overwrites this with
+    // the validated posted value, or returns an error string instead of
+    // continuing (mirroring ExtensionsController::execAdd()'s own
+    // return-a-string-on-failure convention).
+    $trunk_data['transport_id'] = null;
+
     if ($trunktype == "SIP" || $trunktype == "IAX2") {
 
       $trunk_data['dialmethod'] = strtoupper($trunk_data['dialmethod']);
@@ -705,6 +742,22 @@ class TrunksController extends Zend_Controller_Action {
       if ($trunkId !== null) {
         $trunk_data['id_regex'] = "PJSIP/trunk-" . $trunkId;
       }
+
+      // TASK-0019: transport selection -- exists + enabled-unless-
+      // unchanged (see Snep_PjsipTransports_Manager::validateSelection()'s
+      // own docblock). One column drives both the generated endpoint AND
+      // registration object identically (Snep_PjsipTrunkConf::renderTrunk()
+      // resolves it once) -- no separate selector needed or added.
+      $postedTransportId = (isset($post['transport_id']) && $post['transport_id'] !== '') ? (int) $post['transport_id'] : null;
+      if ($postedTransportId !== null) {
+        $reason = Snep_PjsipTransports_Manager::validateSelection($postedTransportId, $currentTransportId);
+        if ($reason === 'not_found') {
+          return $this->view->translate('Selected PJSIP transport does not exist.');
+        } else if ($reason === 'disabled') {
+          return $this->view->translate('Selected PJSIP transport is disabled and cannot be newly assigned.');
+        }
+      }
+      $trunk_data['transport_id'] = $postedTransportId;
 
     } else if ($trunktype === "SNEPSIP" || $trunktype === "SNEPIAX2") {
 
