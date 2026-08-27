@@ -127,6 +127,83 @@ class SystemstatusController extends Zend_Controller_Action {
         $this->statusbar_info();
 
         $this->view->indexData = $this->systemInfo ;
+
+        // TASK-0021: restart controls live on this same page (no separate
+        // navigation/layout, per the task's own "one central action, no
+        // duplicate/parallel status system" requirement). See
+        // docs/tasks/0021-asterisk-operational-restart.md.
+        if (empty($_SESSION['snep_restart_csrf_token'])) {
+            $_SESSION['snep_restart_csrf_token'] = bin2hex(random_bytes(32));
+        }
+        $this->view->restart_csrf_token = $_SESSION['snep_restart_csrf_token'];
+        $this->view->active_call_count = Snep_Asterisk_Operations::getActiveCallCount();
+        $this->view->restart_state = Snep_Asterisk_Operations::getRestartState();
+    }
+
+    /**
+     * restartDispatchAction - TASK-0021. POST-only, CSRF-protected,
+     * dispatches an explicit graceful/immediate Asterisk restart via
+     * Snep_Asterisk_Operations and returns promptly (never waits for the
+     * restart itself to finish -- see that class's docblock). Reuses this
+     * controller's existing authentication boundary (Snep_AuthPlugin:
+     * any authenticated SENMA session); see the implementation notes in
+     * docs/tasks/0021-asterisk-operational-restart.md for why no more
+     * granular per-profile permission currently applies to this
+     * controller at all (a pre-existing condition, not introduced here).
+     */
+    public function restartDispatchAction() {
+        $this->_helper->layout()->disableLayout();
+        $this->_helper->viewRenderer->setNoRender();
+        $this->getResponse()->setHeader('Content-Type', 'application/json');
+
+        if (!$this->getRequest()->isPost()) {
+            $this->getResponse()->setHttpResponseCode(405);
+            echo json_encode(array('ok' => false, 'error' => 'POST required'));
+            return;
+        }
+
+        $token = $this->getRequest()->getPost('csrf_token');
+        if (empty($token) || empty($_SESSION['snep_restart_csrf_token']) || !hash_equals($_SESSION['snep_restart_csrf_token'], $token)) {
+            $this->getResponse()->setHttpResponseCode(403);
+            echo json_encode(array('ok' => false, 'error' => 'invalid or missing CSRF token'));
+            return;
+        }
+        // One-shot: consume it, then immediately issue a fresh one so the
+        // same page can still dispatch again (e.g. a failed attempt
+        // followed by a retry) without a full reload.
+        $_SESSION['snep_restart_csrf_token'] = bin2hex(random_bytes(32));
+
+        $mode = $this->getRequest()->getPost('mode');
+        $auth = Zend_Auth::getInstance();
+        $user = $auth->hasIdentity() ? $auth->getIdentity() : 'unknown';
+
+        if ($mode === 'graceful') {
+            $result = Snep_Asterisk_Operations::dispatchGraceful($user);
+        } elseif ($mode === 'now') {
+            $result = Snep_Asterisk_Operations::dispatchNow($user);
+        } else {
+            $this->getResponse()->setHttpResponseCode(400);
+            echo json_encode(array('ok' => false, 'error' => 'invalid mode'));
+            return;
+        }
+
+        echo json_encode(array(
+            'ok' => $result['dispatched'],
+            'result' => $result,
+            'csrf_token' => $_SESSION['snep_restart_csrf_token'],
+        ));
+    }
+
+    /**
+     * restartStatusAction - TASK-0021. GET, read-only, polled by the
+     * System Status page's JS to observe recovery independently of the
+     * dispatch request. Never triggers a restart itself.
+     */
+    public function restartStatusAction() {
+        $this->_helper->layout()->disableLayout();
+        $this->_helper->viewRenderer->setNoRender();
+        $this->getResponse()->setHeader('Content-Type', 'application/json');
+        echo json_encode(Snep_Asterisk_Operations::getRestartState());
     }
 
     /**

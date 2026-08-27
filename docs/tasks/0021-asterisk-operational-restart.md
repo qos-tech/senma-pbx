@@ -2,22 +2,30 @@
 
 ## Status
 
-**Investigation only — not implemented.** No runtime code, views,
-Docker configuration, AMI permissions, or tests were modified during
-this phase. Every finding below comes from reading the current
-committed code (`HEAD` = `518cded`, "fix: make PJSIP transport runtime
-state explicit") and from live experiments against the running `make
-dev` environment: real PHP scripts using the actual `PBX_Asterisk_AMI`
-class over the real AMI TCP channel (port 5038, **not** the
-`asterisk -rx` CLI/manager UNIX socket used throughout TASK-0018/0019/
-0020), a genuine PJSIP call established through two `baresip` test
-containers and hung up deliberately mid-test, and direct log/CLI
-inspection throughout. All test fixtures (extensions 1002/1003,
-baresip containers) were created and removed through SENMA's own real
-HTTP flows; the environment was verified clean afterward (`pjsip show
-transports` shows exactly `udp`/`tcp`, 0 active channels, no leftover
-containers). Stopping here — awaiting approval before any
-implementation.
+**Implemented and validated** — see the implementation section at the
+end of this document for files changed, evidence, and the final
+regression baseline. The investigation below is preserved exactly as
+originally written and approved.
+
+---
+
+## Investigation (approved before implementation)
+
+No runtime code, views, Docker configuration, AMI permissions, or
+tests were modified during this phase. Every finding below comes from
+reading the current committed code (`HEAD` = `518cded`, "fix: make
+PJSIP transport runtime state explicit") and from live experiments
+against the running `make dev` environment: real PHP scripts using the
+actual `PBX_Asterisk_AMI` class over the real AMI TCP channel (port
+5038, **not** the `asterisk -rx` CLI/manager UNIX socket used
+throughout TASK-0018/0019/0020), a genuine PJSIP call established
+through two `baresip` test containers and hung up deliberately
+mid-test, and direct log/CLI inspection throughout. All test fixtures
+(extensions 1002/1003, baresip containers) were created and removed
+through SENMA's own real HTTP flows; the environment was verified
+clean afterward (`pjsip show transports` shows exactly `udp`/`tcp`, 0
+active channels, no leftover containers). Stopping here — awaiting
+approval before any implementation.
 
 Goal: design the smallest safe administrative mechanism for an
 **explicit, operator-initiated** Asterisk restart, primarily to apply
@@ -609,3 +617,367 @@ implementation phase — not started)
 
 STOP after this investigation report. Do not implement until
 explicitly approved.
+
+---
+
+## Implementation (approved, validated)
+
+### Files changed
+
+- `snep/lib/Snep/Asterisk/Operations.php` (new) — `Snep_Asterisk_Operations`,
+  the service class holding every restart/probe mechanic.
+- `snep/modules/default/controllers/SystemstatusController.php` — three
+  new actions (`restartDispatchAction`, `restartStatusAction`) plus a
+  small addition to `indexAction()`; no restart mechanics live in the
+  controller itself, only CSRF/HTTP-method checks and delegation to the
+  service.
+- `snep/modules/default/views/scripts/systemstatus/index.phtml` — one
+  new `statusBlock` (active-call count, current state, two restart
+  buttons, two inline confirmation panels) and one new `<script>` block
+  (bounded polling, dispatch handling). No new page/navigation entry —
+  the control lives on the existing System Status page, per §15/§17.
+- `Makefile` — new `restart-smoke` target, `.PHONY` updated. Depends on
+  `up`, exactly like the other smoke targets.
+- `scripts/restart-smoke-test.sh` (new) — 19 checks across idle
+  graceful, active-call graceful, active-call immediate, and
+  post-restart platform health.
+- This document.
+
+No schema changes. No Docker configuration changes. No AMI permission
+changes. `resources.xml` was **not** touched (see Authorization below).
+
+### Service/class architecture (§8)
+
+`Snep_Asterisk_Operations` is a static-method class, mirroring the
+existing `Snep_PjsipTransports_Manager` convention. It owns every AMI
+detail; the controller only ever calls
+`getActiveCallCount()`/`dispatchGraceful()`/`dispatchNow()`/`getRestartState()`.
+
+The single most consequential design decision, made necessary by a
+finding from live implementation testing (not anticipated in the
+investigation): **every restart/probe exchange uses its own small,
+purpose-built raw-socket AMI client**, never
+`Asterisk_AMI::connect()`/`wait_response()` and never the shared
+`PBX_Asterisk_AMI::getInstance()` singleton for the restart/probe calls
+themselves (the singleton is still used, safely, for the one
+pre-dispatch `getActiveCallCount()` read, when Asterisk is presumed
+healthy — the same assumption every other existing caller already
+makes). This raw client:
+
+- Opens a fresh `fsockopen()` with an explicit connect timeout (its own
+  5th argument).
+- Calls `stream_set_timeout()` immediately, before any blocking read —
+  including the login handshake itself, not just the restart command.
+- Reads AMI blocks itself, replicating the existing "Output:" line
+  accumulation from `Asterisk_AMI::wait_response()` (TASK-0006B
+  framing) so `core show version`/`pjsip show transports`/`odbc show
+  all` output parses identically to how the rest of the codebase
+  already expects it.
+- **Skips unsolicited `Event:` blocks** before treating a block as the
+  answer to a command — see Correction below; this was not anticipated
+  in the investigation and was found only by testing the real
+  implementation.
+
+This satisfies the investigation's own §4/§8 requirement ("a small,
+targeted fix... likely an explicit `stream_set_timeout()`... scoped to
+restart calls only") in the smallest possible way: **zero lines changed
+in `Asterisk_AMI.php` or `PBX_Asterisk_AMI.php`.** Every other existing
+caller of the shared singleton — every `reload()`, every
+`AsteriskInfo::status_asterisk()` call, everything — is completely
+unaffected. No stop condition (§20) was triggered; no generic AMI
+change was needed.
+
+### Correction to the investigation: unsolicited Event blocks
+
+Not predicted during Phase A: the very first live test of the new
+probe code returned `version_ok => false` even though Asterisk was
+fully healthy. Root cause, found by direct instrumentation: Asterisk
+sends an unsolicited `Event: FullyBooted` immediately after a
+successful AMI login on every connection. The first version of the
+raw-socket reader read exactly one block per command sent and assumed
+it was that command's response — so the very next command's reader
+call actually consumed the *stray FullyBooted event* left over from
+login, not the real response to `core show version`. Fixed by having
+the block reader loop, discarding `Event:`-prefixed blocks, until it
+sees a non-event block or times out — the same pattern
+`Asterisk_AMI::wait_response()`'s own `while($type != 'response' &&
+!$timeout)` loop already uses for exactly this reason. Confirmed fixed
+via the same standalone reproduction that first exposed it, then via
+the full `restart-smoke` run.
+
+A second, related correction was needed during implementation:
+`getRestartState()`'s original state logic marked *any* "AMI login
+succeeded but `core show version` hasn't answered yet" condition as
+`RESTART_PENDING` when the dispatched mode was `graceful` — this is
+wrong. A **fresh login succeeding** already proves the old,
+call-blocking process is gone (an actual shutdown-pending lockout fails
+at the `login` stage, never gets past it — see below), so this
+condition is always the ordinary "new process, modules still loading"
+transient, identical for both restart modes. Confirmed live: an idle
+graceful restart briefly and incorrectly reported `RESTART_PENDING` for
+about a second before this fix, purely because `version_ok` lagged
+`login_ok`, with zero active calls involved. Fixed by removing the
+mode-specific branch; `RESTART_PENDING` is now only reachable via the
+genuine login-level lockout signature (stage `banner`/`login` timing
+out, `stage !== 'connect'`).
+
+### Graceful dispatch mechanism (§5)
+
+`dispatchGraceful($user)`:
+1. Reads the current active-call count via the existing singleton
+   (informational — recorded, not used to gate anything, per the
+   investigation's explicit "operator must deliberately choose").
+2. Opens the bounded raw-socket connection, logs in, sends `core
+   restart gracefully`, and reads with a short (3s) timeout budget.
+3. Treats the outcome as follows: a connect/login failure is a real
+   dispatch failure (Asterisk could not be reached at all). A **timeout
+   waiting for the command's own response is the expected, successful
+   shape of this dispatch** — confirmed by both the original
+   investigation and by this implementation's own live testing: a
+   graceful restart with zero active calls also produces no framed
+   response within the 3s budget, because Asterisk does not send one
+   before the caller's read budget elapses regardless of whether calls
+   are active.
+4. Records `{mode, dispatched_at, active_calls_at_dispatch}` in
+   `$_SESSION` (no DB column — see State derivation below) and writes
+   the audit/log entries.
+5. Returns immediately — confirmed via live timing, the whole
+   dispatch call (including the login handshake) completes in
+   **1–3 seconds**, never the 60 seconds the naive
+   `PBX_Asterisk_AMI::getInstance()->Command()` path would have taken.
+
+### Immediate dispatch mechanism (§6)
+
+`dispatchNow($user)` is structurally identical, sending `core restart
+now` instead. Confirmed live: the dispatch call itself still returns
+within the same short budget (Asterisk tears the connection down
+almost immediately either way), and, live-tested twice against a real
+established call, the call was gone (`0 active channels`) by the time
+recovery completed — no special-casing was needed to make immediate
+restart "not wait" for anything; it already doesn't, at the Asterisk
+level.
+
+### Readiness algorithm (§7/§12)
+
+`getRestartState()` combines one bounded probe (`login`, `core show
+version`, `pjsip show transports`, `odbc show all`, in that order, over
+one connection, 2s connect / 2s per-read budget) with the session
+dispatch record to produce one of five states:
+
+- **RUNNING** — full probe healthy. Clears the session dispatch record
+  the first time it's observed healthy after a dispatch, so a later,
+  unrelated status check doesn't keep reporting a stale restart.
+- **RESTART_PENDING** — a `graceful` dispatch exists, and the fresh
+  login itself did not complete (stuck at `banner`/`login`, not
+  `connect`) — the exact CLI/AMI lockout signature confirmed live in
+  both the investigation and this implementation's own `restart-smoke`
+  run (§ below).
+- **RECOVERING** — a dispatch exists, and either the connection was
+  refused outright (the `exec()` process-replacement gap) or login
+  succeeded but the sanity command hasn't answered yet (modules still
+  loading).
+- **ERROR** — a dispatch exists, login and `core show version` both
+  succeeded, but PJSIP and/or ODBC are still not ready — a genuinely
+  unusual, reportable condition distinct from ordinary recovery.
+- **UNAVAILABLE** — no dispatch was ever recorded and the probe fails —
+  Asterisk is down for a reason unrelated to anything SENMA asked for.
+
+Every state is directly distinguishable from live evidence (this
+document's own §1/§4/§5, plus the two corrections above) — no state
+here was invented without a corresponding observed signal.
+
+### Polling behavior (§9)
+
+`index.phtml`'s new script polls `restart-status` every 3 seconds via
+plain jQuery `getJSON`, with an in-flight guard (never more than one
+outstanding poll request), stopping on `RUNNING` or `ERROR` (terminal),
+and hard-stopping after 100 attempts (~5 minutes) with a visible
+"refresh manually" message otherwise. `RESTART_PENDING` and
+`RECOVERING` keep polling indefinitely within that 5-minute ceiling,
+since a graceful restart's wait time is bounded only by call duration,
+not by anything SENMA controls. No request is ever held open waiting
+for Asterisk — every poll is a fresh, independently-bounded HTTP
+request.
+
+### Authorization boundary (§2)
+
+Traced, not redesigned, per the task's own explicit allowance. Two
+plugins currently govern access in this application:
+`Snep_AuthPlugin::preDispatch()` (registered unconditionally in
+`Bootstrap.php`) redirects **any** unauthenticated request to the login
+page, with no exceptions relevant here — this is the boundary that
+actually protects the new actions today. `Snep_PermissionPlugin` (the
+finer-grained, per-profile permission layer) only ever evaluates
+actions named `index`/`add`/`edit`/`remove`/`duplicate`/`multiremove`/
+`multiadd`, and only when
+`Snep_Permission_Manager::checkExistenceCurrentResource()` finds the
+**controller name itself** registered as a `resources.xml` resource id.
+`SystemstatusController` was never registered that way (only a
+same-module resource literally named `inspector` exists, pointing at a
+different URL than the controller actually dispatched), and the new
+action names (`restart-dispatch`, `restart-status`) are outside that
+fixed whitelist regardless. **Concretely: `Snep_PermissionPlugin`
+applies no per-profile check to any action on this controller today,
+restart actions included — this is a pre-existing condition, confirmed
+by reading the plugin's own code and by checking `resources.xml`, not
+introduced by this task.** Every authenticated SENMA user, of any
+profile, can currently reach System Status and, with this
+implementation, its restart controls — identical to how every
+authenticated user could already reach the CPU/RAM/disk data on the
+same page. Documented here per the task's explicit instruction rather
+than fixed, since a real fix would mean redesigning
+`Snep_PermissionPlugin`'s hardcoded action whitelist and resource-name
+matching — out of scope for this task. **This is the single largest
+piece of remaining operational debt from this implementation** (see
+below).
+
+### CSRF design (§3, §10)
+
+A minimal, single-purpose synchronizer token, scoped only to this
+feature: `$_SESSION['snep_restart_csrf_token']`, generated on every
+`indexAction()` render and re-issued in the JSON response after every
+dispatch (so the same page can retry without a full reload).
+`restartDispatchAction()` requires `POST` (returns HTTP 405 on any
+other method, confirmed live) and a matching token via `hash_equals()`
+(returns HTTP 403 on missing/invalid, confirmed live) before doing
+anything else — no AMI call is ever attempted for a request that fails
+either check. `restartStatusAction()` is a plain `GET`, read-only, and
+cannot trigger a restart under any input. No framework-wide CSRF
+mechanism was added, per the task's explicit instruction.
+
+### Failure behavior (§12 of the implementation spec)
+
+- **AMI unreachable before dispatch**: `dispatchGraceful()`/`dispatchNow()`
+  report `dispatched: false` with the failing stage in `detail`; the
+  session dispatch record is not written (nothing to observe).
+- **Invalid/missing CSRF or wrong HTTP method**: rejected before any
+  Asterisk contact is attempted (HTTP 403/405).
+- **Restart command "fails" to produce a response**: treated as the
+  expected shape for a successful dispatch, never as an error — see
+  Graceful/Immediate dispatch above.
+- **Stuck pending (real active calls)**: `RESTART_PENDING`, indefinitely,
+  never silently reinterpreted as a failure — confirmed live for over
+  30 seconds of continuous polling against a real held-open call.
+- **Recovery timeout**: the frontend's bounded polling surfaces this as
+  a "refresh manually" message after 5 minutes; `restart-smoke` itself
+  uses a 30-second budget per case (all four cases completed in well
+  under that in every run).
+- **AMI returns but PJSIP/ODBC unhealthy**: `ERROR`, distinct from
+  `RECOVERING` — not independently reproduced live (every real restart
+  in this environment reached full health together), but the
+  distinction is real and cheap to keep.
+
+### Logging (§11)
+
+`Snep_Asterisk_Operations::logRestart()` calls
+`Snep_Audit_Manager::SaveLog()` (the existing `logs_users`-backed
+mechanism, already used by `PjsipTransportsController`) with the
+restart mode as `registerid` and a description containing the
+requesting user, active-call count at dispatch, and outcome, plus a
+plain `error_log()` call with the same description. **Not**
+`Zend_Registry::get('log')` — confirmed still unregistered in the real
+bootstrap, consistent with TASK-0019/0020's own finding. No AMI
+credentials are ever included in either log. Verified live: `mag-error.log`
+inside the app container shows one line per dispatch (`grep
+Snep_Asterisk_Operations`), and `logs_users` shows one matching row per
+dispatch with the correct user/mode/description.
+
+### Active-call evidence (validation, real live testing)
+
+Using the same real-extension + `baresip` + `ctrl_tcp` mechanism
+`call-smoke-test.sh` established, run against the actual new HTTP
+endpoints (not a hand-rolled AMI script, unlike the investigation
+phase):
+
+- **Graceful, with an active call**: dispatched via a real
+  authenticated POST; `active_calls_at_dispatch` correctly recorded as
+  `1`; polling showed `RESTART_PENDING` continuously while the call
+  remained bridged; the Asterisk CLI itself reported `Command 'core
+  show channels count' cannot be run during shutdown` for the entire
+  window (matching the investigation's finding exactly); after ending
+  the call from the client side, the very next poll already showed
+  `RUNNING`; a final CLI check confirmed `0 active channels`, no stale
+  state.
+- **Immediate, with an active call**: dispatched via a real
+  authenticated POST against a freshly re-established call;
+  `active_calls_at_dispatch` correctly recorded as `1`; `RUNNING` was
+  reached within 5 seconds; the call was confirmed dropped (`0 active
+  channels`).
+
+### Recovery evidence
+
+- Idle graceful: `RECOVERING` for ~6–7 seconds, then `RUNNING`.
+- Idle immediate: `RUNNING` within 1–2 seconds.
+- Post-restart platform health (checked after every case in
+  `restart-smoke`): `pjsip show transports` shows exactly the expected
+  `udp`/`tcp` pair, `odbc show all` shows 1 active connection, PJSIP
+  endpoint registrations recover within the existing 15-second
+  `wait_registered()` budget already proven by `call-smoke-test.sh`.
+
+### Privilege-boundary confirmation (§7/§16)
+
+Re-confirmed unchanged: no Docker socket, no `privileged`, no
+`cap_add` anywhere in `compose.yaml`; no PHP code in this
+implementation shells out to `docker`/`podman`/`systemctl` or touches
+any host control plane. The existing AMI user's `read`/`write =
+system,call,log,verbose,command,agent,user,config,originate` already
+covers everything used here (`Command` actions only) — `manager.conf`
+was not modified.
+
+### `restart-smoke` architecture (§14/§18)
+
+`scripts/restart-smoke-test.sh`, a `make restart-smoke` target
+depending on `up`, exactly parallel to the other smoke targets but
+**never invoked by `make smoke`** or any other target. Guards: refuses
+to run if app/asterisk/db aren't all `Up`, and refuses if the resolved
+Asterisk container name doesn't contain `asterisk` (a sanity check
+against targeting an unexpected container). Its own header carries an
+explicit, loud warning that it restarts Asterisk multiple times,
+including with an active call. 19 checks across the four cases
+described in §14 of the implementation spec (idle graceful, active-call
+graceful, active-call immediate, post-restart platform health), reusing
+`call-smoke-test.sh`'s exact fixture-provisioning pattern (own
+extension numbers `1096`/`1097` to avoid colliding with any other
+suite's fixtures) and its own trap-based cleanup.
+
+### Regression results
+
+All four suites re-run clean after this implementation, in the same
+environment, immediately after `restart-smoke` performed multiple real
+restarts:
+
+- `make smoke`: 16/0 (unchanged; the `systemstatus` flow's existing
+  marker check still passes with the new restart block present)
+- `make call-smoke`: 18/18
+- `make trunk-smoke`: 23/23
+- `make transport-smoke`: 63/63
+- `make restart-smoke`: 19/19 (new)
+
+No new PHP fatals in any run. The known, pre-existing CDR
+timezone-boundary artifact was not encountered this run and was not
+touched by this task.
+
+### Remaining operational debt (explicitly not fixed here)
+
+- **No per-profile authorization on `SystemstatusController`** —
+  documented above; any authenticated user of any profile can trigger a
+  restart today, matching the controller's pre-existing (and equally
+  unrestricted) CPU/RAM/disk visibility. A real fix requires changing
+  `Snep_PermissionPlugin`'s hardcoded action-name whitelist and/or
+  `resources.xml` resource-id matching — a dedicated task, not a
+  restart-specific patch.
+- **`RESTART_PENDING` vs. a genuine second `login`-stage failure mode**
+  (e.g. wrong AMI credentials mid-restart) are not distinguished from
+  each other — both currently read the same way. Not observed as a
+  practical problem (credentials don't change during a restart), but
+  worth noting.
+- **Multi-admin visibility**: the dispatch record lives in the
+  requesting admin's own PHP session, not a shared store. A second
+  admin polling the same page in a different session/browser will not
+  see `RESTART_PENDING`/`RECOVERING` from a restart someone else
+  triggered — they will instead see `UNAVAILABLE` while Asterisk is
+  down. This was an explicit, approved trade-off (§8: "prefer
+  runtime-derived state... session/runtime if needed", no schema
+  column) and is documented rather than fixed.
+- **`core restart when convenient`** remains unexposed and untested
+  live, exactly as scoped in the investigation.

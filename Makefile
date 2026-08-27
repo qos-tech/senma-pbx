@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke call-smoke trunk-smoke transport-smoke lint doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke call-smoke trunk-smoke transport-smoke restart-smoke lint doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -46,6 +46,12 @@ trunk-smoke: up
 
 transport-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/transport-smoke-test.sh
+
+# TASK-0021: restarts the dev Asterisk container multiple times, including
+# while a real call is active. Deliberately separate from `make smoke` --
+# never run implicitly by it.
+restart-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/restart-smoke-test.sh
 
 lint:
 	@echo "No lint pipeline is wired yet."

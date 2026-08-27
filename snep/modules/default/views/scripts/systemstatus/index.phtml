@@ -116,6 +116,44 @@
                     </div> <!-- /.contentHolder -->
                 </div> <!-- /.statusBlock -->
 
+                <div class="statusBlock" id="asteriskRestartBlock">
+                    <div class="iconHolder">
+                        <span class="sn-status-asterisk-1"> </span>
+                        <h2><?php echo $this->translate("Asterisk Restart"); ?></h2>
+                    </div>
+                    <div class="contentHolder">
+                        <p id="restartActiveCalls">
+                            <?php if ($this->active_call_count !== null): ?>
+                                <?php echo $this->translate("Active calls right now"); ?>: <strong><?php echo (int) $this->active_call_count; ?></strong>
+                            <?php else: ?>
+                                <?php echo $this->translate("Active call count is currently unavailable."); ?>
+                            <?php endif; ?>
+                        </p>
+                        <p id="restartStateLine">
+                            <?php echo $this->translate("Status"); ?>:
+                            <strong id="restartStateLabel"><?php echo $this->escape($this->restart_state['state']); ?></strong>
+                            — <span id="restartStateDetail"><?php echo $this->escape($this->restart_state['detail']); ?></span>
+                        </p>
+
+                        <div id="restartActions">
+                            <button type="button" class="btn btn-primary" id="btnShowGraceful"><?php echo $this->translate("Reiniciar após finalizar chamadas ativas"); ?></button>
+                            <button type="button" class="btn btn-danger" id="btnShowNow"><?php echo $this->translate("Reiniciar agora — chamadas ativas serão encerradas"); ?></button>
+                        </div>
+
+                        <div id="restartConfirmGraceful" class="restart-confirm" style="display:none;">
+                            <p><?php echo $this->translate("O Asterisk aguardará o fim de todas as chamadas ativas antes de reiniciar. Durante a espera, comandos administrativos podem ficar indisponíveis e a ação não pode ser cancelada."); ?></p>
+                            <button type="button" class="btn btn-primary restart-confirm-btn" data-mode="graceful"><?php echo $this->translate("Confirmar reinício gracioso"); ?></button>
+                            <button type="button" class="btn restart-cancel-btn"><?php echo $this->translate("Cancelar"); ?></button>
+                        </div>
+
+                        <div id="restartConfirmNow" class="restart-confirm" style="display:none;">
+                            <p><?php echo $this->translate("Esta ação encerrará imediatamente todas as chamadas ativas e reiniciará o Asterisk agora."); ?></p>
+                            <button type="button" class="btn btn-danger restart-confirm-btn" data-mode="now"><?php echo $this->translate("Confirmar reinício imediato"); ?></button>
+                            <button type="button" class="btn restart-cancel-btn"><?php echo $this->translate("Cancelar"); ?></button>
+                        </div>
+                    </div>
+                </div>
+
                 <div class="statusBlock">
                     <div class="iconHolder">
                         <span class="sn-status-mod"> </span>
@@ -369,4 +407,100 @@ if(new_version){
   jQuery("#version").addClass("new-notification");
   jQuery("#version").text(text + ' ' + new_version);
 }
+</script>
+<script type="text/javascript">
+// TASK-0021: explicit Asterisk restart control. Bounded polling only --
+// never one held-open request, never unbounded 1s hammering. See
+// docs/tasks/0021-asterisk-operational-restart.md §9/§13.
+(function() {
+  var restartCsrfToken = "<?php echo $this->escape($this->restart_csrf_token); ?>";
+  var restartBaseUrl = "<?php echo $this->baseUrl(); ?>/default/systemstatus";
+  var pollTimer = null;
+  var pollAttempts = 0;
+  var pollInFlight = false;
+  var POLL_INTERVAL_MS = 3000;
+  var MAX_POLL_ATTEMPTS = 100; // ~5 minutes
+
+  function applyState(state) {
+    if (!state || !state.state) {
+      return;
+    }
+    jQuery('#restartStateLabel').text(state.state);
+    jQuery('#restartStateDetail').text(state.detail || '');
+  }
+
+  function stopPolling() {
+    if (pollTimer) {
+      clearInterval(pollTimer);
+      pollTimer = null;
+    }
+  }
+
+  function poll() {
+    if (pollInFlight) {
+      return;
+    }
+    pollInFlight = true;
+    pollAttempts++;
+    jQuery.getJSON(restartBaseUrl + '/restart-status')
+      .done(function(state) {
+        applyState(state);
+        if (state.state === 'RUNNING' || state.state === 'ERROR') {
+          stopPolling();
+        }
+      })
+      .always(function() {
+        pollInFlight = false;
+        if (pollAttempts >= MAX_POLL_ATTEMPTS) {
+          stopPolling();
+          jQuery('#restartStateDetail').append(' (' + "<?php echo $this->translate('polling stopped -- refresh the page to check again'); ?>" + ')');
+        }
+      });
+  }
+
+  function startPolling() {
+    stopPolling();
+    pollAttempts = 0;
+    poll();
+    pollTimer = setInterval(poll, POLL_INTERVAL_MS);
+  }
+
+  jQuery('#btnShowGraceful').on('click', function() {
+    jQuery('#restartConfirmNow').hide();
+    jQuery('#restartConfirmGraceful').show();
+  });
+  jQuery('#btnShowNow').on('click', function() {
+    jQuery('#restartConfirmGraceful').hide();
+    jQuery('#restartConfirmNow').show();
+  });
+  jQuery('.restart-cancel-btn').on('click', function() {
+    jQuery('.restart-confirm').hide();
+  });
+
+  jQuery('.restart-confirm-btn').on('click', function() {
+    var mode = jQuery(this).data('mode');
+    jQuery('.restart-confirm').hide();
+    jQuery('#restartActions button').prop('disabled', true);
+    jQuery.post(restartBaseUrl + '/restart-dispatch', { mode: mode, csrf_token: restartCsrfToken }, null, 'json')
+      .done(function(resp) {
+        if (resp && resp.csrf_token) {
+          restartCsrfToken = resp.csrf_token;
+        }
+        if (resp && resp.result) {
+          applyState({ state: resp.ok ? 'DISPATCHED' : 'ERROR', detail: resp.result.detail });
+        }
+        startPolling();
+      })
+      .fail(function() {
+        jQuery('#restartStateDetail').text("<?php echo $this->translate('Failed to dispatch the restart request.'); ?>");
+      })
+      .always(function() {
+        jQuery('#restartActions button').prop('disabled', false);
+      });
+  });
+
+  <?php if (in_array($this->restart_state['state'], array('RESTART_PENDING', 'RECOVERING'), true)): ?>
+  startPolling();
+  <?php endif; ?>
+})();
 </script>
