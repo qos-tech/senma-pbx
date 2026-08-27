@@ -87,7 +87,14 @@ class UsersController extends Zend_Controller_Action {
 
             $name_exist = Snep_Users_Manager::getName($dados['name']);
 
-            if (count($name_exist) > 1) {
+            // TASK-0023: Snep_Users_Manager::getName() is a single-row
+            // fetch() -- false when no user matches, a 2-key array
+            // otherwise. The pre-PHP8 count($name_exist) > 1 idiom only
+            // ever worked by coincidence (count(false) silently became 0,
+            // a real match's fixed 2-key shape made count()==2); this is
+            // the direct, behavior-preserving existence check. See
+            // docs/tasks/0023-users-crud-php84-strict-sql.md §2.
+            if ($name_exist !== false) {
 
                 $message = $this->view->translate("Name already exists.");
                 $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
@@ -281,6 +288,14 @@ class UsersController extends Zend_Controller_Action {
 
         $permissionsGroup = array_intersect_key($currentResourcesGroup, $resources);
 
+        // TASK-0023: default so the zero-existing-permissions +
+        // zero-checkboxes-submitted case (below) always has a real
+        // array to array_merge() against, never an undefined variable.
+        // Overwritten below whenever the user actually has existing
+        // permission rows -- no behavior change for that case. See
+        // docs/tasks/0023-users-crud-php84-strict-sql.md §7.
+        $permissionUser = array();
+
         // usuário nao possui permissão individual
         if (empty($currentResourcesUsers)) {
             $this->view->user = false;
@@ -339,17 +354,30 @@ class UsersController extends Zend_Controller_Action {
                 $dados['permission_id'][$key] = $key;
             }
 
-            $deleted = array_diff($currentResourcesGroup, $dados['permission_id']);
-            $added = $dados['permission_id'];
+            // TASK-0023: $dados['permission_id'] is legitimately absent
+            // (never a malformed request) when every permission
+            // checkbox was left unchecked -- the real UI simply omits
+            // those fields, per plain HTML checkbox semantics. PHP 8's
+            // array_diff()/array_merge() both refuse a null/undefined
+            // second argument, so this must be branched explicitly
+            // rather than guarded inline. The "delete everything" case
+            // below already existed in this codebase but was
+            // unreachable (the array_diff() call used to fatal first);
+            // this restructuring makes it reachable without changing
+            // the non-empty-submission behavior at all. See
+            // docs/tasks/0023-users-crud-php84-strict-sql.md §7.
+            if (array_key_exists('permission_id', $dados)) {
+                $deleted = array_diff($currentResourcesGroup, $dados['permission_id']);
+                $added = $dados['permission_id'];
 
-            if (!empty($permissionUser)) {
-                $deletedusers = array_diff($permissionUser, $dados['permission_id']);
-                $deleted = array_merge($deleted, $deletedusers);
-            }
-
-            // Caso se exclua todas as permissões
-            if (!array_key_exists('permission_id', $dados)) {
+                if (!empty($permissionUser)) {
+                    $deletedusers = array_diff($permissionUser, $dados['permission_id']);
+                    $deleted = array_merge($deleted, $deletedusers);
+                }
+            } else {
+                // Caso se exclua todas as permissões
                 $deleted = array_merge($currentResourcesGroup, $permissionUser);
+                $added = array();
             }
 
             // retirar permissão do usuário por id

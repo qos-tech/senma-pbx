@@ -51,6 +51,13 @@ class Snep_Users_Manager {
         $insert_data = array('name' => $user['name'],
             'password' => md5($user['password']),
             'email' => $user['email'],
+            // TASK-0023: users.dashboard is TEXT NOT NULL with no
+            // default -- omitting it fails under strict MariaDB. ''
+            // matches the seeded admin row's own historical value, and
+            // is exactly what Snep_Dashboard_Manager::get()'s existing
+            // is_array(unserialize(...)) fallback already expects. See
+            // docs/tasks/0023-users-crud-php84-strict-sql.md §4.
+            'dashboard' => '',
             'profile_id' => $user['profile_id'],
             'created' => date('Y-m-d H:i:s'),
             'updated' => date('Y-m-d H:i:s'));
