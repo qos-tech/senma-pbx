@@ -165,8 +165,12 @@ if ! grep -qi "^Location:.*index.php/" "$TMP_HEADERS"; then
 fi
 
 log "==> dashboard"
-check "dashboard" "GET" "/index.php/" "-" "302" "" "no_marker"
-check "dashboard (redirect target)" "GET" "/index.php/index/add" "-" "200" 'var controller = "index"' "normal"
+# AuthController redirects a successful login to /, and IndexController
+# renders that dashboard directly. The cookie jar is intentionally
+# authenticated here, so a 302 expectation was stale rather than an
+# anonymous-access assertion.
+check "dashboard" "GET" "/index.php/" "-" "200" 'var controller = "index"' "normal"
+check "dashboard (explicit route)" "GET" "/index.php/index/add" "-" "200" 'var controller = "index"' "normal"
 
 log "==> extensions"
 check "extensions" "GET" "/index.php/default/extensions" "-" "200" 'var controller = "extensions"' "normal"

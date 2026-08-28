@@ -35,6 +35,14 @@
         </resource>
         <resource id="tdm-links" label="TDM boards" font="sn-links"></resource>
         <resource id="errors-khomp" label="TDM links errors" font="sn-erros-links"></resource>
+        <!-- TASK-0026A: docs/tasks/0026a-authorization-default-deny.md.
+             ErrorsTdmController mirrors ErrorsKhompController exactly (same
+             read-only Khomp/TDM board status display) but had no
+             resources.xml entry at all, so it was reachable by any
+             authenticated user with zero permission check (part of the
+             F16 gap). Registered as its own read-only resource, matching
+             its sibling "errors-khomp" above. -->
+        <resource id="errors-tdm" label="TDM links errors" font="sn-erros-links"></resource>
         <resource id="audit" label="Audit" font="sn-busca"></resource>
         <resource id="logs" label="Logs" font="sn-logs"></resource>
     </group>
@@ -117,7 +125,17 @@
     </group>
 
     <group id="configs" label="Configuration" font="sn-configuracao">
-        <resource id="parameters" label="Parameters" font="sn-parametros"></resource>
+        <!-- TASK-0026A: docs/tasks/0026a-authorization-default-deny.md.
+             ParametersController::languageAction() mutates the system-wide
+             language config (the same Snep_Locale::setExtensionsLanguage()
+             call site TASK-0026-F1 flagged) but, before this task, had no
+             permission check at all (part of the F16 gap): "parameters"
+             only ever had an implicit "read" resource. Adding an explicit
+             "write" child makes default_parameters_write grantable, the
+             same additive pattern TASK-0022 already established. -->
+        <resource id="parameters" label="Parameters" font="sn-parametros">
+            <resource id="write"></resource>
+        </resource>
         <resource id="sound-files" label="Sound Files" font="sn-arquivo-som">
             <resource id="write"></resource>
         </resource>
