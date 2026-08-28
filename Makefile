@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke call-smoke trunk-smoke transport-smoke restart-smoke lint doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke lint doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -52,6 +52,13 @@ transport-smoke: up
 # never run implicitly by it.
 restart-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/restart-smoke-test.sh
+
+# TASK-0024: deterministically simulates vendor-API failure (DNS,
+# refused, blackhole, TLS, HTTP 500, malformed/empty payload) using only
+# controlled local/reserved targets -- never the real vendor. Deliberately
+# separate from `make smoke` -- never run implicitly by it.
+external-failure-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/external-failure-smoke-test.sh
 
 lint:
 	@echo "No lint pipeline is wired yet."

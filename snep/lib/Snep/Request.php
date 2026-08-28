@@ -57,20 +57,45 @@ class Snep_Request {
 
     }
 
-    // Send the request to the aditional service
+    // TASK-0024: send_request()'s contract is now: ALWAYS returns
+    // ['response' => string|false, 'response_code' => int], NEVER
+    // throws, regardless of which transport phase failed (DNS,
+    // connection refused, blackhole timeout, TLS failure -- see
+    // docs/tasks/0024-external-api-failure-isolation.md §1/§7/§8/§11).
+    // file_get_contents() returning false, or PHP never populating its
+    // own magic $http_response_header variable at all, both mean no
+    // connection-level response was ever produced. Previously this fell
+    // straight into parseHeaders()'s unconditional count($headers), a
+    // PHP 8 TypeError on the resulting null. response_code=0 was chosen
+    // (not null, not a re-thrown exception) because it is loosely equal
+    // to the `case false:` branches every current caller already has
+    // for "no connection" (confirmed live: PHP's switch() uses ==, and
+    // 0 == false), so every existing caller's own already-written
+    // failure handling becomes reachable unchanged -- no caller-side
+    // code needed to change. See the implementation section of the doc
+    // above for the full caller inventory this was verified against.
     public static function send_request($url,$ctx){
         $raw_response = @file_get_contents($url,0,$ctx);
-				$headers = self::parseHeaders($http_response_header);
-				$response = array(
-					"response" => $raw_response,
-					"response_code" => $headers['response_code']
-				);
+        if ($raw_response === false || !isset($http_response_header) || !is_array($http_response_header)) {
+            return array(
+                "response" => false,
+                "response_code" => 0,
+            );
+        }
+        $headers = self::parseHeaders($http_response_header);
+        $response = array(
+            "response" => $raw_response,
+            "response_code" => $headers['response_code'] ?? 0,
+        );
         return $response;
     }
 
+		// TASK-0024: defensive on its own terms too (not just because its
+		// only caller, send_request() above, now never passes it a bad
+		// value) -- count() must never receive anything but a real array.
 		static function parseHeaders( $headers )	{
 		    $head = array();
-				if(count($headers) > 0){
+				if(is_array($headers) && count($headers) > 0){
 			    foreach( $headers as $k=>$v )
 			    {
 			        $t = explode( ':', $v, 2 );

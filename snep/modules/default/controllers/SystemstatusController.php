@@ -629,11 +629,32 @@ class SystemstatusController extends Zend_Controller_Action {
 
         $configs = Snep_Config::getConfiguration('default','host_inspect');
 
-        if($configs['config_value']){
-          $tdm['timeout'] = 3;
+        // TASK-0024: this is a fire-and-forget telemetry PUSH (SENMA
+        // reports local host info TO the vendor; the response is only
+        // ever checked for a 401-triggered retry, never rendered) --
+        // unlike Snep_Notifications/Snep_Version there is no remote
+        // DATA to cache/display, so only the "how often do we even
+        // attempt this" half of that same pattern applies, reusing the
+        // identical core_config TTL-marker mechanism (not a new
+        // architecture -- see
+        // docs/tasks/0024-external-api-failure-isolation.md, implementation
+        // section). Bounded at 2s (was 3s, matching Notifications/
+        // Version's own bound) and now additionally skipped once per
+        // HOST_INSPECT_CACHE_TTL_SECONDS globally, on top of
+        // indexAction()'s own pre-existing, unchanged, once-per-session
+        // $_SESSION['cloud_noticed'] gate -- whichever gate is more
+        // restrictive wins. This was found and approved for TASK-0024
+        // during implementation, not the original investigation -- a
+        // real, previously-uncatalogued third implicit foreground
+        // vendor call on this exact page.
+        if($configs['config_value'] && self::hostInspectSyncDue()){
+          self::touchHostInspectSyncTimestamp();
+          $tdm['timeout'] = 2;
           $ctx = Snep_Request::http_context($tdm);
           $request = Snep_Request::send_request("{$configs['config_value']}/snep/host/info/{$_SESSION['uuid']}",$ctx);
-          if($request['response_code'] == 401){
+          if($request['response_code'] == 0){
+            error_log('External integration degraded -- integration=host-inspect category=transport_failure http_status=0');
+          }elseif($request['response_code'] == 401){
             $ctx = Snep_Request::http_context($tdm,"PUT");
             $put_request = Snep_Request::send_request("{$configs['config_value']}/snep/host/info/{$_SESSION['uuid']}",$ctx);
           }
@@ -642,5 +663,19 @@ class SystemstatusController extends Zend_Controller_Action {
 
     }
 
+    const HOST_INSPECT_CACHE_TTL_SECONDS = 300;
+    const HOST_INSPECT_SYNC_CONFIG_NAME = 'host_inspect_synced_at';
+
+    private static function hostInspectSyncDue() {
+        $configs = Snep_Config::getConfiguration('default', self::HOST_INSPECT_SYNC_CONFIG_NAME);
+        if (!$configs || $configs['config_value'] === '') {
+            return true;
+        }
+        return (time() - (int) $configs['config_value']) >= self::HOST_INSPECT_CACHE_TTL_SECONDS;
+    }
+
+    private static function touchHostInspectSyncTimestamp() {
+        Snep_Config::setConfiguration('default', self::HOST_INSPECT_SYNC_CONFIG_NAME, (string) time());
+    }
 
 }

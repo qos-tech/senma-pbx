@@ -83,17 +83,165 @@ class Snep_Notifications {
    }
 
 		/**
-     * Method to get all profiles
+     * TASK-0024: getAll() is the shared-layout hot path (via
+     * getNoView(), called from every layout-rendered page) -- it must
+     * never require a live, successful vendor request. Now reads from
+     * the local core_notifications cache first; only attempts a bounded
+     * remote refresh once per CACHE_TTL_SECONDS (tracked via
+     * Snep_Config's core_config row, not a new table), falling back to
+     * the last-known-good cached data (or an empty array, identical to
+     * the application's own pre-existing "no notifications" empty
+     * state) on any failure. See
+     * docs/tasks/0024-external-api-failure-isolation.md §2/§9/§11/§13.
      * @return <array> $notifications
      */
     public static function getAll() {
 
-				$configs = Snep_Config::getConfiguration('default','host_notification');
-				$url = $configs["config_value"] . '/' . $_SESSION["uuid"];
-				// get notification in itc
-				$ctx = Snep_Request::http_context(array("timeout"=> 5), "GET");
-				$request = Snep_Request::send_request($url, $ctx);
-				return json_decode($request['response']);
+        if (!self::cacheIsStale()) {
+            return self::getCachedNotifications();
+        }
+
+        // Record the attempt BEFORE calling out, so a failed vendor
+        // stays "recently checked" for the rest of the TTL window --
+        // this is what keeps make smoke deterministic during a vendor
+        // outage (at most one attempt per TTL window, not one per page
+        // load) and, as a side effect, is also what keeps the failure
+        // log entry below from repeating on every page load (§7/§22).
+        self::touchSyncTimestamp();
+
+        $fresh = self::fetchFromVendor();
+        if ($fresh !== null) {
+            self::replaceCachedNotifications($fresh);
+            return self::getCachedNotifications();
+        }
+
+        return self::getCachedNotifications();
+    }
+
+    const CACHE_TTL_SECONDS = 60;
+    const SYNC_CONFIG_MODULE = 'default';
+    const SYNC_CONFIG_NAME = 'notifications_synced_at';
+
+    private static function cacheIsStale() {
+        $configs = Snep_Config::getConfiguration(self::SYNC_CONFIG_MODULE, self::SYNC_CONFIG_NAME);
+        if (!$configs || $configs['config_value'] === '') {
+            return true;
+        }
+        return (time() - (int) $configs['config_value']) >= self::CACHE_TTL_SECONDS;
+    }
+
+    private static function touchSyncTimestamp() {
+        Snep_Config::setConfiguration(self::SYNC_CONFIG_MODULE, self::SYNC_CONFIG_NAME, (string) time());
+    }
+
+    /**
+     * fetchFromVendor - the actual outbound call, isolated from the
+     * caching decision above. Returns a decoded array of notification
+     * objects on success, or null on ANY failure (transport failure,
+     * non-200, or a payload that doesn't decode to an array) -- null is
+     * unambiguous here since a genuinely empty vendor list is still a
+     * valid (empty) array, never null.
+     */
+    private static function fetchFromVendor() {
+        $configs = Snep_Config::getConfiguration('default','host_notification');
+        if (!$configs || empty($configs['config_value'])) {
+            return null;
+        }
+        $url = $configs["config_value"] . '/' . $_SESSION["uuid"];
+        // TASK-0024: 2s, not the previous 5s -- measured evidence in
+        // the investigation doc §12; this call now only ever runs once
+        // per CACHE_TTL_SECONDS, so the bound matters far less than it
+        // used to, but stays short and consistent with Snep_Version's
+        // own bounded refresh below.
+        $ctx = Snep_Request::http_context(array("timeout"=> 2), "GET");
+        $request = Snep_Request::send_request($url, $ctx);
+        if ($request['response_code'] != 200 || $request['response'] === false) {
+            self::logIntegrationFailure('notifications', $request['response_code']);
+            return null;
+        }
+        $decoded = json_decode($request['response']);
+        if (!is_array($decoded)) {
+            self::logIntegrationFailure('notifications', $request['response_code'], 'malformed_payload');
+            return null;
+        }
+        return $decoded;
+    }
+
+    /**
+     * getCachedNotifications - reads core_notifications and shapes it
+     * identically to what getAll() already returned from a live fetch
+     * (a plain array of stdClass objects with id/title/message/
+     * creation_date/status) -- getNoView()'s own `$value->status` and
+     * the vendor payload's own json_decode() default (object, not
+     * assoc-array) shape both already expect exactly this.
+     */
+    private static function getCachedNotifications() {
+        $db = Zend_Registry::get('db');
+        $select = $db->select()->from('core_notifications')->order('creation_date DESC');
+        $rows = $db->query($select)->fetchAll();
+
+        $result = array();
+        foreach ($rows as $row) {
+            $notification = new stdClass();
+            $notification->id = $row['id_itc'];
+            $notification->title = $row['title'];
+            $notification->message = $row['message'];
+            $notification->creation_date = $row['creation_date'];
+            $notification->status = $row['read'] ? 'read' : 'unread';
+            $result[] = $notification;
+        }
+        return $result;
+    }
+
+    /**
+     * replaceCachedNotifications - idempotent by construction: a full
+     * delete+insert of the small notification set on every successful
+     * refresh, rather than a per-row upsert. core_notifications has
+     * zero other readers/writers in live use today (getDateLastNotification()/
+     * getNotificationWarning() below have no callers anywhere in the
+     * codebase -- confirmed via grep during investigation), so there is
+     * no conflicting behavior to preserve. title/message/creation_date
+     * are core_notifications' own NOT NULL columns (confirmed via
+     * DESCRIBE); `from`/`reading_date` are left to their own DB
+     * defaults, unused by any current reader.
+     */
+    private static function replaceCachedNotifications($notifications) {
+        $db = Zend_Registry::get('db');
+        $db->delete('core_notifications');
+        foreach ($notifications as $entry) {
+            if (!is_object($entry) && !is_array($entry)) {
+                continue;
+            }
+            $entry = (object) $entry;
+            $db->insert('core_notifications', array(
+                'id_itc' => $entry->id ?? null,
+                'title' => (string) ($entry->title ?? ''),
+                'message' => (string) ($entry->message ?? ''),
+                'creation_date' => !empty($entry->creation_date) && strtotime($entry->creation_date) !== false
+                    ? date('Y-m-d H:i:s', strtotime($entry->creation_date))
+                    : date('Y-m-d H:i:s'),
+                'read' => (isset($entry->status) && $entry->status === 'unread') ? 0 : 1,
+            ));
+        }
+    }
+
+    /**
+     * logIntegrationFailure - TASK-0024 §7/§22. error_log() only (never
+     * Zend_Registry::get('log'), still unregistered in the real
+     * bootstrap per TASK-0019/0020's own finding). Called at most once
+     * per CACHE_TTL_SECONDS window (see getAll()'s own comment above),
+     * which is what keeps this from flooding logs during a prolonged
+     * outage -- no separate dedup mechanism needed. Never logs
+     * credentials, headers, full payloads, or session data.
+     */
+    private static function logIntegrationFailure($integration, $httpStatus, $category = null) {
+        if ($category === null) {
+            $category = $httpStatus > 0 ? 'http_status' : 'transport_failure';
+        }
+        error_log(sprintf(
+            'External integration degraded -- integration=%s category=%s http_status=%s',
+            $integration, $category, $httpStatus
+        ));
     }
 
     /**

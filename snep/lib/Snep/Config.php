@@ -106,4 +106,38 @@ abstract class Snep_Config {
         return $configs;
     }
 
+    /**
+     * TASK-0024: the write-side counterpart to getConfiguration() --
+     * previously nonexistent, needed so Snep_Notifications/Snep_Version
+     * can persist a small last-synced-at marker in the existing
+     * core_config table (no schema change, no new table -- see
+     * docs/tasks/0024-external-api-failure-isolation.md §2/§3/§5/§13).
+     * core_config has no unique constraint on (config_module,
+     * config_name) -- confirmed via SHOW CREATE TABLE -- so this must
+     * select-then-insert-or-update, the same idempotent pattern already
+     * established elsewhere in this codebase for tables lacking a real
+     * unique key (e.g. scripts/smoke-test.sh's own handling of `users`).
+     * @param <string> $module
+     * @param <string> $key
+     * @param <string> $value
+     */
+    public static function setConfiguration($module, $key, $value) {
+
+        $db = Zend_Registry::get('db');
+        $existing = self::getConfiguration($module, $key);
+
+        if ($existing) {
+            $db->update("core_config", array("config_value" => $value), array(
+                $db->quoteInto("config_module = ?", $module),
+                $db->quoteInto("config_name = ?", $key),
+            ));
+        } else {
+            $db->insert("core_config", array(
+                "config_module" => $module,
+                "config_name" => $key,
+                "config_value" => $value,
+            ));
+        }
+    }
+
 }

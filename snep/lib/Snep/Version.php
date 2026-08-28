@@ -42,18 +42,90 @@ class Snep_Version {
 
     }
 
+    const CACHE_TTL_SECONDS = 300;
+    const SYNC_CONFIG_MODULE = 'default';
+    const SYNC_CONFIG_NAME = 'update_server_synced_at';
+    const VERSION_CONFIG_NAME = 'update_server_latest_version';
+
+    /**
+     * TASK-0024: getNewVersions() is called directly from
+     * SystemstatusController::indexAction() -- i.e. it must never block
+     * or fail System Status (and therefore the Asterisk restart
+     * controls that page renders, per
+     * docs/tasks/0024-external-api-failure-isolation.md §3/§26). Now
+     * reads a cached "newer version, or none" result from core_config
+     * (the same reused key-value table Snep_Notifications' own TTL
+     * marker lives in, §5's "do not duplicate... unnecessarily" --
+     * this is the small reusable pattern, not a new class) and only
+     * attempts a bounded remote refresh once per CACHE_TTL_SECONDS.
+     * @return <string|null> the newer version string, or null if none/unavailable
+     */
     public static function getNewVersions(){
-      $url = Snep_Config::getConfiguration("default","update_server");
-      if($url['config_value']){
-        $ctx = Snep_Request::http_context(array(), "GET");
-        $request = Snep_Request::send_request($url['config_value'] . '/version/latest?version=' . SNEP_VERSION, $ctx);
-        if($request['response_code'] == 200){
-          $version = json_decode($request['response']);
-        }else{
-          return null;
-        }
-      }else{
+      if (!self::cacheIsStale()) {
+        return self::getCachedLatestVersion();
+      }
+
+      // Same reasoning as Snep_Notifications::getAll() -- record the
+      // attempt before calling out, bounding both retry frequency and
+      // failure-log frequency to once per TTL window.
+      Snep_Config::setConfiguration(self::SYNC_CONFIG_MODULE, self::SYNC_CONFIG_NAME, (string) time());
+
+      $fresh = self::fetchLatestVersionFromVendor();
+      if ($fresh !== false) {
+        Snep_Config::setConfiguration(self::SYNC_CONFIG_MODULE, self::VERSION_CONFIG_NAME, $fresh === null ? '' : $fresh);
+        return $fresh;
+      }
+
+      return self::getCachedLatestVersion();
+    }
+
+    private static function cacheIsStale() {
+      $configs = Snep_Config::getConfiguration(self::SYNC_CONFIG_MODULE, self::SYNC_CONFIG_NAME);
+      if (!$configs || $configs['config_value'] === '') {
+        return true;
+      }
+      return (time() - (int) $configs['config_value']) >= self::CACHE_TTL_SECONDS;
+    }
+
+    private static function getCachedLatestVersion() {
+      $configs = Snep_Config::getConfiguration(self::SYNC_CONFIG_MODULE, self::VERSION_CONFIG_NAME);
+      if (!$configs || $configs['config_value'] === '') {
         return null;
+      }
+      return $configs['config_value'];
+    }
+
+    /**
+     * fetchLatestVersionFromVendor - the original getNewVersions() body,
+     * unchanged in its own success-path logic, isolated into its own
+     * method. Returns `false` (never null -- null is a legitimate
+     * successful "no newer version" result) on any failure: unconfigured,
+     * transport failure, non-200, or a payload missing the expected
+     * `version` field.
+     * @return <string|null|false>
+     */
+    private static function fetchLatestVersionFromVendor(){
+      $url = Snep_Config::getConfiguration("default","update_server");
+      if(!$url || empty($url['config_value'])){
+        return false;
+      }
+      // TASK-0024: explicit 2s bound (was the 3s default) -- this call
+      // now only ever runs once per CACHE_TTL_SECONDS, matching
+      // Snep_Notifications' own §12 timeout policy.
+      $ctx = Snep_Request::http_context(array("timeout" => 2), "GET");
+      $request = Snep_Request::send_request($url['config_value'] . '/version/latest?version=' . SNEP_VERSION, $ctx);
+      if($request['response_code'] != 200){
+        error_log(sprintf(
+            'External integration degraded -- integration=version-check category=%s http_status=%s',
+            $request['response_code'] > 0 ? 'http_status' : 'transport_failure',
+            $request['response_code']
+        ));
+        return false;
+      }
+      $version = json_decode($request['response']);
+      if(!is_object($version) || !isset($version->version)){
+        error_log('External integration degraded -- integration=version-check category=malformed_payload http_status=' . $request['response_code']);
+        return false;
       }
 
       $compare = self::my_version_compare(SNEP_VERSION, $version->version);
