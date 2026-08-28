@@ -138,16 +138,34 @@ class Snep_Version {
 
     }
 
+    // TASK-0025: changelog is vendor-controlled free text (the exact
+    // same host as Snep_Notifications/Snep_Request). Before this fix
+    // the only "formatting" applied was a raw \n -> <br> conversion on
+    // UNESCAPED text, i.e. any HTML/script the vendor sent rendered
+    // live in newversion/index.phtml's `echo $this->changelog`. The
+    // product's only genuine formatting need, confirmed by reading the
+    // original transform, is preserving line breaks -- not arbitrary
+    // markup (docs/tasks/0025-vendor-content-xss-hardening.md §4/§12
+    // default assumption: plain text). Fix: escape first
+    // (htmlspecialchars, ENT_QUOTES so this is safe even if ever
+    // embedded in a single-quoted context later), THEN apply nl2br() --
+    // PHP's own built-in for exactly this, replacing the manual
+    // preg_replace(). Intentional UX difference (§19): a vendor
+    // changelog containing literal HTML (e.g. a hand-written
+    // "<b>important</b>") now displays as literal visible text
+    // ("<b>important</b>"), not bold -- the vendor contract never
+    // promised markup support (nothing else in this integration
+    // accepts formatting), so this is a narrowing to the actual,
+    // already-intended behavior (line breaks only), not a feature loss.
     public static function getChangelog(){
       $url = Snep_Config::getConfiguration("default","update_server");
       if($url['config_value']){
         $ctx = Snep_Request::http_context(array("version" => SNEP_VERSION), "GET");
         $request = Snep_Request::send_request($url['config_value'] . '/version/latest?version=' . SNEP_VERSION, $ctx);
         $changelog = json_decode($request['response']);
-        if($request['response_code'] == 200){
-          $changelog = json_decode($request['response']);
-          $changelog->changelog = preg_replace("/\n/","<br>", $changelog->changelog);
-          return $changelog->changelog;
+        if($request['response_code'] == 200 && is_object($changelog) && isset($changelog->changelog)){
+          $safe = htmlspecialchars((string) $changelog->changelog, ENT_QUOTES, 'UTF-8');
+          return nl2br($safe);
         }else{
           return "No changelog update";
         }

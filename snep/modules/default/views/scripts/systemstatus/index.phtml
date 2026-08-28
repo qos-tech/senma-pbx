@@ -411,7 +411,19 @@
 </div> <!-- /.row -->
 <script type="text/javascript">
 var text = "<?php echo $this->translate('New Version Available:');?>";
-var new_version = "<?php echo $this->new_version; ?>";
+<?php
+// TASK-0025: new_version is vendor-controlled (Snep_Version::
+// getNewVersions()), embedded directly in an INLINE JAVASCRIPT STRING
+// LITERAL -- HTML escaping alone is not the correct tool here (a
+// vendor value containing `";...;//` would previously break out of
+// the JS string and execute arbitrary script). json_encode() with the
+// JSON_HEX_* flags produces a self-quoting, JS-safe string literal AND
+// neutralizes a `</script>` breakout of the surrounding HTML <script>
+// element (JSON_HEX_TAG), matching this task's own §11 instruction to
+// prefer JSON encoding over ad-hoc escaping for JS-string context. See
+// docs/tasks/0025-vendor-content-xss-hardening.md §4/§11.
+?>
+var new_version = <?php echo json_encode((string) $this->new_version, JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>;
 if(new_version){
   console.log('Version:', new_version);
   jQuery("#version_div").removeClass("hidden");

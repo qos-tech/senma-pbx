@@ -83,6 +83,28 @@ function getAnnounce(language){
 
 }
 
+// TASK-0025: link/image below come from the vendor's /announce
+// response (api.opens.com.br) and were previously passed straight into
+// setAttribute("href"/"src", ...) with no validation -- a malicious or
+// compromised vendor response could set an <a href="javascript:..."> on
+// the (pre-authentication) login page, executing script on click. Only
+// the URL SCHEME is restricted here (http/https), using the browser's
+// own URL parser rather than an ad-hoc regex -- deliberately not a
+// domain allowlist (out of scope, no stable vendor domain contract was
+// established during investigation). See
+// docs/tasks/0025-vendor-content-xss-hardening.md §6.
+function isSafeAnnounceUrl(value){
+  if (typeof value !== "string" || value === "") {
+    return false;
+  }
+  try {
+    var parsed = new URL(value, window.location.href);
+    return parsed.protocol === "http:" || parsed.protocol === "https:";
+  } catch (e) {
+    return false;
+  }
+}
+
 function handlerAnnounce(){
 
   var element = document.getElementById("announce");
@@ -100,7 +122,7 @@ function handlerAnnounce(){
       link: response.link || null,
       text: response.text || null
     }
-    if(data.image && data.link){
+    if(data.image && data.link && isSafeAnnounceUrl(data.link) && isSafeAnnounceUrl(data.image)){
       element.setAttribute("href",data.link);
       element.setAttribute("alt",data.text);
       imageElement.setAttribute("src",data.image);

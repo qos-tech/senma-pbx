@@ -64,13 +64,28 @@ class NotificationsController extends Zend_Controller_Action {
           // docs/tasks/0012-web-base-path-cleanup.md.
           $baseUrl = $this->getFrontController()->getBaseUrl();
           $active='active';
+          // TASK-0025: title/from/message come from
+          // Snep_Notifications::getNotification() -- a live, vendor-
+          // controlled fetch (uncached, untouched by TASK-0024). Remote
+          // content is data, not trusted HTML: escape at this exact
+          // output boundary (HTML text nodes) rather than trusting the
+          // vendor to send plain text. creation_date is NOT re-escaped
+          // here -- it is PHP-computed (date()/strtotime()), never raw
+          // vendor text, matching the trust-boundary map in
+          // docs/tasks/0025-vendor-content-xss-hardening.md §3. Cast to
+          // (string) before escaping so a failed/null vendor fetch
+          // (Snep_Notifications::getNotification() can return null,
+          // e.g. when TASK-0024's non-throwing Snep_Request contract
+          // hits a transport failure) degrades to an empty string
+          // rather than a PHP 8.1+ "passing null to non-nullable
+          // parameter" deprecation notice.
       		$html[$cont]  = "<div class='item ".$active."'>";
       		$html[$cont] .= "<div class='carousel-content'>";
       		$html[$cont] .= "<div class='panel panel-default col-sm-12 notification-panel'>";
       		$html[$cont] .= "<div class='panel-body'>";
-      		$html[$cont] .= "<h2>".$notification->title."</h2>";
-      		$html[$cont] .= "<h5>".$notification->from .' - '.date("d/m/Y G:i:s", strtotime($notification->creation_date))."</h5>";
-      		$html[$cont] .= "<br><p>".$notification->message."</p>";
+      		$html[$cont] .= "<h2>".$this->view->escape((string) $notification->title)."</h2>";
+      		$html[$cont] .= "<h5>".$this->view->escape((string) $notification->from) .' - '.date("d/m/Y G:i:s", strtotime($notification->creation_date))."</h5>";
+      		$html[$cont] .= "<br><p>".$this->view->escape((string) $notification->message)."</p>";
       		$html[$cont] .= "<div class='panel-footer clearfix notification-panel'>";
       		$html[$cont] .= "<a href='".$baseUrl."/index.php/default/notifications?id=all'><span class='notification fa fa-list fa-3x notification-panel'></span></a>&nbsp";
       		$html[$cont] .= "<div class='pull-right'>";

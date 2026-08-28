@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke lint doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -59,6 +59,15 @@ restart-smoke: up
 # separate from `make smoke` -- never run implicitly by it.
 external-failure-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/external-failure-smoke-test.sh
+
+# TASK-0025: proves vendor-controlled content (notifications, version
+# check, changelog, announce) cannot inject active HTML/JavaScript into
+# rendered SENMA pages. Uses only controlled local fixtures, never the
+# real vendor. Deliberately separate from `make external-failure-smoke`
+# (that suite tests availability, this one tests content) -- never run
+# implicitly by `make smoke`.
+external-content-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/external-content-smoke-test.sh
 
 lint:
 	@echo "No lint pipeline is wired yet."

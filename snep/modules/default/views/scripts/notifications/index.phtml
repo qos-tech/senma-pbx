@@ -25,19 +25,38 @@
                 if(!@$notification->id && $notification->_id){
                   $notification->id = $notification->_id;
                 }?>
+                <?php
+                  // TASK-0025: from/title/message are vendor-controlled
+                  // (Snep_Notifications::getAll(), TASK-0024-cached but
+                  // still untrusted -- see
+                  // docs/tasks/0025-vendor-content-xss-hardening.md §3/§7).
+                  // Escape at this exact output boundary: text nodes via
+                  // $this->escape() (htmlspecialchars, matches this
+                  // view's own established pattern elsewhere in the
+                  // app), and truncate (substr) BEFORE escaping so a
+                  // multi-byte/entity boundary is never split mid-entity.
+                  // id is escaped too, even though it is normally
+                  // numeric (core_notifications.id_itc is int(11)) --
+                  // escaping at output never assumes a upstream type
+                  // guarantee holds.
+                  $notif_from = $this->escape((string) ($notification->from ?? ''));
+                  $notif_title = $this->escape((string) ($notification->title ?? ''));
+                  $notif_message = $this->escape(substr((string) ($notification->message ?? ''), 0, 30)) . '...';
+                  $notif_id = $this->escape((string) ($notification->id ?? ''));
+                ?>
                 <tr>
                   <?php if($notification->status == 'read'){?>
-                    <td> <?php echo $notification->from ?> </td>
-                    <td> <?php echo $notification->title ." - ". substr($notification->message, 0,30)."..." ?> </td>
+                    <td> <?php echo $notif_from ?> </td>
+                    <td> <?php echo $notif_title ." - ". $notif_message ?> </td>
                     <td> <?php echo date("d/m/Y G:i:s", strtotime($notification->creation_date)) ?> </td>
                   <?php }else{?>
-                    <td class="bold"> <?php echo $notification->from ?> </td>
-                    <td class="bold"> <?php echo $notification->title ." - ". substr($notification->message, 0,30)."..." ?> </td>
+                    <td class="bold"> <?php echo $notif_from ?> </td>
+                    <td class="bold"> <?php echo $notif_title ." - ". $notif_message ?> </td>
                     <td class="bold"> <?php echo date("d/m/Y G:i:s", strtotime($notification->creation_date)) ?> </td>
                   <?php } ?>
                     <td class="text-center">
-                      <a class="btn btn-add btn-sm"  href="<?php echo $this->url ?>?id=<?php echo $notification->id ?>" role="button"><?php echo $this->translate('Click to visualize')?></a>
-                      <a class="btn btn-danger btn-sm" href="<?php echo $this->url ?>/remove/id/<?php echo $notification->id ?>" role="button"><?php echo $this->translate('Delete')?></a>
+                      <a class="btn btn-add btn-sm"  href="<?php echo $this->url ?>?id=<?php echo $notif_id ?>" role="button"><?php echo $this->translate('Click to visualize')?></a>
+                      <a class="btn btn-danger btn-sm" href="<?php echo $this->url ?>/remove/id/<?php echo $notif_id ?>" role="button"><?php echo $this->translate('Delete')?></a>
                     </td>
                   </tr>
                 <?php endforeach ?>

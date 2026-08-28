@@ -97,7 +97,14 @@ if($controller != 'auth'){
         <ul class="nav navbar-top-links navbar-right">
           <span class="badge badge-danger"><?php echo Zend_Registry::get('config')->ambiente->emp_nome; ?></span>
           <li id="version_div" class="dropdown hidden">
-              <a id="version" class="dropdown-toggle"  href="<?php echo $this->baseUrl()."/index.php/newversion";?>"><?php echo $this->new_version; ?>
+              <a id="version" class="dropdown-toggle"  href="<?php echo $this->baseUrl()."/index.php/newversion";?>"><?php
+              // TASK-0025: new_version is vendor-controlled
+              // (Snep_Version::getNewVersions(), set only by
+              // SystemstatusController::indexAction()). HTML text-node
+              // context -- escape at output, same as every other sink
+              // in this task. See
+              // docs/tasks/0025-vendor-content-xss-hardening.md §4.
+              echo $this->escape((string) $this->new_version); ?>
               <i class="fa fa-fw"></i>
             </a>
           </li>
