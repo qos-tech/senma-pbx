@@ -78,7 +78,7 @@ class Snep_Acl extends Zend_Acl {
 
         $select = $db->select()
                 ->from('users')
-                ->where("name = BINARY '$username'");
+                ->where('name = BINARY ?', $username);
 
         $stmt = $db->query($select);
         $case = $stmt->fetch();

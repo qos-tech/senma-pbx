@@ -188,6 +188,12 @@ class ParametersController extends Zend_Controller_Action {
 
             $formData = $this->getRequest()->getParams();
 
+            if (!isset($formData['language']) || !Snep_Locale::isSupportedLanguage($formData['language'])) {
+                $this->view->error_message = $this->view->translate("Invalid language.");
+                $this->renderScript('error/sneperror.phtml');
+                return;
+            }
+
             // Get country code
             $db = Snep_Db::getInstance();
             $country_code = $db->query("select id from core_cnl_country where locale='".$formData['language']."'")->fetch();
@@ -257,6 +263,11 @@ class ParametersController extends Zend_Controller_Action {
      * languageAction - Modify language
      */
     public function languageAction() {
+
+        if (!isset($_GET['language']) || !Snep_Locale::isSupportedLanguage($_GET['language'])) {
+            $this->_redirect('parameters');
+            return;
+        }
 
         $configFile = APPLICATION_PATH . "/includes/setup.conf";
         $config = new Zend_Config_Ini($configFile, null, true);

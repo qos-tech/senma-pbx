@@ -49,7 +49,7 @@ class AuthController extends Zend_Controller_Action {
 
 
 
-         if (isset($_GET["indexChooseLanguage"])) {
+         if (isset($_GET["indexChooseLanguage"]) && Snep_Locale::isSupportedLanguage($_GET["indexChooseLanguage"])) {
 
             $configFile = APPLICATION_PATH . "/includes/setup.conf";
             $config = new Zend_Config_Ini($configFile, null, true);

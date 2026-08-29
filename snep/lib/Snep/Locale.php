@@ -36,6 +36,11 @@ define("TRANSLATIONS_PATH", APPLICATION_PATH . DIRECTORY_SEPARATOR . "lang");
  * @author    Henrique Grolli Bassotto
  */
 class Snep_Locale {
+    private static $supportedLanguages = array('en', 'pt_BR', 'es');
+
+    public static function isSupportedLanguage($language) {
+        return is_string($language) && in_array($language, self::$supportedLanguages, true);
+    }
     /**
      * Singleton instance.
      *
@@ -226,6 +231,9 @@ class Snep_Locale {
      * docs/tasks/0002-php84-compatibility-baseline.md.
      */
     public static function setExtensionsLanguage($lang) {
+        if (!self::isSupportedLanguage($lang)) {
+            return false;
+        }
         $config = "/etc/asterisk/extensions.conf";
         $config_tmp = $config . '.dpkg-new' ;
         $option='SNEP_LANGUAGE' ;
