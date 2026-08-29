@@ -45,18 +45,49 @@
 #      hangup -> a second real CDR row -> report readback.
 #
 # Both directions share one trunk/extension provisioning pass and one
-# EXIT-trap cleanup -- provisioning the same fixture twice would be pure
-# waste, and nothing about either direction's checks touches the other's
-# state (see docs/tasks/0016-pjsip-inbound-trunk-routing.md §15 for why
-# this stays one command instead of two).
+# finalization cleanup pass -- provisioning the same fixture twice would
+# be pure waste, and nothing about either direction's checks touches the
+# other's state (see docs/tasks/0016-pjsip-inbound-trunk-routing.md §15
+# for why this stays one command instead of two).
 #
 # Separate from scripts/smoke-test.sh (HTTP-only) and
 # scripts/call-smoke-test.sh (PJSIP extensions only) by design -- this is
 # trunk-specific SIP/telephony-level proof, a different failure domain.
 #
-# Exit code: 0 if every check PASSes; 1 if any check FAILs.
+# TASK-0027: rebuilt on scripts/lib/harness.sh. Fixes two real defects
+# found during TASK-0027's own investigation (see
+# docs/tasks/0027-regression-harness-reliability.md §5/§6):
+#
+# 1. Dependency graph: an outbound route references the trunk; the
+#    inbound route references BOTH the trunk (src=T:<id>) and the
+#    extension (DiscarRamal's ramal=<extension>) -- confirmed by reading
+#    TrunksController::removeAction()/ExtensionsController::removeAction(),
+#    both of which block deletion while a route still references the
+#    object. The OLD preflight checked for a stale trunk FIRST and
+#    called stop() immediately, never reaching the route-fixture recovery
+#    code further down -- so a trunk left behind by one interrupted run
+#    permanently BLOCKED every later run. Stale-fixture recovery below is
+#    now dependency-ordered: routes are discovered and removed via the
+#    supported PBX_Rules::delete() path BEFORE the trunk/extension they
+#    reference are ever touched -- exactly mirroring the cleanup-time
+#    order this script already used correctly.
+# 2. delete_trunk() previously hardcoded the trunk's `name` field to the
+#    literal "1" (TrunksController::removeAction() deletes the `peers`
+#    row using whatever `name` the POST sends, not a DB lookup by id).
+#    Any run where the auto-generated trunk name wasn't literally "1"
+#    silently left the `peers` row behind after "successful" cleanup.
+#    Fixed to look up the real persisted name from the `trunks` table,
+#    matching the pattern transport-smoke-test.sh's delete_trunk_fixture()
+#    already used correctly.
+#
+# Exit code: see scripts/lib/harness.sh (0=PASS 1=FAIL 2=BLOCKED 3=INCONCLUSIVE).
 
 set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/harness.sh
+source "$SCRIPT_DIR/lib/harness.sh"
+harness_install_traps
 
 COMPOSE="${SMOKE_COMPOSE:-docker compose}"
 BASE_URL="${SMOKE_BASE_URL:-http://localhost:${SENMA_HTTP_PORT:-${MAG_HTTP_PORT:-8080}}}"
@@ -85,41 +116,13 @@ TEST_DESTINATION_INBOUND=58888
 INBOUND_ROUTE_DESC="TASK-0016 trunk-smoke inbound route fixture"
 PROVIDER_TO_SENMA_ENDPOINT="to-senma"
 
-PASS=0
-FAIL=0
-declare -a RESULTS=()
 CREATED_EXT=0
 CREATED_TRUNK_ID=""
-CREATED_ROUTE_ID=""
-CREATED_INBOUND_ROUTE_ID=""
+CREATED_TRUNK_NAME=""
 CONF_DIR=""
 COOKIEJAR=""
 
-log()  { printf '%s\n' "$*" >&2; }
-row()  { RESULTS+=("$1|$2|$3"); }
-ok()   { row "$1" "PASS" "$2"; PASS=$((PASS+1)); log "PASS: $1 -- $2"; }
-bad()  { row "$1" "FAIL" "$2"; FAIL=$((FAIL+1)); log "FAIL: $1 -- $2"; }
-
-print_report() {
-    echo
-    echo "================================================================"
-    printf "%-32s %-8s %s\n" "CHECK" "RESULT" "DETAIL"
-    echo "----------------------------------------------------------------"
-    for r in "${RESULTS[@]}"; do
-        IFS='|' read -r flow status detail <<< "$r"
-        printf "%-32s %-8s %s\n" "$flow" "$status" "$detail"
-    done
-    echo "================================================================"
-    echo "PASS: $PASS   FAIL: $FAIL"
-    echo "================================================================"
-}
-
-stop() {
-    log "STOP: $*"
-    echo "STOP: $*"
-    cleanup
-    exit 1
-}
+log() { harness_log "$@"; }
 
 db_query() {
     $COMPOSE exec -T db mariadb -u"${DB_USER:-snep}" -p"${DB_PASSWORD:-change-me-for-local-development}" \
@@ -214,6 +217,10 @@ create_trunk() {
     return 1
 }
 
+# delete_trunk <id> <name> -- <name> MUST be the trunk's real persisted
+# `name` column (TrunksController::removeAction() uses it verbatim to
+# delete the matching `peers` row, not a DB lookup by id -- see the
+# TASK-0027 header comment above).
 delete_trunk() {
     local id="$1" name="$2" httpcode
     httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null -w '%{http_code}' \
@@ -224,157 +231,178 @@ delete_trunk() {
     [ "$httpcode" = "302" ]
 }
 
-cleanup() {
-    trap - EXIT
-    log "==> cleanup"
-    docker rm -f "$BARESIP_CONTAINER" >/dev/null 2>&1
-    [ -n "$CONF_DIR" ] && rm -rf "$CONF_DIR"
-    if [ -n "$CREATED_ROUTE_ID" ]; then
-        $COMPOSE exec -T app php -- remove "$CREATED_ROUTE_ID" < "$ROUTE_SCRIPT" >/dev/null 2>&1 \
-            && log "removed route fixture id=${CREATED_ROUTE_ID}" \
-            || log "WARNING: could not remove route fixture id=${CREATED_ROUTE_ID} -- may need manual cleanup"
+# remove_route_fixture <rule_id> <label> -- via PBX_Rules::delete(),
+# never raw SQL. Used both for normal cleanup and stale-fixture recovery.
+remove_route_fixture() {
+    local rule_id="$1" label="$2" result
+    $COMPOSE exec -T app php -- remove "$rule_id" < "$ROUTE_SCRIPT" >&2
+    result=$?
+    if [ "$result" = 0 ]; then
+        log "removed ${label} fixture id=${rule_id}"
+    else
+        log "WARNING: could not remove ${label} fixture id=${rule_id}"
     fi
-    if [ -n "$CREATED_INBOUND_ROUTE_ID" ]; then
-        $COMPOSE exec -T app php -- remove "$CREATED_INBOUND_ROUTE_ID" < "$ROUTE_SCRIPT" >/dev/null 2>&1 \
-            && log "removed inbound route fixture id=${CREATED_INBOUND_ROUTE_ID}" \
-            || log "WARNING: could not remove inbound route fixture id=${CREATED_INBOUND_ROUTE_ID} -- may need manual cleanup"
-    fi
-    if [ -n "$COOKIEJAR" ]; then
-        if [ "$CREATED_EXT" = "1" ]; then
-            delete_extension "$TEST_EXT" && log "removed test fixture extension ${TEST_EXT} via HTTP" \
-                || log "WARNING: HTTP delete of extension ${TEST_EXT} did not return 302 -- may need manual cleanup"
-        fi
-        if [ -n "$CREATED_TRUNK_ID" ]; then
-            delete_trunk "$CREATED_TRUNK_ID" "1" && log "removed test fixture trunk id=${CREATED_TRUNK_ID} via HTTP" \
-                || log "WARNING: HTTP delete of trunk id=${CREATED_TRUNK_ID} did not return 302 -- may need manual cleanup"
-        fi
-        rm -f "$COOKIEJAR"
-    fi
+    return "$result"
 }
-trap cleanup EXIT
 
 # --- 1. Required containers healthy ---------------------------------------
 
 log "==> checking required containers"
-ALL_UP=1
-for svc in app asterisk db provider; do
-    if ! $COMPOSE ps "$svc" 2>/dev/null | grep -q "Up"; then
-        ALL_UP=0
-    fi
-done
-if [ "$ALL_UP" = "1" ]; then
-    ok "containers healthy" "app, asterisk, db, provider all Up"
-else
-    bad "containers healthy" "one or more of app/asterisk/db/provider not Up -- run 'make up' first"
-    cleanup
-    trap - EXIT
-    exit 1
-fi
+harness_require_containers app asterisk db provider
 
-: "${DB_USER:?DB_USER must be set (source .env first)}"
-: "${DB_PASSWORD:?DB_PASSWORD must be set (source .env first)}"
-: "${DB_NAME:?DB_NAME must be set (source .env first)}"
-: "${TRUNK_TEST_USERNAME:?TRUNK_TEST_USERNAME must be set (source .env first)}"
-: "${TRUNK_TEST_SECRET:?TRUNK_TEST_SECRET must be set (source .env first)}"
+harness_require_env DB_USER DB_PASSWORD DB_NAME TRUNK_TEST_USERNAME TRUNK_TEST_SECRET
 
 ASTERISK_CID="$($COMPOSE ps -q asterisk)"
 ASTERISK_NAME="$(docker inspect "$ASTERISK_CID" --format '{{.Name}}' | sed 's#^/##')"
 NETWORK_NAME="$(docker inspect "$ASTERISK_CID" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')"
 if [ -z "$ASTERISK_NAME" ] || [ -z "$NETWORK_NAME" ]; then
-    stop "could not resolve the asterisk container's name/network via docker inspect"
+    harness_blocked "could not resolve the asterisk container's name/network via docker inspect"
 fi
 log "asterisk container: $ASTERISK_NAME  network: $NETWORK_NAME"
 
 # --- 2. PJSIP modules Running on both asterisk and provider ---------------
 
 log "==> checking PJSIP module state (asterisk + provider)"
+# TASK-0027 finding: see transport-smoke-test.sh's identical comment --
+# a fresh `docker compose exec` can transiently see incomplete module
+# state immediately after a DIFFERENT suite's own PJSIP reload.
+pjsip_modules_running_on() {
+    local svc="$1"
+    $COMPOSE exec -T "$svc" asterisk -rx 'module show like res_pjsip.so' 2>&1 | grep -q "Running" \
+        && $COMPOSE exec -T "$svc" asterisk -rx 'module show like chan_pjsip.so' 2>&1 | grep -q "Running"
+}
 MODS_OK=1
 for svc in asterisk provider; do
-    P="$($COMPOSE exec -T "$svc" asterisk -rx 'module show like res_pjsip.so' 2>&1)"
-    C="$($COMPOSE exec -T "$svc" asterisk -rx 'module show like chan_pjsip.so' 2>&1)"
-    if ! echo "$P" | grep -q "Running" || ! echo "$C" | grep -q "Running"; then
+    if ! harness_retry 5 2 -- pjsip_modules_running_on "$svc"; then
         MODS_OK=0
     fi
 done
 if [ "$MODS_OK" = "1" ]; then
-    ok "PJSIP modules Running" "res_pjsip.so and chan_pjsip.so Running on both asterisk and provider"
+    harness_ok "PJSIP modules Running" "res_pjsip.so and chan_pjsip.so Running on both asterisk and provider"
 else
-    bad "PJSIP modules Running" "res_pjsip.so/chan_pjsip.so not both Running on both instances"
-    cleanup
-    trap - EXIT
-    exit 1
+    harness_blocked "res_pjsip.so/chan_pjsip.so not both Running on both instances"
 fi
 
-# --- 3. Log in, check for collisions, provision the trunk via the real UI -
+# --- 3. Log in --------------------------------------------------------------
 
 COOKIEJAR="$(mktemp)"
+harness_register_best_effort_cleanup "cookie jar temp file" "rm -f '$COOKIEJAR'"
 log "==> logging in as ${TEST_USER}"
 TEST_HASH="$($COMPOSE exec -T app php -r "echo md5('${TEST_PASSWORD}');" 2>/dev/null | tr -d '\r')"
+if [ -z "$TEST_HASH" ]; then
+    harness_blocked "could not compute the ${TEST_USER} password hash via the app container"
+fi
 db_query "UPDATE users SET password = '${TEST_HASH}' WHERE name = '${TEST_USER}';" >&2
 http_login
 
-log "==> checking for pre-existing trunk/extension fixtures"
-EXISTING_TRUNK="$(db_query "SELECT id FROM trunks WHERE callerid='${TRUNK_CALLERID}';")"
-if [ -n "$EXISTING_TRUNK" ]; then
-    stop "a trunk with callerid '${TRUNK_CALLERID}' already exists (id=${EXISTING_TRUNK}) from a prior run that did not clean up. Refusing to proceed with a raw SQL fallback -- remove it manually (through the UI) first."
+# --- 4. Dependency-ordered stale-fixture recovery ---------------------------
+#
+# Routes are discovered and removed FIRST, via the supported
+# PBX_Rules::delete() path, because both the outbound and inbound route
+# fixtures reference the trunk (and the inbound route also references the
+# extension) -- TrunksController::removeAction()/
+# ExtensionsController::removeAction() both refuse to delete an object
+# still referenced by a route. Only once no route fixture remains do we
+# attempt to recover a stale trunk/extension.
+
+log "==> checking for a leftover outbound route fixture from a prior interrupted run"
+LEFTOVER_ROUTE_ID="$(db_query "SELECT id FROM regras_negocio WHERE \`desc\`='${ROUTE_DESC}';")"
+if [ -n "$LEFTOVER_ROUTE_ID" ]; then
+    remove_route_fixture "$LEFTOVER_ROUTE_ID" "outbound route" \
+        || harness_blocked "found a leftover outbound route fixture (id=${LEFTOVER_ROUTE_ID}) from a prior interrupted run but could not remove it via the supported PBX_Rules::delete() path -- refusing to proceed with a raw SQL fallback"
 fi
+
+log "==> checking for a leftover inbound route fixture from a prior interrupted run"
+LEFTOVER_INBOUND_ROUTE_ID="$(db_query "SELECT id FROM regras_negocio WHERE \`desc\`='${INBOUND_ROUTE_DESC}';")"
+if [ -n "$LEFTOVER_INBOUND_ROUTE_ID" ]; then
+    remove_route_fixture "$LEFTOVER_INBOUND_ROUTE_ID" "inbound route" \
+        || harness_blocked "found a leftover inbound route fixture (id=${LEFTOVER_INBOUND_ROUTE_ID}) from a prior interrupted run but could not remove it via the supported PBX_Rules::delete() path -- refusing to proceed with a raw SQL fallback"
+fi
+
+log "==> checking for a leftover trunk fixture from a prior interrupted run (any referencing routes were cleared above)"
+EXISTING_TRUNK_ID="$(db_query "SELECT id FROM trunks WHERE callerid='${TRUNK_CALLERID}';")"
+if [ -n "$EXISTING_TRUNK_ID" ]; then
+    EXISTING_TRUNK_NAME="$(db_query "SELECT name FROM trunks WHERE id=${EXISTING_TRUNK_ID};")"
+    if [ -z "$EXISTING_TRUNK_NAME" ]; then
+        harness_blocked "found a leftover trunk fixture (id=${EXISTING_TRUNK_ID}) from a prior interrupted run but could not look up its persisted name -- refusing to proceed"
+    fi
+    log "found a leftover trunk fixture id=${EXISTING_TRUNK_ID} name=${EXISTING_TRUNK_NAME} -- removing via the supported TrunksController::removeAction() HTTP flow"
+    if delete_trunk "$EXISTING_TRUNK_ID" "$EXISTING_TRUNK_NAME"; then
+        log "removed leftover trunk fixture id=${EXISTING_TRUNK_ID}"
+    else
+        harness_blocked "found a leftover trunk fixture (id=${EXISTING_TRUNK_ID}, name=${EXISTING_TRUNK_NAME}) from a prior interrupted run but the supported delete path did not return 302 even after clearing all known dependent route fixtures -- refusing to proceed with a raw SQL fallback; investigate/remove it manually (possible undiscovered dependency or product defect -- document separately, do not fix here)"
+    fi
+fi
+
+log "==> checking for a leftover extension fixture from a prior interrupted run"
 EXISTING_EXT_CANAL="$(db_query "SELECT canal FROM peers WHERE name='${TEST_EXT}';")"
 EXISTING_EXT_SECRET="$(db_query "SELECT secret FROM peers WHERE name='${TEST_EXT}';")"
 if [ -n "$EXISTING_EXT_CANAL" ]; then
     if [ "$EXISTING_EXT_CANAL" = "PJSIP/${TEST_EXT}" ] && [[ "$EXISTING_EXT_SECRET" == "${FIXTURE_MARKER}"* ]]; then
         log "extension ${TEST_EXT} is a leftover trunk-smoke fixture from a prior run -- removing via HTTP before re-creating"
-        delete_extension "$TEST_EXT" || stop "found a leftover trunk-smoke fixture for extension ${TEST_EXT} but the HTTP delete flow did not return 302"
+        delete_extension "$TEST_EXT" || harness_blocked "found a leftover trunk-smoke fixture for extension ${TEST_EXT} but the HTTP delete flow did not return 302 -- refusing to proceed with a raw SQL fallback"
     else
-        stop "peers row for extension '${TEST_EXT}' already exists (canal='${EXISTING_EXT_CANAL}') and is NOT a trunk-smoke fixture. Refusing to overwrite real/unknown data."
+        harness_blocked "peers row for extension '${TEST_EXT}' already exists (canal='${EXISTING_EXT_CANAL}') and is NOT a trunk-smoke fixture. Refusing to overwrite real/unknown data."
     fi
 fi
+
+# --- 5. Provision trunk and extension via the real UI -----------------------
 
 log "==> provisioning trunk and extension ${TEST_EXT} via the real UI"
 if create_trunk; then
     CREATED_TRUNK_ID="$(db_query "SELECT id FROM trunks WHERE callerid='${TRUNK_CALLERID}';")"
     if [ -z "$CREATED_TRUNK_ID" ]; then
-        stop "trunk creation returned 302 but no matching trunks row was found afterward"
+        harness_blocked "trunk creation returned 302 but no matching trunks row was found afterward"
     fi
-    log "provisioned trunk id=${CREATED_TRUNK_ID} via the real TrunksController::addAction() HTTP flow"
+    CREATED_TRUNK_NAME="$(db_query "SELECT name FROM trunks WHERE id=${CREATED_TRUNK_ID};")"
+    if [ -z "$CREATED_TRUNK_NAME" ]; then
+        harness_blocked "trunk id=${CREATED_TRUNK_ID} was created but its persisted name could not be looked up -- cannot register a correct cleanup path"
+    fi
+    harness_register_cleanup "trunk id=${CREATED_TRUNK_ID} name=${CREATED_TRUNK_NAME} (trunk-smoke fixture)" "delete_trunk ${CREATED_TRUNK_ID} '${CREATED_TRUNK_NAME}'"
+    log "provisioned trunk id=${CREATED_TRUNK_ID} name=${CREATED_TRUNK_NAME} via the real TrunksController::addAction() HTTP flow"
 else
-    stop "creating the test trunk via the real UI flow failed -- see log above"
+    harness_blocked "creating the test trunk via the real UI flow failed -- see log above"
 fi
 
 if create_extension "$TEST_EXT" "$TEST_EXT_SECRET"; then
     CREATED_EXT=1
+    harness_register_cleanup "extension ${TEST_EXT} (trunk-smoke fixture)" "delete_extension ${TEST_EXT}"
     log "provisioned extension ${TEST_EXT} via the real ExtensionsController::addAction() HTTP flow"
 else
-    stop "creating extension ${TEST_EXT} via the real UI flow failed -- see log above"
+    harness_blocked "creating extension ${TEST_EXT} via the real UI flow failed -- see log above"
 fi
-ok "test fixtures available" "trunk id=${CREATED_TRUNK_ID} and extension ${TEST_EXT} provisioned through SENMA's real HTTP flows (not SQL, not hand-written config)"
+harness_ok "test fixtures available" "trunk id=${CREATED_TRUNK_ID} and extension ${TEST_EXT} provisioned through SENMA's real HTTP flows (not SQL, not hand-written config)"
 
 TRUNK_OBJ="trunk-${CREATED_TRUNK_ID}"
 
-# --- 4. Generated config + Asterisk runtime reflect the new trunk --------
+# --- 6. Generated config + Asterisk runtime reflect the new trunk --------
 
 log "==> checking generated PJSIP trunk config and Asterisk runtime state"
 GENERATED_CONF="$($COMPOSE exec -T asterisk cat /etc/asterisk/snep/senma-pjsip-trunks.conf 2>/dev/null)"
 if echo "$GENERATED_CONF" | grep -q "^\[${TRUNK_OBJ}\]" \
     && echo "$GENERATED_CONF" | grep -q "^\[${TRUNK_OBJ}-auth\]" \
     && echo "$GENERATED_CONF" | grep -q "^\[${TRUNK_OBJ}-registration\]"; then
-    ok "generated endpoint/auth/aor/registration sections exist" "senma-pjsip-trunks.conf contains [${TRUNK_OBJ}], [${TRUNK_OBJ}-auth], [${TRUNK_OBJ}-registration]"
+    harness_ok "generated endpoint/auth/aor/registration sections exist" "senma-pjsip-trunks.conf contains [${TRUNK_OBJ}], [${TRUNK_OBJ}-auth], [${TRUNK_OBJ}-registration]"
 else
-    bad "generated endpoint/auth/aor/registration sections exist" "expected sections not found in senma-pjsip-trunks.conf"
+    harness_bad "generated endpoint/auth/aor/registration sections exist" "expected sections not found in senma-pjsip-trunks.conf"
 fi
 
-if $COMPOSE exec -T asterisk asterisk -rx "pjsip show endpoint ${TRUNK_OBJ}" 2>&1 | grep -q "Endpoint:  ${TRUNK_OBJ}"; then
-    ok "pjsip show endpoint ${TRUNK_OBJ}" "endpoint exists in the live Asterisk PJSIP config (reload succeeded)"
+# TASK-0027 finding: see call-smoke-test.sh's identical comment -- a
+# PJSIP reload is not atomic from a freshly-spawned `docker compose
+# exec`'s perspective; bounded retry, not a weakened assertion.
+trunk_endpoint_visible() { $COMPOSE exec -T asterisk asterisk -rx "pjsip show endpoint ${TRUNK_OBJ}" 2>&1 | grep -q "Endpoint:  ${TRUNK_OBJ}"; }
+if harness_retry 5 1 -- trunk_endpoint_visible; then
+    harness_ok "pjsip show endpoint ${TRUNK_OBJ}" "endpoint exists in the live Asterisk PJSIP config (reload succeeded)"
 else
-    bad "pjsip show endpoint ${TRUNK_OBJ}" "endpoint not found -- reload may have failed"
+    harness_bad "pjsip show endpoint ${TRUNK_OBJ}" "endpoint not found after 5 attempts over ~4s -- reload may have failed"
 fi
 
-if [ "$FAIL" -gt 0 ]; then
+if [ "$_HARNESS_FAIL_COUNT" -gt 0 ]; then
     log "provisioning/reload verification failed -- aborting before registration"
-    print_report
-    exit 1
+    harness_complete
 fi
 
-# --- 5. Outbound registration state (this trunk model's status check) ----
+# --- 7. Outbound registration state (this trunk model's status check) ----
 
 log "==> checking outbound registration state"
 wait_registered_outbound() {
@@ -390,41 +418,33 @@ wait_registered_outbound() {
     return 1
 }
 if wait_registered_outbound; then
-    ok "outbound registration Registered" "${TRUNK_OBJ}-registration reached Registered within 15s (real REGISTER against the provider simulator)"
+    harness_ok "outbound registration Registered" "${TRUNK_OBJ}-registration reached Registered within 15s (real REGISTER against the provider simulator)"
 else
-    bad "outbound registration Registered" "${TRUNK_OBJ}-registration did not reach Registered within 15s"
-    cleanup
-    trap - EXIT
-    exit 1
+    harness_bad "outbound registration Registered" "${TRUNK_OBJ}-registration did not reach Registered within 15s"
+    harness_complete
 fi
 
-# --- 6. Route fixture, through PBX_Rules' own domain API ------------------
-
-log "==> checking for a leftover route fixture from a prior interrupted run"
-LEFTOVER_ROUTE_ID="$(db_query "SELECT id FROM regras_negocio WHERE \`desc\`='${ROUTE_DESC}';")"
-if [ -n "$LEFTOVER_ROUTE_ID" ]; then
-    log "found leftover route fixture id=${LEFTOVER_ROUTE_ID} -- removing via PBX_Rules::delete() before creating a new one"
-    $COMPOSE exec -T app php -- remove "$LEFTOVER_ROUTE_ID" < "$ROUTE_SCRIPT" >&2 \
-        || stop "found a leftover route fixture (id=${LEFTOVER_ROUTE_ID}) but could not remove it"
-fi
+# --- 8. Outbound route fixture, through PBX_Rules' own domain API -----------
 
 log "==> creating the outbound route fixture (destination ${TEST_DESTINATION} -> trunk ${CREATED_TRUNK_ID})"
 ROUTE_OUT="$($COMPOSE exec -T app php -- create "$CREATED_TRUNK_ID" "$TEST_DESTINATION" "$ROUTE_DESC" < "$ROUTE_SCRIPT" 2>&1)"
 CREATED_ROUTE_ID="$(echo "$ROUTE_OUT" | grep -oE '^[0-9]+$' | tail -1)"
 if [ -n "$CREATED_ROUTE_ID" ]; then
-    ok "route fixture created" "rule id=${CREATED_ROUTE_ID} via PBX_Rules::register() (destino=RX:${TEST_DESTINATION} -> DiscarTronco tronco=${CREATED_TRUNK_ID})"
+    harness_register_cleanup "outbound route id=${CREATED_ROUTE_ID} (trunk-smoke fixture)" "remove_route_fixture ${CREATED_ROUTE_ID} 'outbound route'"
+    harness_ok "route fixture created" "rule id=${CREATED_ROUTE_ID} via PBX_Rules::register() (destino=RX:${TEST_DESTINATION} -> DiscarTronco tronco=${CREATED_TRUNK_ID})"
 else
-    stop "route fixture creation failed: $ROUTE_OUT"
+    harness_blocked "route fixture creation failed: $ROUTE_OUT"
 fi
 
-# --- 7/8. Build baresip test image, start the calling extension ----------
+# --- 9/10. Build baresip test image, start the calling extension ----------
 
 log "==> building baresip test image"
-if ! docker build -q -t "$BARESIP_IMAGE" -f "$BARESIP_DOCKERFILE" docker >&2; then
-    stop "failed to build $BARESIP_IMAGE from $BARESIP_DOCKERFILE"
+if ! harness_timeout 180 docker build -q -t "$BARESIP_IMAGE" -f "$BARESIP_DOCKERFILE" docker >&2; then
+    harness_blocked "failed to build $BARESIP_IMAGE from $BARESIP_DOCKERFILE within 180s"
 fi
 
 CONF_DIR="$(mktemp -d)"
+harness_register_best_effort_cleanup "baresip config temp dir" "rm -rf '$CONF_DIR'"
 mkdir -p "$CONF_DIR/${TEST_EXT}"
 cp "$TEMPLATE_DIR/config.template" "$CONF_DIR/${TEST_EXT}/config"
 sed \
@@ -444,8 +464,10 @@ sed \
 # precedent (answermode=auto there too).
 
 log "==> starting baresip test endpoint (extension ${TEST_EXT})"
+docker rm -f "$BARESIP_CONTAINER" >/dev/null 2>&1
 docker run -d --name "$BARESIP_CONTAINER" --network "$NETWORK_NAME" \
     -v "$CONF_DIR/${TEST_EXT}:/root/.baresip" "$BARESIP_IMAGE" baresip -f /root/.baresip >&2
+harness_register_best_effort_cleanup "baresip container ${BARESIP_CONTAINER}" "docker rm -f '$BARESIP_CONTAINER' >/dev/null 2>&1"
 
 wait_registered() {
     local ext="$1" tries=15
@@ -459,15 +481,13 @@ wait_registered() {
     return 1
 }
 if wait_registered "$TEST_EXT"; then
-    ok "test endpoint ${TEST_EXT} registered" "contact bound within 15s"
+    harness_ok "test endpoint ${TEST_EXT} registered" "contact bound within 15s"
 else
-    bad "test endpoint ${TEST_EXT} registered" "no contact bound within 15s"
-    cleanup
-    trap - EXIT
-    exit 1
+    harness_bad "test endpoint ${TEST_EXT} registered" "no contact bound within 15s"
+    harness_complete
 fi
 
-# --- 9-12. Place the outbound call, verify it reaches the provider --------
+# --- 11-14. Place the outbound call, verify it reaches the provider --------
 
 log "==> placing outbound call: ${TEST_EXT} -> ${TEST_DESTINATION} (through trunk id=${CREATED_TRUNK_ID})"
 LOG_MARK_BEFORE="$($COMPOSE exec -T asterisk sh -c 'wc -l < /var/log/asterisk/full' 2>/dev/null | tr -d '\r ')"
@@ -490,49 +510,49 @@ UNIQUEID_MARK="${UNIQUEID_MARK:-0}"
 
 PAYLOAD="{\"command\":\"dial\",\"params\":\"${TEST_DESTINATION}\"}"
 LEN=${#PAYLOAD}
-EVENTS="$(docker run --rm --network "$NETWORK_NAME" "$BARESIP_IMAGE" sh -c \
+EVENTS="$(harness_timeout 25 docker run --rm --network "$NETWORK_NAME" "$BARESIP_IMAGE" sh -c \
     "printf '%s:%s,' '$LEN' '$PAYLOAD' | timeout 15 nc ${BARESIP_CONTAINER} 4444" 2>&1)"
 
 if echo "$EVENTS" | grep -q '"response":true,"ok":true'; then
-    ok "call placed" "dial command accepted by endpoint ${TEST_EXT}"
+    harness_ok "call placed" "dial command accepted by endpoint ${TEST_EXT}"
 else
-    bad "call placed" "ctrl_tcp dial command was not accepted: $EVENTS"
+    harness_bad "call placed" "ctrl_tcp dial command was not accepted: $EVENTS"
 fi
 
 if echo "$EVENTS" | grep -q '"type":"CALL_ANSWERED"'; then
-    ok "provider answered" "CALL_ANSWERED event observed"
+    harness_ok "provider answered" "CALL_ANSWERED event observed"
 else
-    bad "provider answered" "no CALL_ANSWERED event observed: $EVENTS"
+    harness_bad "provider answered" "no CALL_ANSWERED event observed: $EVENTS"
 fi
 
 if echo "$EVENTS" | grep -q '"type":"CALL_ESTABLISHED"'; then
-    ok "call established" "CALL_ESTABLISHED event observed"
+    harness_ok "call established" "CALL_ESTABLISHED event observed"
 else
-    bad "call established" "no CALL_ESTABLISHED event observed"
+    harness_bad "call established" "no CALL_ESTABLISHED event observed"
 fi
 
 sleep 2
 
 REMAINING="$($COMPOSE exec -T asterisk asterisk -rx 'core show channels' 2>&1)"
 if echo "$REMAINING" | grep -q "^0 active channels"; then
-    ok "hangup succeeded" "0 active channels after the provider's own Hangup()"
+    harness_ok "hangup succeeded" "0 active channels after the provider's own Hangup()"
 else
-    bad "hangup succeeded" "channels still active"
+    harness_bad "hangup succeeded" "channels still active"
 fi
 
-# --- 13. SENMA AGI/rule engine + trunk selection were actually exercised --
+# --- 15. SENMA AGI/rule engine + trunk selection were actually exercised --
 
 log "==> checking AGI/rule engine trace"
 AGI_TRACE="$($COMPOSE exec -T asterisk sh -c "tail -n +$((LOG_MARK_BEFORE+1)) /var/log/asterisk/full" 2>/dev/null)"
 if echo "$AGI_TRACE" | grep -q "Running the rule .*:${ROUTE_DESC}" \
     && echo "$AGI_TRACE" | grep -q "Dialing to ${TEST_DESTINATION} through trunk ${TRUNK_CALLERID}(PJSIP/${TEST_DESTINATION}@${TRUNK_OBJ})" \
     && echo "$AGI_TRACE" | grep -q "Launched AGI Script .*snep/snep.php"; then
-    ok "AGI/rule/trunk-selection path was exercised" "snep.php ran, matched the fixture rule, DiscarTronco selected trunk id=${CREATED_TRUNK_ID}, dialed PJSIP/${TEST_DESTINATION}@${TRUNK_OBJ} (not a bypassed test-only Dial)"
+    harness_ok "AGI/rule/trunk-selection path was exercised" "snep.php ran, matched the fixture rule, DiscarTronco selected trunk id=${CREATED_TRUNK_ID}, dialed PJSIP/${TEST_DESTINATION}@${TRUNK_OBJ} (not a bypassed test-only Dial)"
 else
-    bad "AGI/rule/trunk-selection path was exercised" "expected AGI/rule/trunk trace not found in Asterisk's log for this call"
+    harness_bad "AGI/rule/trunk-selection path was exercised" "expected AGI/rule/trunk trace not found in Asterisk's log for this call"
 fi
 
-# --- 14. CDR row exists and is correct -------------------------------------
+# --- 16. CDR row exists and is correct -------------------------------------
 
 log "==> checking CDR"
 # TASK-0015 finding: a trunk call (unlike a plain extension-to-extension
@@ -561,12 +581,12 @@ if [ -n "$CDR_UNIQUEID" ] \
     && [[ "$CDR_CHANNEL" == PJSIP/${TEST_EXT}-* ]] \
     && [[ "$CDR_DSTCHANNEL" == PJSIP/${TRUNK_OBJ}-* ]] \
     && [[ "$CDR_CALLDATE" != "0000-00-00"* ]]; then
-    ok "CDR row exists and is correct" "uniqueid=$CDR_UNIQUEID disposition=ANSWERED duration=$CDR_DURATION billsec=$CDR_BILLSEC channel=$CDR_CHANNEL dstchannel=$CDR_DSTCHANNEL calldate=$CDR_CALLDATE"
+    harness_ok "CDR row exists and is correct" "uniqueid=$CDR_UNIQUEID disposition=ANSWERED duration=$CDR_DURATION billsec=$CDR_BILLSEC channel=$CDR_CHANNEL dstchannel=$CDR_DSTCHANNEL calldate=$CDR_CALLDATE"
 else
-    bad "CDR row exists and is correct" "no matching/valid CDR row found (uniqueid='$CDR_UNIQUEID' disposition='$CDR_DISPOSITION' duration='$CDR_DURATION' billsec='$CDR_BILLSEC' channel='$CDR_CHANNEL' dstchannel='$CDR_DSTCHANNEL' calldate='$CDR_CALLDATE')"
+    harness_bad "CDR row exists and is correct" "no matching/valid CDR row found (uniqueid='$CDR_UNIQUEID' disposition='$CDR_DISPOSITION' duration='$CDR_DURATION' billsec='$CDR_BILLSEC' channel='$CDR_CHANNEL' dstchannel='$CDR_DSTCHANNEL' calldate='$CDR_CALLDATE')"
 fi
 
-# --- 15. SENMA reporting path can read it -----------------------------------
+# --- 17. SENMA reporting path can read it -----------------------------------
 
 log "==> checking SENMA report readback"
 if [ -n "$CDR_UNIQUEID" ]; then
@@ -574,12 +594,12 @@ if [ -n "$CDR_UNIQUEID" ]; then
     REPORT_JSON="$(curl -sS -u "${TEST_USER}:${TEST_PASSWORD}" \
         "${BASE_URL}/modules/default/api/index.php?service=CallsReport&start_date=${TODAY}&start_hour=00:00:00&end_date=${TODAY}&end_hour=23:59:59&report_type=analytic&status_answered=1&src=${TEST_EXT}&order_src=equal" 2>&1)"
     if echo "$REPORT_JSON" | grep -qF "\"uniqueid\":\"${CDR_UNIQUEID}\""; then
-        ok "SENMA reporting path can read it" "CallsReport API endpoint returned this exact CDR (uniqueid=$CDR_UNIQUEID)"
+        harness_ok "SENMA reporting path can read it" "CallsReport API endpoint returned this exact CDR (uniqueid=$CDR_UNIQUEID)"
     else
-        bad "SENMA reporting path can read it" "CallsReport API did not return uniqueid=$CDR_UNIQUEID: $REPORT_JSON"
+        harness_bad "SENMA reporting path can read it" "CallsReport API did not return uniqueid=$CDR_UNIQUEID: $REPORT_JSON"
     fi
 else
-    bad "SENMA reporting path can read it" "skipped -- no CDR uniqueid available to look up"
+    harness_bad "SENMA reporting path can read it" "skipped -- no CDR uniqueid available to look up"
 fi
 
 # =============================================================================
@@ -590,55 +610,43 @@ fi
 # trunk, no second provider, no second extension (docs/tasks/
 # 0016-pjsip-inbound-trunk-routing.md §15).
 
-# --- 16. Generated `identify` section exists --------------------------------
+# --- 18. Generated `identify` section exists --------------------------------
 
 log "==> checking generated identify section"
-# $GENERATED_CONF was captured in step 4 above and nothing has edited or
+# $GENERATED_CONF was captured in step 6 above and nothing has edited or
 # reloaded the trunk since -- still an accurate snapshot, no need to
 # re-fetch.
 if echo "$GENERATED_CONF" | grep -q "^\[${TRUNK_OBJ}-identify\]"; then
-    ok "generated identify section exists" "senma-pjsip-trunks.conf contains [${TRUNK_OBJ}-identify]"
+    harness_ok "generated identify section exists" "senma-pjsip-trunks.conf contains [${TRUNK_OBJ}-identify]"
 else
-    bad "generated identify section exists" "expected [${TRUNK_OBJ}-identify] section not found in senma-pjsip-trunks.conf"
+    harness_bad "generated identify section exists" "expected [${TRUNK_OBJ}-identify] section not found in senma-pjsip-trunks.conf"
 fi
 
-# --- 17. Provider's static to-senma endpoint is present ---------------------
+# --- 19. Provider's static to-senma endpoint is present ---------------------
 
 log "==> checking provider's to-senma endpoint (docker/provider-config/pjsip.conf)"
 if $COMPOSE exec -T provider asterisk -rx "pjsip show endpoint ${PROVIDER_TO_SENMA_ENDPOINT}" 2>&1 | grep -q "Endpoint:  ${PROVIDER_TO_SENMA_ENDPOINT}"; then
-    ok "provider to-senma endpoint present" "static endpoint used to originate the inbound test call is loaded"
+    harness_ok "provider to-senma endpoint present" "static endpoint used to originate the inbound test call is loaded"
 else
-    bad "provider to-senma endpoint present" "endpoint not found on the provider container -- check docker/provider-config/pjsip.conf"
-    cleanup
-    trap - EXIT
-    exit 1
+    harness_blocked "provider's static to-senma endpoint not found -- check docker/provider-config/pjsip.conf (test fixture precondition, not application behavior)"
 fi
 
-# --- 18. Inbound route fixture, through the same PBX_Rules domain API ------
-
-log "==> checking for a leftover inbound route fixture from a prior interrupted run"
-LEFTOVER_INBOUND_ROUTE_ID="$(db_query "SELECT id FROM regras_negocio WHERE \`desc\`='${INBOUND_ROUTE_DESC}';")"
-if [ -n "$LEFTOVER_INBOUND_ROUTE_ID" ]; then
-    log "found leftover inbound route fixture id=${LEFTOVER_INBOUND_ROUTE_ID} -- removing via PBX_Rules::delete() before creating a new one"
-    $COMPOSE exec -T app php -- remove "$LEFTOVER_INBOUND_ROUTE_ID" < "$ROUTE_SCRIPT" >&2 \
-        || stop "found a leftover inbound route fixture (id=${LEFTOVER_INBOUND_ROUTE_ID}) but could not remove it"
-fi
+# --- 20. Inbound route fixture, through the same PBX_Rules domain API ------
 
 log "==> creating the inbound route fixture (trunk ${CREATED_TRUNK_ID} -> DID ${TEST_DESTINATION_INBOUND} -> extension ${TEST_EXT})"
 INBOUND_ROUTE_OUT="$($COMPOSE exec -T app php -- create-inbound "$CREATED_TRUNK_ID" "$TEST_DESTINATION_INBOUND" "$TEST_EXT" "$INBOUND_ROUTE_DESC" < "$ROUTE_SCRIPT" 2>&1)"
 CREATED_INBOUND_ROUTE_ID="$(echo "$INBOUND_ROUTE_OUT" | grep -oE '^[0-9]+$' | tail -1)"
 if [ -n "$CREATED_INBOUND_ROUTE_ID" ]; then
-    ok "inbound route fixture created" "rule id=${CREATED_INBOUND_ROUTE_ID} via PBX_Rules::register() (src=T:${CREATED_TRUNK_ID} -> dst=RX:${TEST_DESTINATION_INBOUND} -> DiscarRamal ramal=${TEST_EXT})"
+    harness_register_cleanup "inbound route id=${CREATED_INBOUND_ROUTE_ID} (trunk-smoke fixture)" "remove_route_fixture ${CREATED_INBOUND_ROUTE_ID} 'inbound route'"
+    harness_ok "inbound route fixture created" "rule id=${CREATED_INBOUND_ROUTE_ID} via PBX_Rules::register() (src=T:${CREATED_TRUNK_ID} -> dst=RX:${TEST_DESTINATION_INBOUND} -> DiscarRamal ramal=${TEST_EXT})"
 else
-    stop "inbound route fixture creation failed: $INBOUND_ROUTE_OUT"
+    harness_blocked "inbound route fixture creation failed: $INBOUND_ROUTE_OUT"
 fi
 
-# --- 19-21. Provider originates the inbound call, verify it rings/answers/hangs up
+# --- 21-23. Provider originates the inbound call, verify it rings/answers/hangs up
 
 log "==> placing inbound call: provider -> ${TEST_DESTINATION_INBOUND} (through trunk id=${CREATED_TRUNK_ID}) -> extension ${TEST_EXT}"
 LOG_MARK_BEFORE_IN="$($COMPOSE exec -T asterisk sh -c 'wc -l < /var/log/asterisk/full' 2>/dev/null | tr -d '\r ')"
-# Same monotonic-marker reasoning as the outbound check above (§ step 14) --
-# uniqueid, not wall-clock time.
 UNIQUEID_MARK_IN="$(db_query "SELECT MAX(uniqueid) FROM cdr;")"
 UNIQUEID_MARK_IN="${UNIQUEID_MARK_IN:-0}"
 
@@ -653,20 +661,20 @@ $COMPOSE exec -T provider asterisk -rx "channel originate PJSIP/${TEST_DESTINATI
 sleep 2
 MIDCALL="$($COMPOSE exec -T asterisk asterisk -rx 'core show channels' 2>&1)"
 if echo "$MIDCALL" | grep -qE "^[1-9][0-9]* active channels?"; then
-    ok "call established briefly" "SENMA reports active channel(s) mid-call: $(echo "$MIDCALL" | grep -E "^[0-9]+ active channels?")"
+    harness_ok "call established briefly" "SENMA reports active channel(s) mid-call: $(echo "$MIDCALL" | grep -E "^[0-9]+ active channels?")"
 else
-    bad "call established briefly" "no active channels observed mid-call: $MIDCALL"
+    harness_bad "call established briefly" "no active channels observed mid-call: $MIDCALL"
 fi
 
 sleep 5
 FINAL_IN="$($COMPOSE exec -T asterisk asterisk -rx 'core show channels' 2>&1)"
 if echo "$FINAL_IN" | grep -q "^0 active channels"; then
-    ok "inbound call hangup succeeded" "0 active channels after the provider's own Wait()+Hangup"
+    harness_ok "inbound call hangup succeeded" "0 active channels after the provider's own Wait()+Hangup"
 else
-    bad "inbound call hangup succeeded" "channels still active: $FINAL_IN"
+    harness_bad "inbound call hangup succeeded" "channels still active: $FINAL_IN"
 fi
 
-# --- 22. Trunk identity + AGI/rule engine trace (item 8: do not infer trunk
+# --- 24. Trunk identity + AGI/rule engine trace (item 8: do not infer trunk
 #         identity merely because the destination rang) --------------------
 
 log "==> checking trunk identity + AGI/rule engine trace"
@@ -676,24 +684,14 @@ if echo "$AGI_TRACE_IN" | grep -q "(PJSIP/${TRUNK_OBJ}-" \
     && echo "$AGI_TRACE_IN" | grep -q "Running the rule .*:${INBOUND_ROUTE_DESC}" \
     && echo "$AGI_TRACE_IN" | grep -q "Discando para ramal ${TEST_EXT} no canal PJSIP/${TEST_EXT}" \
     && echo "$AGI_TRACE_IN" | grep -q "Launched AGI Script .*snep/snep.php"; then
-    ok "trunk identity + AGI/rule engine trace" "channel resolved to PJSIP/${TRUNK_OBJ}-*, PBX_Interfaces::getChannelOwner() identified it as Snep_Trunk '${TRUNK_CALLERID}' (not merely 'destination rang'), matched the inbound fixture rule, DiscarRamal dialed extension ${TEST_EXT}"
+    harness_ok "trunk identity + AGI/rule engine trace" "channel resolved to PJSIP/${TRUNK_OBJ}-*, PBX_Interfaces::getChannelOwner() identified it as Snep_Trunk '${TRUNK_CALLERID}' (not merely 'destination rang'), matched the inbound fixture rule, DiscarRamal dialed extension ${TEST_EXT}"
 else
-    bad "trunk identity + AGI/rule engine trace" "expected trunk-identity/AGI/rule trace not found in Asterisk's log for this call"
+    harness_bad "trunk identity + AGI/rule engine trace" "expected trunk-identity/AGI/rule trace not found in Asterisk's log for this call"
 fi
 
-# --- 23. CDR row exists and is correct --------------------------------------
+# --- 25. CDR row exists and is correct --------------------------------------
 
 log "==> checking inbound CDR"
-# TASK-0016 finding (docs/tasks/0016-pjsip-inbound-trunk-routing.md §11):
-# predicted, then validated live, that an inbound call routed through
-# DiscarRamal produces exactly ONE cdr row (unlike the outbound/
-# DiscarTronco case above, which produces two) -- not "fixed" to match
-# the outbound shape, since Asterisk legitimately does something
-# different here. src is NOT filtered on: an unauthenticated `channel
-# originate` test call has no real caller identity (observed live as
-# "anonymous") -- asserting a specific literal here would be fragile to
-# an Asterisk-version-specific default, so it's only logged, not
-# required to equal a fixed string.
 CDR_ROW_IN="$(db_query "SELECT uniqueid,src,disposition,duration,billsec,channel,dstchannel,calldate FROM cdr WHERE dst='${TEST_DESTINATION_INBOUND}' AND uniqueid > '${UNIQUEID_MARK_IN}' ORDER BY calldate ASC, uniqueid ASC LIMIT 1;")"
 CDR_IN_UNIQUEID="$(echo "$CDR_ROW_IN" | awk -F'\t' '{print $1}')"
 CDR_IN_SRC="$(echo "$CDR_ROW_IN" | awk -F'\t' '{print $2}')"
@@ -711,12 +709,12 @@ if [ -n "$CDR_IN_UNIQUEID" ] \
     && [[ "$CDR_IN_CHANNEL" == PJSIP/${TRUNK_OBJ}-* ]] \
     && [[ "$CDR_IN_DSTCHANNEL" == PJSIP/${TEST_EXT}-* ]] \
     && [[ "$CDR_IN_CALLDATE" != "0000-00-00"* ]]; then
-    ok "inbound CDR row exists and is correct" "uniqueid=$CDR_IN_UNIQUEID src=$CDR_IN_SRC disposition=ANSWERED duration=$CDR_IN_DURATION billsec=$CDR_IN_BILLSEC channel=$CDR_IN_CHANNEL dstchannel=$CDR_IN_DSTCHANNEL calldate=$CDR_IN_CALLDATE"
+    harness_ok "inbound CDR row exists and is correct" "uniqueid=$CDR_IN_UNIQUEID src=$CDR_IN_SRC disposition=ANSWERED duration=$CDR_IN_DURATION billsec=$CDR_IN_BILLSEC channel=$CDR_IN_CHANNEL dstchannel=$CDR_IN_DSTCHANNEL calldate=$CDR_IN_CALLDATE"
 else
-    bad "inbound CDR row exists and is correct" "no matching/valid CDR row found (uniqueid='$CDR_IN_UNIQUEID' src='$CDR_IN_SRC' disposition='$CDR_IN_DISPOSITION' duration='$CDR_IN_DURATION' billsec='$CDR_IN_BILLSEC' channel='$CDR_IN_CHANNEL' dstchannel='$CDR_IN_DSTCHANNEL' calldate='$CDR_IN_CALLDATE')"
+    harness_bad "inbound CDR row exists and is correct" "no matching/valid CDR row found (uniqueid='$CDR_IN_UNIQUEID' src='$CDR_IN_SRC' disposition='$CDR_IN_DISPOSITION' duration='$CDR_IN_DURATION' billsec='$CDR_IN_BILLSEC' channel='$CDR_IN_CHANNEL' dstchannel='$CDR_IN_DSTCHANNEL' calldate='$CDR_IN_CALLDATE')"
 fi
 
-# --- 24. SENMA reporting path can read it back ------------------------------
+# --- 26. SENMA reporting path can read it back ------------------------------
 
 log "==> checking SENMA report readback (inbound)"
 if [ -n "$CDR_IN_UNIQUEID" ]; then
@@ -724,22 +722,19 @@ if [ -n "$CDR_IN_UNIQUEID" ]; then
     REPORT_JSON_IN="$(curl -sS -u "${TEST_USER}:${TEST_PASSWORD}" \
         "${BASE_URL}/modules/default/api/index.php?service=CallsReport&start_date=${TODAY_IN}&start_hour=00:00:00&end_date=${TODAY_IN}&end_hour=23:59:59&report_type=analytic&status_answered=1&dst=${TEST_DESTINATION_INBOUND}&order_dst=equal" 2>&1)"
     if echo "$REPORT_JSON_IN" | grep -qF "\"uniqueid\":\"${CDR_IN_UNIQUEID}\""; then
-        ok "SENMA reporting path can read it (inbound)" "CallsReport API endpoint returned this exact CDR (uniqueid=$CDR_IN_UNIQUEID)"
+        harness_ok "SENMA reporting path can read it (inbound)" "CallsReport API endpoint returned this exact CDR (uniqueid=$CDR_IN_UNIQUEID)"
     else
-        bad "SENMA reporting path can read it (inbound)" "CallsReport API did not return uniqueid=$CDR_IN_UNIQUEID: $REPORT_JSON_IN"
+        harness_bad "SENMA reporting path can read it (inbound)" "CallsReport API did not return uniqueid=$CDR_IN_UNIQUEID: $REPORT_JSON_IN"
     fi
 else
-    bad "SENMA reporting path can read it (inbound)" "skipped -- no CDR uniqueid available to look up"
+    harness_bad "SENMA reporting path can read it (inbound)" "skipped -- no CDR uniqueid available to look up"
 fi
 
-print_report
+# --- Cleanup happens via harness_complete's cleanup pass (HTTP delete of
+#     the trunk and extension fixtures, PBX_Rules::delete() for both
+#     route fixtures, in dependency-safe LIFO order: inbound route,
+#     outbound route, extension, trunk -- then a fresh
+#     Snep_PjsipTrunkConf/Snep_PjsipConf regeneration naturally omits
+#     them all) ------------------------------------------------------------
 
-# --- Cleanup happens via the EXIT trap (HTTP delete of the trunk and
-#     extension fixtures, PBX_Rules::delete() for both route fixtures,
-#     then a fresh Snep_PjsipTrunkConf/Snep_PjsipConf regeneration
-#     naturally omits them all) ----------------------------------------
-
-if [ "$FAIL" -gt 0 ]; then
-    exit 1
-fi
-exit 0
+harness_complete

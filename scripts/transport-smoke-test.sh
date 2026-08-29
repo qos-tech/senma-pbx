@@ -77,9 +77,27 @@
 # trunk-smoke-test.sh by design -- transport lifecycle is its own
 # failure domain, independent of any specific extension/trunk.
 #
-# Exit code: 0 if every check PASSes; 1 if any check FAILs.
+# TASK-0027: rebuilt on scripts/lib/harness.sh for explicit
+# PASS/FAIL/BLOCKED/INCONCLUSIVE classification and signal-safe
+# finalization. The three combined `trap 'x_cleanup; ...' EXIT` reassignments
+# (checks 1-18, Part 2/UX, Part 3/T20) are replaced by
+# harness_register_cleanup calls made right after each cleanup function is
+# defined -- harness_finalize runs them in reverse (LIFO) registration
+# order, which reproduces the exact same t20_cleanup -> ux_cleanup ->
+# cleanup sequence the old chained trap used. Each cleanup function now
+# also returns nonzero if any of its own fixture deletions failed, so a
+# required-cleanup failure downgrades an otherwise-PASS run to FAIL
+# instead of being silently invisible in the exit code. See
+# docs/tasks/0027-regression-harness-reliability.md.
+#
+# Exit code: see scripts/lib/harness.sh (0=PASS 1=FAIL 2=BLOCKED 3=INCONCLUSIVE).
 
 set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/harness.sh
+source "$SCRIPT_DIR/lib/harness.sh"
+harness_install_traps
 
 COMPOSE="${SMOKE_COMPOSE:-docker compose}"
 BASE_URL="${SMOKE_BASE_URL:-http://localhost:${SENMA_HTTP_PORT:-${MAG_HTTP_PORT:-8080}}}"
@@ -103,39 +121,21 @@ REF_EXT_SECRET="${FIXTURE_MARKER}-ext"
 
 TRUNK_CALLERID="${FIXTURE_MARKER} trunk fixture"
 
-PASS=0
-FAIL=0
-declare -a RESULTS=()
 CREATED_TRANSPORT_ID=""
 CREATED_REF_EXT=0
 CREATED_TRUNK_ID=""
 CREATED_TRUNK_NAME=""
 COOKIEJAR=""
 
-log()  { printf '%s\n' "$*" >&2; }
-row()  { RESULTS+=("$1|$2|$3"); }
-ok()   { row "$1" "PASS" "$2"; PASS=$((PASS+1)); log "PASS: $1 -- $2"; }
-bad()  { row "$1" "FAIL" "$2"; FAIL=$((FAIL+1)); log "FAIL: $1 -- $2"; }
+log()  { harness_log "$@"; }
+ok()   { harness_ok "$1" "$2"; }
+bad()  { harness_bad "$1" "$2"; }
 
-print_report() {
-    echo
-    echo "================================================================"
-    printf "%-40s %-8s %s\n" "CHECK" "RESULT" "DETAIL"
-    echo "----------------------------------------------------------------"
-    for r in "${RESULTS[@]}"; do
-        IFS='|' read -r flow status detail <<< "$r"
-        printf "%-40s %-8s %s\n" "$flow" "$status" "$detail"
-    done
-    echo "================================================================"
-    echo "PASS: $PASS   FAIL: $FAIL"
-    echo "================================================================"
-}
-
+# stop() preserves every existing call site's syntax (`stop "reason"`)
+# unchanged -- it now classifies BLOCKED (via the shared harness lib)
+# instead of an ad hoc `cleanup; exit 1`.
 stop() {
-    log "STOP: $*"
-    echo "STOP: $*"
-    cleanup
-    exit 1
+    harness_blocked "$*"
 }
 
 db_query() {
@@ -541,18 +541,26 @@ regenerate_all() {
 }
 
 cleanup() {
-    trap - EXIT
     log "==> cleanup"
+    local failed=0
     if [ -n "$COOKIEJAR" ]; then
         if [ "$CREATED_REF_EXT" = "1" ]; then
             db_query "UPDATE peers SET transport_id = NULL WHERE name = '${REF_EXT}';" >/dev/null 2>&1
-            delete_extension "$REF_EXT" && log "removed reference extension ${REF_EXT} via HTTP" \
-                || log "WARNING: HTTP delete of extension ${REF_EXT} did not return 302 -- may need manual cleanup"
+            if delete_extension "$REF_EXT"; then
+                log "removed reference extension ${REF_EXT} via HTTP"
+            else
+                log "WARNING: HTTP delete of extension ${REF_EXT} did not return 302 -- may need manual cleanup"
+                failed=1
+            fi
         fi
         if [ -n "$CREATED_TRUNK_ID" ]; then
             db_query "UPDATE trunks SET transport_id = NULL WHERE id = ${CREATED_TRUNK_ID};" >/dev/null 2>&1
-            delete_trunk_fixture "$CREATED_TRUNK_ID" && log "removed trunk fixture id=${CREATED_TRUNK_ID} via HTTP" \
-                || log "WARNING: HTTP delete of trunk id=${CREATED_TRUNK_ID} did not return 302 -- may need manual cleanup"
+            if delete_trunk_fixture "$CREATED_TRUNK_ID"; then
+                log "removed trunk fixture id=${CREATED_TRUNK_ID} via HTTP"
+            else
+                log "WARNING: HTTP delete of trunk id=${CREATED_TRUNK_ID} did not return 302 -- may need manual cleanup"
+                failed=1
+            fi
         fi
         if [ -n "$CREATED_TRANSPORT_ID" ]; then
             delete_transport "$CREATED_TRANSPORT_ID"
@@ -560,42 +568,32 @@ cleanup() {
                 log "removed test fixture transport id=${CREATED_TRANSPORT_ID} via HTTP"
             else
                 log "WARNING: HTTP delete of transport id=${CREATED_TRANSPORT_ID} did not return 302 (still referenced?) -- may need manual cleanup"
+                failed=1
             fi
         fi
         rm -f "$COOKIEJAR"
     fi
+    return "$failed"
 }
-trap cleanup EXIT
+harness_register_cleanup "transport-smoke fixtures (checks 1-18)" "cleanup"
 
 # --- 1. Required containers healthy ---------------------------------------
 
 log "==> checking required containers"
-ALL_UP=1
-for svc in app asterisk db; do
-    if ! $COMPOSE ps "$svc" 2>/dev/null | grep -q "Up"; then
-        ALL_UP=0
-    fi
-done
-if [ "$ALL_UP" = "1" ]; then
-    ok "containers healthy" "app, asterisk, db all Up"
-else
-    bad "containers healthy" "one or more of app/asterisk/db not Up -- run 'make up' first"
-    cleanup
-    trap - EXIT
-    exit 1
-fi
+harness_require_containers app asterisk db
 
-: "${DB_USER:?DB_USER must be set (source .env first)}"
-: "${DB_PASSWORD:?DB_PASSWORD must be set (source .env first)}"
-: "${DB_NAME:?DB_NAME must be set (source .env first)}"
-: "${TRUNK_TEST_USERNAME:?TRUNK_TEST_USERNAME must be set (source .env first)}"
-: "${TRUNK_TEST_SECRET:?TRUNK_TEST_SECRET must be set (source .env first)}"
+harness_require_env DB_USER DB_PASSWORD DB_NAME TRUNK_TEST_USERNAME TRUNK_TEST_SECRET
 
-if ! $COMPOSE exec -T asterisk asterisk -rx 'module show like res_pjsip.so' 2>&1 | grep -q "Running"; then
-    bad "PJSIP module Running" "res_pjsip.so not Running"
-    cleanup
-    trap - EXIT
-    exit 1
+pjsip_module_running() {
+    $COMPOSE exec -T asterisk asterisk -rx 'module show like res_pjsip.so' 2>&1 | grep -q "Running"
+}
+# TASK-0027 finding: a fresh `docker compose exec` querying module state
+# can transiently see incomplete output immediately after a DIFFERENT
+# suite's own PJSIP config write/reload (live-confirmed running
+# `make regression` back-to-back with no settling gap). Bounded retry,
+# not an unconditional delay.
+if ! harness_retry 5 2 -- pjsip_module_running; then
+    harness_blocked "res_pjsip.so not Running (checked 5 times over 8s)"
 fi
 ok "PJSIP module Running" "res_pjsip.so Running"
 
@@ -862,26 +860,29 @@ UX_CREATED_TRUNK_ID=""
 
 ux_cleanup() {
     log "==> UX (TASK-0019) cleanup"
+    local failed=0
     if [ "$UX_CREATED_EXT" = "1" ]; then
         db_query "UPDATE peers SET transport_id = NULL WHERE name='${UX_REF_EXT}';" >/dev/null 2>&1
-        delete_extension "$UX_REF_EXT" || log "WARNING: HTTP delete of extension ${UX_REF_EXT} did not return 302 -- may need manual cleanup"
+        delete_extension "$UX_REF_EXT" || { log "WARNING: HTTP delete of extension ${UX_REF_EXT} did not return 302 -- may need manual cleanup"; failed=1; }
     fi
     if [ -n "$UX_CREATED_TRUNK_ID" ]; then
         db_query "UPDATE trunks SET transport_id = NULL WHERE id=${UX_CREATED_TRUNK_ID};" >/dev/null 2>&1
-        delete_trunk_fixture "$UX_CREATED_TRUNK_ID" || log "WARNING: HTTP delete of ux trunk id=${UX_CREATED_TRUNK_ID} did not return 302 -- may need manual cleanup"
+        delete_trunk_fixture "$UX_CREATED_TRUNK_ID" || { log "WARNING: HTTP delete of ux trunk id=${UX_CREATED_TRUNK_ID} did not return 302 -- may need manual cleanup"; failed=1; }
     fi
     for tid in "$UX_TRANSPORT_A_ID" "$UX_TRANSPORT_B_ID" "$UX_TRANSPORT_DISABLED_ID"; do
         if [ -n "$tid" ]; then
             delete_transport "$tid"
-            [ "$DELETE_HTTPCODE" = "302" ] || log "WARNING: HTTP delete of ux transport id=${tid} did not return 302 -- may need manual cleanup"
+            [ "$DELETE_HTTPCODE" = "302" ] || { log "WARNING: HTTP delete of ux transport id=${tid} did not return 302 -- may need manual cleanup"; failed=1; }
         fi
     done
+    return "$failed"
 }
-# Combines with the original cleanup() (checks 1-18's own safety net,
-# e.g. REF_EXT=1098 is only ever removed there) -- bash traps don't
-# stack, so this replaces the earlier `trap cleanup EXIT` with one that
-# runs both.
-trap 'ux_cleanup; cleanup' EXIT
+# Registered right after cleanup() at definition time -- harness_finalize
+# runs registered cleanups LIFO, so ux_cleanup (registered second) runs
+# BEFORE cleanup() (checks 1-18's own fixtures, e.g. REF_EXT=1098),
+# reproducing the exact order the old chained `trap 'ux_cleanup; cleanup'
+# EXIT` used.
+harness_register_cleanup "transport-smoke fixtures (Part 2 / UX)" "ux_cleanup"
 
 log "==> [UX] checking for pre-existing fixtures"
 for n in "$UX_TRANSPORT_A" "$UX_TRANSPORT_A_RENAMED" "$UX_TRANSPORT_B" "$UX_TRANSPORT_DISABLED"; do
@@ -1228,27 +1229,36 @@ T20_CREATED_TRUNK_ID=""
 
 t20_cleanup() {
     log "==> TASK-0020 lifecycle cleanup"
+    local failed=0
     if [ "$T20_CREATED_EXT" = "1" ]; then
         db_query "UPDATE peers SET transport_id = NULL WHERE name='${T20_REF_EXT}';" >/dev/null 2>&1
-        delete_extension "$T20_REF_EXT" || log "WARNING: HTTP delete of extension ${T20_REF_EXT} did not return 302 -- may need manual cleanup"
+        delete_extension "$T20_REF_EXT" || { log "WARNING: HTTP delete of extension ${T20_REF_EXT} did not return 302 -- may need manual cleanup"; failed=1; }
     fi
     if [ -n "$T20_CREATED_TRUNK_ID" ]; then
         db_query "UPDATE trunks SET transport_id = NULL WHERE id=${T20_CREATED_TRUNK_ID};" >/dev/null 2>&1
-        delete_trunk_fixture "$T20_CREATED_TRUNK_ID" || log "WARNING: HTTP delete of t20 trunk id=${T20_CREATED_TRUNK_ID} did not return 302 -- may need manual cleanup"
+        delete_trunk_fixture "$T20_CREATED_TRUNK_ID" || { log "WARNING: HTTP delete of t20 trunk id=${T20_CREATED_TRUNK_ID} did not return 302 -- may need manual cleanup"; failed=1; }
     fi
     for tid in "$T20_COL_A_ID" "$T20_COL_C_ID" "$T20_RENAME_ID" "$T20_DELDIS_ID" "$T20_REUSE_ID"; do
         if [ -n "$tid" ]; then
             delete_transport "$tid"
-            [ "$DELETE_HTTPCODE" = "302" ] || log "WARNING: HTTP delete of t20 transport id=${tid} did not return 302 -- may need manual cleanup"
+            [ "$DELETE_HTTPCODE" = "302" ] || { log "WARNING: HTTP delete of t20 transport id=${tid} did not return 302 -- may need manual cleanup"; failed=1; }
         fi
     done
-    # item 16: never leave a deliberately-malformed row behind.
+    # item 16: never leave a deliberately-malformed row behind. This row
+    # was itself created via raw SQL (a deliberate synthetic-corruption
+    # fixture with no supported UI equivalent, see check 54 below) --
+    # cleaning it up the same way is not a "raw SQL cleanup fallback" for
+    # a real application-owned fixture, it is the only way to remove
+    # something that was never created through a supported path.
     db_query "DELETE FROM pjsip_transports WHERE name='task0020-badproto';" >/dev/null 2>&1
+    return "$failed"
 }
-# Combines with the earlier traps (checks 1-18's own cleanup(), and
-# Part 2's ux_cleanup()) -- bash traps don't stack, so this replaces the
-# earlier `trap 'ux_cleanup; cleanup' EXIT` with one that runs all three.
-trap 't20_cleanup; ux_cleanup; cleanup' EXIT
+# Registered right after cleanup()/ux_cleanup() at definition time --
+# harness_finalize runs registered cleanups LIFO, so t20_cleanup (the
+# last one registered) runs FIRST, then ux_cleanup, then cleanup --
+# reproducing the exact order the old chained `trap 't20_cleanup;
+# ux_cleanup; cleanup' EXIT` used.
+harness_register_cleanup "transport-smoke fixtures (Part 3 / T20 lifecycle)" "t20_cleanup"
 
 # t20_wait_for_asterisk -- poll after a real restart until the CLI
 # connection is answering again. Up to 20s, matching the "within 15-20s"
@@ -1604,9 +1614,4 @@ delete_transport "$T20_COL_C_ID"; T20_COL_C_ID=""
 delete_transport "$T20_RENAME_ID"; T20_RENAME_ID=""
 delete_transport "$T20_REUSE_ID"; T20_REUSE_ID=""
 
-print_report
-
-if [ "$FAIL" -gt 0 ]; then
-    exit 1
-fi
-exit 0
+harness_complete

@@ -8,10 +8,25 @@
 #   docs/tasks/0003-http-smoke-harness.md
 #   docs/tasks/0002-php84-compatibility-baseline.md
 #
-# Exit code: 0 if every flow is PASS or an explicitly-known EXPECTED
-# LIMITATION; 1 if any flow FAILs or a new PHP Fatal Error is detected.
+# TASK-0027: uses scripts/lib/harness.sh only for BLOCKED classification/
+# exit-code consistency with the rest of the suite (an unreachable app
+# container, or an inability to set up the dev test account, is an
+# environment precondition problem, not a product FAIL) and signal-safe
+# finalization. This script's own PASS/FAIL/EXPECTED_LIMITATION counters
+# and check() helper are left as-is -- EXPECTED_LIMITATION is a genuine
+# third state this suite already models well, distinct from the shared
+# lib's PASS/FAIL. See docs/tasks/0027-regression-harness-reliability.md.
+#
+# Exit code: 0=PASS (every flow PASS or EXPECTED_LIMITATION), 1=FAIL (a
+# flow FAILed or a new PHP Fatal Error appeared), 2=BLOCKED (see
+# scripts/lib/harness.sh), 3=INCONCLUSIVE (interrupted).
 
 set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/harness.sh
+source "$SCRIPT_DIR/lib/harness.sh"
+harness_install_traps
 
 # --- Configuration -----------------------------------------------------
 
@@ -35,7 +50,7 @@ COOKIEJAR="$(mktemp)"
 TMP_BODY="$(mktemp)"
 TMP_HEADERS="$(mktemp)"
 cleanup() { rm -f "$COOKIEJAR" "$TMP_BODY" "$TMP_HEADERS"; }
-trap cleanup EXIT
+harness_register_best_effort_cleanup "smoke-test temp files" "cleanup"
 
 PASS=0
 FAIL=0
@@ -62,8 +77,7 @@ for i in $(seq 1 30); do
     sleep 2
 done
 if ! curl -sS -o /dev/null "$BASE_URL/" 2>/dev/null; then
-    log "FATAL: app not reachable at $BASE_URL after waiting"
-    exit 1
+    harness_blocked "app not reachable at $BASE_URL after waiting"
 fi
 
 # --- Establish a known dev test account ---------------------------------
@@ -76,17 +90,13 @@ log "==> Ensuring dev test account exists ($TEST_USER)"
 # -- the container always has PHP, keeping this Docker-only per CLAUDE.md.
 TEST_HASH="$($COMPOSE exec -T app php -r "echo md5('${TEST_PASSWORD}');" 2>/dev/null | tr -d '\r')"
 if [ -z "$TEST_HASH" ]; then
-    log "FATAL: could not compute test-account password hash via the app container"
-    exit 1
+    harness_blocked "could not compute test-account password hash via the app container"
 fi
 # Only updates the password of the existing seeded admin row -- never
 # inserts, never touches any other column (dashboard/profile_id/etc stay
 # whatever they already are).
 $COMPOSE exec -T db mariadb -u"${DB_USER:-snep}" -p"${DB_PASSWORD:-change-me-for-local-development}" "${DB_NAME:-snep}" \
-    -e "UPDATE users SET password = '${TEST_HASH}' WHERE name = '${TEST_USER}';" >&2 2>&1 || {
-    log "FATAL: could not set the dev test account password"
-    exit 1
-}
+    -e "UPDATE users SET password = '${TEST_HASH}' WHERE name = '${TEST_USER}';" >&2 2>&1 || harness_blocked "could not set the dev test account password"
 
 # --- Baseline fatal-error count in the app log ---------------------------
 
@@ -264,7 +274,15 @@ echo "PASS: $PASS   FAIL: $FAIL   EXPECTED_LIMITATION: $LIMITATION"
 echo "Elapsed: ${ELAPSED}s"
 echo "================================================================"
 
+# Bridges this script's own PASS/FAIL/LIMITATION bookkeeping (kept as-is
+# above -- EXPECTED_LIMITATION is a real third state this suite already
+# models well) into one summary harness_ok/harness_bad call, so
+# harness_complete's classification reflects it correctly instead of
+# defaulting to INCONCLUSIVE (harness_ok/harness_bad were never called
+# per-flow in this script, only this script's own row()).
 if [ "$FAIL" -gt 0 ]; then
-    exit 1
+    harness_bad "smoke-test flows" "$FAIL flow(s) FAILed (PASS=$PASS EXPECTED_LIMITATION=$LIMITATION) -- see matrix above"
+else
+    harness_ok "smoke-test flows" "PASS=$PASS EXPECTED_LIMITATION=$LIMITATION FAIL=0"
 fi
-exit 0
+harness_complete

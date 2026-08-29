@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-smoke call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage authorization-smoke preauth-security-smoke call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -38,11 +38,21 @@ test:
 smoke: up
 	@set -a; . ./.env; set +a; bash scripts/smoke-test.sh
 
+# TASK-0026A: static inventory -- every controller/action must be
+# resource-registered, a reviewed authenticated-open controller, or a
+# resource alias, so no new controller/action can silently fall through
+# to an implicit allow. Pure static check, no Docker dependency.
+authorization-coverage:
+	@bash scripts/authorization-coverage-check.sh
+
 # TASK-0026A: verifies the default-deny authorization boundary using an
 # isolated local-dev account.  It performs only harmless GETs and uses the
 # existing Users > Permission form for the grant/revoke lifecycle.
 authorization-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/authorization-smoke-test.sh
+
+preauth-security-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/preauth-security-smoke-test.sh
 
 call-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/call-smoke-test.sh
@@ -75,9 +85,18 @@ external-failure-smoke: up
 external-content-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/external-content-smoke-test.sh
 
-lint:
-	@echo "No lint pipeline is wired yet."
-	@echo "Add PHP/static analysis tooling during the PHP modernization phase."
+# TASK-0027: php -l across snep/ (inside the app container), bash -n
+# across scripts/, XML well-formedness for resources.xml, and
+# git diff --check. Lightweight, reproducible, no external framework.
+lint: up
+	@set -a; . ./.env; set +a; bash scripts/lint.sh
+
+# TASK-0027: the one canonical release-regression gate -- runs the full
+# supported suite serially, in a fixed dependency-respecting order, and
+# never treats BLOCKED/INCONCLUSIVE as PASS. See
+# docs/tasks/0027-regression-harness-reliability.md.
+regression: up
+	@set -a; . ./.env; set +a; bash scripts/regression.sh
 
 doctor:
 	@command -v docker >/dev/null || (echo "docker is required" && exit 1)

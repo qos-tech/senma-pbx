@@ -51,6 +51,11 @@
 
 set -uo pipefail
 
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/harness.sh
+source "$SCRIPT_DIR/lib/harness.sh"
+harness_install_traps
+
 COMPOSE="${SMOKE_COMPOSE:-docker compose}"
 BASE_URL="${SMOKE_BASE_URL:-http://localhost:${SENMA_HTTP_PORT:-${MAG_HTTP_PORT:-8080}}}"
 BARESIP_IMAGE="senma-baresip-test:latest"
@@ -64,38 +69,20 @@ EXT_B=1097
 SECRET_A="${FIXTURE_SECRET_MARKER}-a"
 SECRET_B="${FIXTURE_SECRET_MARKER}-b"
 
-PASS=0
-FAIL=0
-declare -a RESULTS=()
 CREATED_A=0
 CREATED_B=0
 CONF_DIR=""
 COOKIEJAR=""
 
-log()  { printf '%s\n' "$*" >&2; }
-row()  { RESULTS+=("$1|$2|$3"); }
-ok()   { row "$1" "PASS" "$2"; PASS=$((PASS+1)); log "PASS: $1 -- $2"; }
-bad()  { row "$1" "FAIL" "$2"; FAIL=$((FAIL+1)); log "FAIL: $1 -- $2"; }
+log()  { harness_log "$@"; }
+ok()   { harness_ok "$1" "$2"; }
+bad()  { harness_bad "$1" "$2"; }
 
-print_report() {
-    echo
-    echo "================================================================"
-    printf "%-40s %-8s %s\n" "CHECK" "RESULT" "DETAIL"
-    echo "----------------------------------------------------------------"
-    for r in "${RESULTS[@]}"; do
-        IFS='|' read -r flow status detail <<< "$r"
-        printf "%-40s %-8s %s\n" "$flow" "$status" "$detail"
-    done
-    echo "================================================================"
-    echo "PASS: $PASS   FAIL: $FAIL"
-    echo "================================================================"
-}
-
+# stop() preserves every existing call site's syntax (`stop "reason"`)
+# unchanged -- it now classifies BLOCKED (via the shared harness lib)
+# instead of an ad hoc `cleanup; exit 1`.
 stop() {
-    log "STOP: $*"
-    echo "STOP: $*"
-    cleanup
-    exit 1
+    harness_blocked "$*"
 }
 
 db_query() {
@@ -212,11 +199,18 @@ create_extension() {
 }
 
 delete_extension() {
-    local ext="$1" httpcode
-    httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null -w '%{http_code}' \
+    local ext="$1" httpcode body
+    body="$(mktemp)"
+    httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
         --data-urlencode "id=${ext}" --data-urlencode "delete=Delete" \
         "${BASE_URL}/index.php/default/extensions/remove")"
-    [ "$httpcode" = "302" ]
+    if [ "$httpcode" = "302" ]; then
+        rm -f "$body"
+        return 0
+    fi
+    log "delete_extension ${ext} failed (HTTP $httpcode): $(grep -o 'Server Message[^<]*' "$body" || head -c 300 "$body")"
+    rm -f "$body"
+    return 1
 }
 
 wait_registered() {
@@ -246,43 +240,63 @@ baresip_hangup() {
         "printf '%s:%s,' '$len' '$payload' | timeout 6 nc ${container} 4444" >/dev/null 2>&1
 }
 
+# delete_extension_with_retry <ext> -- this suite's whole purpose is to
+# restart the shared Asterisk instance multiple times right up until the
+# moment cleanup runs; a config-reload-dependent delete
+# (ExtensionsController::removeAction() -> Snep_PjsipConf::loadConfFromDb()
+# -> AMI "module reload res_pjsip.so") can race a restart's last few
+# seconds of settling even after Snep_Asterisk_Operations::getRestartState()
+# has already reported RUNNING (TASK-0027 finding, live-observed:
+# uptime 37s at the moment of a delete failure right after this suite's
+# own final restart). A short bounded retry absorbs exactly that benign
+# timing window without touching TASK-0021's restart-readiness product
+# code or masking a genuine, persistent delete failure.
+delete_extension_with_retry() {
+    local ext="$1" attempt
+    for attempt in 1 2 3; do
+        if delete_extension "$ext"; then
+            return 0
+        fi
+        log "delete of extension ${ext} did not return 302 (attempt ${attempt}/3) -- Asterisk may still be settling after this suite's own restarts, retrying in 2s"
+        sleep 2
+    done
+    return 1
+}
+
 cleanup() {
-    trap - EXIT
     log "==> cleanup"
+    local failed=0
     docker rm -f senma-restartsmoke-a senma-restartsmoke-b >/dev/null 2>&1
     [ -n "$CONF_DIR" ] && rm -rf "$CONF_DIR"
     if [ -n "$COOKIEJAR" ]; then
         if [ "$CREATED_A" = "1" ]; then
-            delete_extension "$EXT_A" && log "removed fixture extension ${EXT_A}" \
-                || log "WARNING: HTTP delete of ${EXT_A} did not return 302 -- may need manual cleanup"
+            if delete_extension_with_retry "$EXT_A"; then
+                log "removed fixture extension ${EXT_A}"
+            else
+                log "WARNING: HTTP delete of ${EXT_A} did not return 302 after retries -- may need manual cleanup"
+                failed=1
+            fi
         fi
         if [ "$CREATED_B" = "1" ]; then
-            delete_extension "$EXT_B" && log "removed fixture extension ${EXT_B}" \
-                || log "WARNING: HTTP delete of ${EXT_B} did not return 302 -- may need manual cleanup"
+            if delete_extension_with_retry "$EXT_B"; then
+                log "removed fixture extension ${EXT_B}"
+            else
+                log "WARNING: HTTP delete of ${EXT_B} did not return 302 after retries -- may need manual cleanup"
+                failed=1
+            fi
         fi
         rm -f "$COOKIEJAR"
     fi
+    return "$failed"
 }
-trap cleanup EXIT
+harness_register_cleanup "restart-smoke fixtures (sections A-D)" "cleanup"
 
 # --- 0. Safety guards: confirm the controlled dev topology, refuse otherwise --
 
 log "==> checking required containers"
-ALL_UP=1
-for svc in app asterisk db; do
-    if ! $COMPOSE ps "$svc" 2>/dev/null | grep -q "Up"; then
-        ALL_UP=0
-    fi
-done
-if [ "$ALL_UP" != "1" ]; then
-    bad "containers healthy" "one or more of app/asterisk/db not Up -- run 'make up' first"
-    cleanup; trap - EXIT; exit 1
-fi
-ok "containers healthy" "app, asterisk, db all Up"
+harness_require_containers app asterisk db
 
-: "${DB_USER:?DB_USER must be set (source .env first)}"
-: "${DB_PASSWORD:?DB_PASSWORD must be set (source .env first)}"
-: "${DB_NAME:?DB_NAME must be set (source .env first)}"
+harness_require_env DB_USER DB_PASSWORD DB_NAME
 
 ASTERISK_CID="$($COMPOSE ps -q asterisk)"
 ASTERISK_NAME="$(docker inspect "$ASTERISK_CID" --format '{{.Name}}' | sed 's#^/##')"
@@ -299,7 +313,21 @@ log "asterisk container: $ASTERISK_NAME  network: $NETWORK_NAME (this script WIL
 # --- 1. Log in ---------------------------------------------------------
 
 COOKIEJAR="$(mktemp)"
+# NOT separately registered here: cleanup() (registered above, right
+# after its own definition) already removes $COOKIEJAR itself as its
+# last step, AFTER using it to authenticate the extension deletes.
+# TASK-0027 finding, live-reproduced: a separate best-effort registration
+# for this same file, added here, ran in LIFO order BEFORE cleanup()
+# (registered earlier = runs later) and deleted the admin cookiejar out
+# from under it -- every subsequent delete_extension call in cleanup()
+# then went out unauthenticated (silently rendering the login page,
+# HTTP 200) and "failed cleanup" was actually "cleanup never had a
+# valid session to act with." Fixed by removing the redundant
+# registration entirely -- cleanup() already owns this file's lifecycle.
 TEST_HASH="$($COMPOSE exec -T app php -r "echo md5('${TEST_PASSWORD}');" 2>/dev/null | tr -d '\r')"
+if [ -z "$TEST_HASH" ]; then
+    harness_blocked "could not compute the ${TEST_USER} password hash via the app container"
+fi
 db_query "UPDATE users SET password = '${TEST_HASH}' WHERE name = '${TEST_USER}';" >&2
 http_login
 ok "authenticated session" "logged in as ${TEST_USER}"
@@ -326,11 +354,25 @@ fi
 # --- B. active-call graceful restart ------------------------------------
 
 log "==> B: active-call graceful restart"
+# TASK-0027: previously a hard stop() with no recovery attempt at all --
+# a stale fixture from any prior interrupted run permanently blocked
+# every later run (live-confirmed during TASK-0027's own validation:
+# extension 1096, secret 'task0021-fixture-a', was found left over from
+# an earlier interrupted run). Now mirrors call-smoke-test.sh/
+# trunk-smoke-test.sh's own established recovery pattern: only a peers
+# row carrying this script's own fixture-secret marker is removed, via
+# the supported HTTP delete path, before re-creating.
 for pair in "${EXT_A}:${SECRET_A}:CREATED_A" "${EXT_B}:${SECRET_B}:CREATED_B"; do
     IFS=':' read -r ext secret flagvar <<< "$pair"
     existing_canal="$(db_query "SELECT canal FROM peers WHERE name='${ext}';")"
+    existing_secret="$(db_query "SELECT secret FROM peers WHERE name='${ext}';")"
     if [ -n "$existing_canal" ]; then
-        stop "peers row for extension '${ext}' already exists (canal='${existing_canal}') -- refusing to overwrite. Remove it manually before running make restart-smoke."
+        if [ "$existing_canal" = "PJSIP/${ext}" ] && [[ "$existing_secret" == "${FIXTURE_SECRET_MARKER}"* ]]; then
+            log "extension ${ext} is a leftover restart-smoke fixture from a prior interrupted run -- removing via the supported HTTP delete flow before re-creating"
+            delete_extension "$ext" || stop "found a leftover restart-smoke fixture for extension ${ext} but the supported HTTP delete flow did not return 302 -- refusing to proceed with a raw SQL fallback"
+        else
+            stop "peers row for extension '${ext}' already exists (canal='${existing_canal}') and is NOT a restart-smoke fixture. Refusing to overwrite real/unknown data. Remove it manually before running make restart-smoke."
+        fi
     fi
     if create_extension "$ext" "$secret"; then
         printf -v "$flagvar" '1'
@@ -448,7 +490,15 @@ fi
 
 log "==> D: post-restart platform health"
 TRANSPORTS_AFTER="$($COMPOSE exec -T asterisk asterisk -rx 'pjsip show transports' 2>&1)"
-if echo "$TRANSPORTS_AFTER" | grep -q 'Objects found: 2'; then
+# TASK-0027 finding: this previously asserted the literal 'Objects
+# found: 2', which was already stale before this task -- the seeded
+# install data (snep/install/database/system_data.sql) has shipped a
+# third default transport (wss, for WebRTC) since TASK-0017/0018, well
+# before this restart-smoke check existed, so the literal count could
+# never again pass. Checking for the two named transports this check
+# actually cares about (udp/tcp) is both correct today and resilient to
+# a future additional default transport, unlike a brittle total count.
+if echo "$TRANSPORTS_AFTER" | grep -q '^Transport:  tcp ' && echo "$TRANSPORTS_AFTER" | grep -q '^Transport:  udp '; then
     ok "pjsip transports intact" "udp/tcp transports present after restarts"
 else
     bad "pjsip transports intact" "$TRANSPORTS_AFTER"
@@ -490,6 +540,12 @@ ADMIN_JAR="$COOKIEJAR"
 
 authz_cleanup() {
     log "==> authorization fixture cleanup"
+    # These two users are created via direct SQL (see the comment at
+    # their INSERT below -- both UsersController::addAction() and
+    # Snep_Users_Manager::add() were found to fatal under PHP 8.4/strict
+    # SQL, a pre-existing, separately-documented product defect, not
+    # fixed here), so removing them the same way is the only available
+    # path, not a "raw SQL cleanup fallback" for a UI-created fixture.
     if [ -n "$RESTRICTED_ID" ]; then
         db_query "DELETE FROM users_permissions WHERE user_id=${RESTRICTED_ID};" >/dev/null 2>&1
         db_query "DELETE FROM users WHERE id=${RESTRICTED_ID};" >/dev/null 2>&1
@@ -500,11 +556,13 @@ authz_cleanup() {
     fi
     [ -n "$RESTRICTED_JAR" ] && rm -f "$RESTRICTED_JAR"
     [ -n "$AUTHORIZED_JAR" ] && rm -f "$AUTHORIZED_JAR"
+    return 0
 }
-# Bash traps don't stack -- this replaces the earlier `trap cleanup EXIT`
-# with one that runs both, matching transport-smoke-test.sh's own
+# Registered right after cleanup() at definition time -- harness_finalize
+# runs registered cleanups LIFO, so authz_cleanup (registered second)
+# runs BEFORE cleanup(), matching transport-smoke-test.sh's own
 # established convention for combining multiple cleanup phases.
-trap 'authz_cleanup; cleanup' EXIT
+harness_register_cleanup "restart-smoke authorization fixtures (section E)" "authz_cleanup"
 
 for existing_name in "$RESTRICTED_USER" "$AUTHORIZED_USER"; do
     existing="$(db_query "SELECT id FROM users WHERE name='${existing_name}';")"
@@ -750,8 +808,4 @@ else
     bad "authorization denials audited" "expected at least 2 RestartDenied rows, found '${DENIED_ROWS}'"
 fi
 
-print_report
-authz_cleanup
-cleanup
-trap - EXIT
-[ "$FAIL" -eq 0 ]
+harness_complete

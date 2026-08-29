@@ -33,9 +33,18 @@
 # Deliberately separate from `make smoke`, per this task's own explicit
 # instruction -- never run implicitly by it.
 #
-# Exit code: 0 if every check PASSes; 1 if any check FAILs.
+# TASK-0027: rebuilt on scripts/lib/harness.sh for explicit
+# PASS/FAIL/BLOCKED/INCONCLUSIVE classification and signal-safe
+# finalization. See docs/tasks/0027-regression-harness-reliability.md.
+#
+# Exit code: see scripts/lib/harness.sh (0=PASS 1=FAIL 2=BLOCKED 3=INCONCLUSIVE).
 
 set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/harness.sh
+source "$SCRIPT_DIR/lib/harness.sh"
+harness_install_traps
 
 COMPOSE="${SMOKE_COMPOSE:-docker compose}"
 BASE_URL="${SMOKE_BASE_URL:-http://localhost:${SENMA_HTTP_PORT:-${MAG_HTTP_PORT:-8080}}}"
@@ -47,39 +56,21 @@ ROUTER_PORT=8999
 # never the old 3-5s default. Checked with generous slack below.
 LATENCY_BOUND_SECONDS=3
 
-PASS=0
-FAIL=0
-declare -a RESULTS=()
 COOKIEJAR=""
 ROUTER_STARTED=0
 ORIG_HOST_NOTIFICATION=""
 ORIG_UPDATE_SERVER=""
 ORIG_HOST_INSPECT=""
 
-log()  { printf '%s\n' "$*" >&2; }
-row()  { RESULTS+=("$1|$2|$3"); }
-ok()   { row "$1" "PASS" "$2"; PASS=$((PASS+1)); log "PASS: $1 -- $2"; }
-bad()  { row "$1" "FAIL" "$2"; FAIL=$((FAIL+1)); log "FAIL: $1 -- $2"; }
+log()  { harness_log "$@"; }
+ok()   { harness_ok "$1" "$2"; }
+bad()  { harness_bad "$1" "$2"; }
 
-print_report() {
-    echo
-    echo "================================================================"
-    printf "%-46s %-8s %s\n" "CHECK" "RESULT" "DETAIL"
-    echo "----------------------------------------------------------------"
-    for r in "${RESULTS[@]}"; do
-        IFS='|' read -r flow status detail <<< "$r"
-        printf "%-46s %-8s %s\n" "$flow" "$status" "$detail"
-    done
-    echo "================================================================"
-    echo "PASS: $PASS   FAIL: $FAIL"
-    echo "================================================================"
-}
-
+# stop() preserves every existing call site's syntax (`stop "reason"`)
+# unchanged -- it now classifies BLOCKED (via the shared harness lib)
+# instead of an ad hoc `cleanup; exit 1`.
 stop() {
-    log "STOP: $*"
-    echo "STOP: $*"
-    cleanup
-    exit 1
+    harness_blocked "$*"
 }
 
 db_query() {
@@ -173,9 +164,16 @@ stop_router() {
 }
 
 cleanup() {
-    trap - EXIT
     log "==> cleanup"
     stop_router
+    # host_notification/update_server/host_inspect are global vendor
+    # integration endpoints with no add/remove/edit UI of their own
+    # (unlike extensions/trunks/transports) -- backing up and restoring
+    # their exact prior value via the same core_config path this script
+    # used to point them at the local test router is the established
+    # pattern this project already uses for config-value fixtures (see
+    # preauth-security-smoke-test.sh's setup.conf backup/restore), not a
+    # raw-SQL fallback for a UI-created resource.
     if [ -n "$ORIG_HOST_NOTIFICATION" ]; then
         set_vendor_config "host_notification" "$ORIG_HOST_NOTIFICATION"
     fi
@@ -188,27 +186,16 @@ cleanup() {
     db_query "DELETE FROM core_config WHERE config_name IN ('notifications_synced_at','update_server_synced_at','update_server_latest_version','host_inspect_synced_at');" >/dev/null 2>&1
     db_query "DELETE FROM core_notifications;" >/dev/null 2>&1
     [ -n "$COOKIEJAR" ] && rm -f "$COOKIEJAR"
+    return 0
 }
-trap cleanup EXIT
+harness_register_cleanup "external-failure-smoke vendor config + router" "cleanup"
 
 # --- 0. Safety guards ------------------------------------------------------
 
 log "==> checking required containers"
-ALL_UP=1
-for svc in app db; do
-    if ! $COMPOSE ps "$svc" 2>/dev/null | grep -q "Up"; then
-        ALL_UP=0
-    fi
-done
-if [ "$ALL_UP" != "1" ]; then
-    bad "containers healthy" "app/db not Up -- run 'make up' first"
-    cleanup; trap - EXIT; exit 1
-fi
-ok "containers healthy" "app, db Up"
+harness_require_containers app db
 
-: "${DB_USER:?DB_USER must be set (source .env first)}"
-: "${DB_PASSWORD:?DB_PASSWORD must be set (source .env first)}"
-: "${DB_NAME:?DB_NAME must be set (source .env first)}"
+harness_require_env DB_USER DB_PASSWORD DB_NAME
 
 # --- 1. Log in, back up real vendor config ---------------------------------
 
@@ -344,6 +331,7 @@ set_vendor_config "host_notification" "http://192.0.2.1"
 set_vendor_config "update_server" "http://192.0.2.1"
 set_vendor_config "host_inspect" "http://192.0.2.1"
 COLD_JAR="$(fresh_session_jar)"
+harness_register_best_effort_cleanup "cold-cache session jar temp file" "rm -f '$COLD_JAR'"
 COLD_T0=$(date +%s.%N)
 COLD_HTTP="$(curl -sS -c "$COLD_JAR" -b "$COLD_JAR" -o /dev/null -w '%{http_code}' --max-time 15 "${BASE_URL}/index.php/default/systemstatus")"
 COLD_T1=$(date +%s.%N)
@@ -367,6 +355,7 @@ else
 fi
 
 NEWSESSION_JAR="$(fresh_session_jar)"
+harness_register_best_effort_cleanup "new-session jar temp file" "rm -f '$NEWSESSION_JAR'"
 NEWSESSION_T0=$(date +%s.%N)
 NEWSESSION_HTTP="$(curl -sS -c "$NEWSESSION_JAR" -b "$NEWSESSION_JAR" -o /dev/null -w '%{http_code}' "${BASE_URL}/index.php/default/systemstatus")"
 NEWSESSION_T1=$(date +%s.%N)
@@ -394,7 +383,4 @@ check_page "J. vendor recovers: systemstatus healthy, no restart needed" "${BASE
 # latency bound even against a blackhole/timeout target -- each is its own
 # forced-stale, single attempt, never compounding)
 
-print_report
-cleanup
-trap - EXIT
-[ "$FAIL" -eq 0 ]
+harness_complete

@@ -26,9 +26,18 @@
 #
 # Deliberately separate from `make smoke` -- never run implicitly by it.
 #
-# Exit code: 0 if every check PASSes; 1 if any check FAILs.
+# TASK-0027: rebuilt on scripts/lib/harness.sh for explicit
+# PASS/FAIL/BLOCKED/INCONCLUSIVE classification and signal-safe
+# finalization. See docs/tasks/0027-regression-harness-reliability.md.
+#
+# Exit code: see scripts/lib/harness.sh (0=PASS 1=FAIL 2=BLOCKED 3=INCONCLUSIVE).
 
 set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+# shellcheck source=lib/harness.sh
+source "$SCRIPT_DIR/lib/harness.sh"
+harness_install_traps
 
 COMPOSE="${SMOKE_COMPOSE:-docker compose}"
 BASE_URL="${SMOKE_BASE_URL:-http://localhost:${SENMA_HTTP_PORT:-${MAG_HTTP_PORT:-8080}}}"
@@ -36,38 +45,20 @@ TEST_USER="admin"
 TEST_PASSWORD="SmokeTest123!"
 ROUTER_PORT=8996
 
-PASS=0
-FAIL=0
-declare -a RESULTS=()
 COOKIEJAR=""
 ROUTER_STARTED=0
 ORIG_HOST_NOTIFICATION=""
 ORIG_UPDATE_SERVER=""
 
-log()  { printf '%s\n' "$*" >&2; }
-row()  { RESULTS+=("$1|$2|$3"); }
-ok()   { row "$1" "PASS" "$2"; PASS=$((PASS+1)); log "PASS: $1 -- $2"; }
-bad()  { row "$1" "FAIL" "$2"; FAIL=$((FAIL+1)); log "FAIL: $1 -- $2"; }
+log()  { harness_log "$@"; }
+ok()   { harness_ok "$1" "$2"; }
+bad()  { harness_bad "$1" "$2"; }
 
-print_report() {
-    echo
-    echo "================================================================"
-    printf "%-46s %-8s %s\n" "CHECK" "RESULT" "DETAIL"
-    echo "----------------------------------------------------------------"
-    for r in "${RESULTS[@]}"; do
-        IFS='|' read -r flow status detail <<< "$r"
-        printf "%-46s %-8s %s\n" "$flow" "$status" "$detail"
-    done
-    echo "================================================================"
-    echo "PASS: $PASS   FAIL: $FAIL"
-    echo "================================================================"
-}
-
+# stop() preserves every existing call site's syntax (`stop "reason"`)
+# unchanged -- it now classifies BLOCKED (via the shared harness lib)
+# instead of an ad hoc `cleanup; exit 1`.
 stop() {
-    log "STOP: $*"
-    echo "STOP: $*"
-    cleanup
-    exit 1
+    harness_blocked "$*"
 }
 
 db_query() {
@@ -119,9 +110,11 @@ stop_router() {
 }
 
 cleanup() {
-    trap - EXIT
     log "==> cleanup"
     stop_router
+    # Same established config-value backup/restore pattern as
+    # external-failure-smoke-test.sh's cleanup() -- see its comment for
+    # why this is not a raw-SQL fallback for a UI-created fixture.
     if [ -n "$ORIG_HOST_NOTIFICATION" ]; then
         set_vendor_config "host_notification" "$ORIG_HOST_NOTIFICATION"
     fi
@@ -130,27 +123,16 @@ cleanup() {
     fi
     force_cache_stale
     [ -n "$COOKIEJAR" ] && rm -f "$COOKIEJAR"
+    return 0
 }
-trap cleanup EXIT
+harness_register_cleanup "external-content-smoke vendor config + router" "cleanup"
 
 # --- 0. Safety guards -------------------------------------------------------
 
 log "==> checking required containers"
-ALL_UP=1
-for svc in app db; do
-    if ! $COMPOSE ps "$svc" 2>/dev/null | grep -q "Up"; then
-        ALL_UP=0
-    fi
-done
-if [ "$ALL_UP" != "1" ]; then
-    bad "containers healthy" "app/db not Up -- run 'make up' first"
-    cleanup; trap - EXIT; exit 1
-fi
-ok "containers healthy" "app, db Up"
+harness_require_containers app db
 
-: "${DB_USER:?DB_USER must be set (source .env first)}"
-: "${DB_PASSWORD:?DB_PASSWORD must be set (source .env first)}"
-: "${DB_NAME:?DB_NAME must be set (source .env first)}"
+harness_require_env DB_USER DB_PASSWORD DB_NAME
 
 # --- 1. Log in, back up real vendor config -----------------------------
 
@@ -341,7 +323,4 @@ else
 fi
 rm -f "$body"
 
-print_report
-cleanup
-trap - EXIT
-[ "$FAIL" -eq 0 ]
+harness_complete
