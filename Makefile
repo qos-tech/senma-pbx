@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke shell-security-smoke pjsip-config-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -89,6 +89,16 @@ shell-security-smoke: up
 # `make smoke` -- never run implicitly by it.
 pjsip-config-security-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/pjsip-config-security-smoke-test.sh
+
+# TASK-0026F: proves the F17 standalone-API authentication/service-
+# resolution boundaries (snep/modules/default/api/index.php) hold --
+# both Basic-auth parsing branches apply the same password
+# normalization (no pass-the-hash), and $_GET['service'] only ever
+# selects a key into a finite, trusted registry (no path built from
+# request data). Deliberately separate from `make smoke` -- never run
+# implicitly by it.
+api-security-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/api-security-smoke-test.sh
 
 # TASK-0027A: deterministic, fixed-timestamp proof of
 # harness_cdr_report_window() (lib/harness.sh) -- the timezone-safe CDR
