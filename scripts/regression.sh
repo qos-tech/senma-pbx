@@ -68,6 +68,13 @@ run_suite "preauth-security"       "preauth-security-smoke-test.sh"
 # admin session for most of its checks, same precondition
 # authorization-smoke/authorization-coverage need next.
 run_suite "sql-security"           "sql-security-smoke-test.sh"
+# TASK-0026J: placed immediately after sql-security -- the two boundaries
+# it closes (Snep_InterfaceConf's legacy trunk lookup, CallsReportController's
+# report-filter SQL) are the same root-cause class (raw SQL interpolation)
+# TASK-0026C already established this early placement for, discovered by
+# TASK-0026Z's own closure sweep after every other 0026x task had already
+# landed.
+run_suite "residual-sql-security"  "residual-sql-security-smoke-test.sh"
 # TASK-0026D: placed right after sql-security and before authorization
 # -- same reasoning as sql-security's own placement (an independent
 # trust-boundary proof needing an authenticated admin session for most

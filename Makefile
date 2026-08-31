@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -70,6 +70,14 @@ preauth-security-smoke: up
 # separate from `make smoke` -- never run implicitly by it.
 sql-security-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/sql-security-smoke-test.sh
+
+# TASK-0026J: proves the two residual SQL-injection sinks found by
+# TASK-0026Z's own closure static sweep -- Snep_InterfaceConf's legacy
+# chan_sip/iax2 trunk lookup and CallsReportController's report-filter
+# SQL construction -- are closed. Deliberately separate from `make
+# smoke` -- never run implicitly by it.
+residual-sql-security-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/residual-sql-security-smoke-test.sh
 
 # TASK-0026D: proves the F2-F5 shell/command-injection boundaries
 # (Sound Files, Music on Hold, System Logs, CNL Update) hold --
