@@ -1,7 +1,11 @@
 <div class="row">
     
-    <?php 
-    if($this->remove_action == 'removefile'){
+    <?php
+    // TASK-0026G (Phase 11): "restore" added alongside the pre-existing
+    // "removefile" override so SoundFilesController::restoreAction() can
+    // reuse this same shared confirm partial instead of a near-duplicate
+    // new file.
+    if (in_array($this->remove_action, array('removefile', 'restore'), true)) {
         $action = $this->remove_action;
     }else{
         $action = 'remove';
@@ -9,10 +13,16 @@
     ?>
 	<form id="defaultForm" method="post" class="form-horizontal" action="<?php echo $this->url(array("controller" => $this->remove_form, "action" => $action), null, true); ?>" METHOD="post">
         <?php
-        
+
         echo $this->action( 'sneperror', 'error', null, array('error_message' => $this->remove_message, 'error_type' => 'alert', 'error_title' => $this->remove_title, 'error_buttons' => False) );
         ?>
 
+        <!-- TASK-0026G (F20): belt-and-suspenders alongside the global
+             includes/javascript/csrf.js auto-injection -- this partial is
+             a known shared choke point (delete/disable/enable/restore
+             confirmations across the whole app), so the token is emitted
+             directly rather than relying solely on JS. -->
+        <input type="hidden" name="<?php echo Snep_Security_Csrf::FIELD; ?>" value="<?php echo $this->escape($this->csrfToken); ?>">
         <input type="hidden" name="id" value="<?php echo $this->id; ?>">
 
         <?php if(isset($this->name)){?>

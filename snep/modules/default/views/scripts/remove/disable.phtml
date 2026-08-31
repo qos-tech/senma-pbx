@@ -6,6 +6,8 @@
         echo $this->action( 'sneperror', 'error', null, array('error_message' => $this->remove_message, 'error_type' => 'alert', 'error_title' => $this->remove_title, 'error_buttons' => False) );
         ?>
 
+        <!-- TASK-0026G (F20): see remove/remove.phtml's own comment. -->
+        <input type="hidden" name="<?php echo Snep_Security_Csrf::FIELD; ?>" value="<?php echo $this->escape($this->csrfToken); ?>">
         <input type="hidden" name="id" value="<?php echo $this->id; ?>">
 
         <?php if(isset($this->name)){?>

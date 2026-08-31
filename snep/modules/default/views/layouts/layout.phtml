@@ -53,6 +53,10 @@ if($controller != 'auth'){
   <?php echo $this->headTitle() . "\n"; ?>
   <?php echo $this->headLink() . "\n"; ?>
   <?php echo $this->headMeta(); ?>
+  <!-- TASK-0026G (F20): read by includes/javascript/csrf.js to attach the
+       session-bound CSRF token to every POST form/AJAX submission on this
+       page, without editing each individual view script. -->
+  <meta name="csrf-token" content="<?php echo $this->escape($this->csrfToken); ?>">
   <?php echo $this->headScript() . "\n"; ?>
   <?php
   $configs = Snep_Config::getConfiguration('default','host_notification');
@@ -132,7 +136,7 @@ if($controller != 'auth'){
             </a>
             <ul class="dropdown-menu dropdown-language">
               <li>
-                <a href="<?php echo $this->baseUrl(); ?>/index.php/default/parameters/language?language=en">
+                <a href="javascript:void(0)" onclick="snepChangeLanguage('en'); return false;">
                   <div>
                     <i></i>
                     <img class="img-circle" src="<?php echo $this->baseUrl(); ?>/images/Eua.png" title="Click to change language to english">
@@ -141,7 +145,7 @@ if($controller != 'auth'){
               </li>
               <li class="divider"></li>
               <li>
-                <a href="<?php echo $this->baseUrl(); ?>/index.php/default/parameters/language?language=pt_BR">
+                <a href="javascript:void(0)" onclick="snepChangeLanguage('pt_BR'); return false;">
                   <div>
                     <i></i>
                     <img class="img-circle" src="<?php echo $this->baseUrl(); ?>/images/Brazil.png" title="Clique para mudar o idioma para português">
@@ -150,7 +154,7 @@ if($controller != 'auth'){
               </li>
               <li class="divider"></li>
               <li>
-                <a href="<?php echo $this->baseUrl(); ?>/index.php/default/parameters/language?language=es">
+                <a href="javascript:void(0)" onclick="snepChangeLanguage('es'); return false;">
                   <div>
                     <i></i><img class="img-circle" src="<?php echo $this->baseUrl(); ?>/images/es.png" title="Haga clic para cambiar el idioma a español">
                   </div>
@@ -369,6 +373,16 @@ if($controller != 'auth'){
     intro.start()
   }
 
+  // TASK-0026G (Phase 11 follow-up): the language dropdown used to be a
+  // plain GET link straight to parameters/language, which mutated
+  // persisted system state as a side effect of navigation -- now a POST,
+  // which includes/javascript/csrf.js (loaded on every page) transparently
+  // attaches the CSRF token to. On success, reload so the new language
+  // takes effect on the page the user was already viewing.
+  function snepChangeLanguage(lang) {
+    jQuery.post('<?php echo $this->baseUrl(); ?>/index.php/default/parameters/language', {language: lang})
+      .always(function() { window.location.reload(); });
+  }
 
   </script>
   <?php
