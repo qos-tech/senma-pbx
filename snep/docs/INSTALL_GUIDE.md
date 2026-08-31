@@ -261,11 +261,16 @@ Após a instalação, é preciso efetuar as seguintes modificações no linux:
 
 # 4. A Interface Web e a ITC
 
-Após finalizada a instalação, acesse a interface web do SNEP  através do seu browser e informe o usuário e senha padrões:
+Após finalizada a instalação, acesse a interface web do SNEP através do seu browser e informe o usuário `admin`.
 
-**Usuário:** admin
-
-**Senha:** admin123
+> **TASK-0026H:** a instalação não define mais uma senha padrão fixa
+> (`admin123`) para o usuário `admin` -- essa credencial universal e
+> conhecida foi removida (F27). Em uma instalação via Docker
+> (`docker/entrypoint.sh`), uma senha aleatória é gerada automaticamente
+> no primeiro boot e impressa uma única vez no log do container `app`
+> (`docker compose logs app` / `make logs`) -- procure pelo bloco
+> "SENMA PBX: initial admin credential generated". Use essa senha para o
+> primeiro login e altere-a em seguida em Usuários > admin.
 
 ![N|Solid](https://opens-images.s3.amazonaws.com/snep/manual/login.PNG)
 

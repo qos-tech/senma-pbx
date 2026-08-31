@@ -50,4 +50,12 @@ fi
 chown www-data:www-data "$SETUP_CONF"
 chmod 664 "$SETUP_CONF"
 
+# TASK-0026H (F27): idempotent -- only acts while the seeded admin row
+# still holds the install-time sentinel (see
+# snep/install/database/system_data.sql and docker/bootstrap-admin.php's
+# own docblock). Runs on every start, not just first boot, so a database
+# that only just became reachable (or was restored separately from the
+# app container's own first run) still gets bootstrapped.
+php /usr/local/bin/bootstrap-admin.php || echo "[entrypoint] bootstrap-admin.php failed (non-fatal, see above)"
+
 exec "$@"

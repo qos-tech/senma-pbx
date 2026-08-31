@@ -32,6 +32,7 @@ WORKDIR /var/www/html/snep
 COPY docker/apache-mag.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/php-mag.ini /usr/local/etc/php/conf.d/zz-mag.ini
 COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+COPY docker/bootstrap-admin.php /usr/local/bin/bootstrap-admin.php
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 EXPOSE 80
 

@@ -69,7 +69,17 @@ INSERT INTO `sounds` VALUES ('a-m.wav','a-m','2015-08-21 16:12:57','AST','','pt_
 -- Default user admin
 --
 INSERT INTO profiles (name, created, updated) VALUES ('default',now(),now());
-INSERT INTO users (name, password,email,profile_id, created, updated) VALUES ('admin','0192023a7bbd73250516f069df18b500','suporte@opens.com.br',1,now(),now());
+-- TASK-0026H (F27): was the well-known 'admin'/'admin123' credential
+-- (md5('admin123') = '0192023a7bbd73250516f069df18b500'). This sentinel
+-- deliberately matches neither the legacy md5() format nor a
+-- password_hash() string, so Snep_Security_Password::verify() rejects
+-- EVERY submitted plaintext against it -- the admin account cannot be
+-- logged into at all until docker/bootstrap-admin.php (invoked from
+-- docker/entrypoint.sh on first boot) replaces it with a freshly
+-- generated, randomly chosen password_hash()'d credential, printed once
+-- to the app container's own logs. See
+-- docs/tasks/0026h-authentication-default-install-hardening.md.
+INSERT INTO users (name, password,email,profile_id, created, updated) VALUES ('admin','!SENMA-BOOTSTRAP-PENDING!','suporte@opens.com.br',1,now(),now());
 
 --
 -- Default pickup group
