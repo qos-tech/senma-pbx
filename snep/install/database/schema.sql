@@ -695,7 +695,13 @@ CREATE TABLE IF NOT EXISTS `permissions` (
 CREATE TABLE IF NOT EXISTS `users` (
   `id` int(11) NOT NULL AUTO_INCREMENT,
   `name` VARCHAR(45) NOT NULL,
-  `password` VARCHAR(45) NOT NULL,
+  -- TASK-0026H (F21): widened from VARCHAR(45) -- a legacy md5() digest
+  -- is 32 chars, but password_hash()'s own output (bcrypt today, up to
+  -- ~60 chars; argon2 variants longer still) needs headroom for future
+  -- PASSWORD_DEFAULT changes too. 255 is the conventional safe width for
+  -- this column across PHP frameworks. See
+  -- docs/tasks/0026h-authentication-default-install-hardening.md.
+  `password` VARCHAR(255) NOT NULL,
   `email` VARCHAR(255) NOT NULL,
   `dashboard` text NOT NULL ,
   `profile_id` INT NOT NULL,
@@ -816,6 +822,25 @@ CREATE TABLE IF NOT EXISTS `password_recovery` (
   PRIMARY KEY (`id`),
   KEY `user_id` (`user_id`),
   CONSTRAINT `password_recovery_refs_user_id` FOREIGN KEY (`user_id`) REFERENCES `users` (`id`)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8;
+
+
+--
+-- Table structure for table `login_attempts`
+--
+-- TASK-0026H (F22): backs Snep_Security_LoginThrottle. No FOREIGN KEY to
+-- `users` on purpose -- a failed login for a username that does not
+-- exist must still be recordable (that is exactly the enumeration/
+-- brute-force case this exists to throttle).
+CREATE TABLE IF NOT EXISTS `login_attempts` (
+  `id` int(11) NOT NULL AUTO_INCREMENT,
+  `username` varchar(45) NOT NULL,
+  `ip_address` varchar(45) NOT NULL,
+  `attempted_at` datetime NOT NULL,
+  PRIMARY KEY (`id`),
+  KEY `username_ip` (`username`, `ip_address`),
+  KEY `ip_address` (`ip_address`),
+  KEY `attempted_at` (`attempted_at`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 

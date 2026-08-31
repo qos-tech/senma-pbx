@@ -34,7 +34,19 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
         <div class="form-group">
             <label class="col-sm-2 control-label"><?php echo $this->translate("Password");?></label>
             <div class="col-sm-4">
-                <input type="password" class="form-control" name="password" id="password" placeholder='<?php echo $this->translate("Minimum 5 characters")?>' value="<?php echo $this->user['password']; ?>"/>
+                <?php
+                // TASK-0026H (F21, Phase 5): no longer pre-filled with
+                // the stored password hash (previously sent to the
+                // browser on every edit-page load, and the reason the
+                // old "don't rehash a hash" detection was a fragile
+                // strlen()==32 heuristic instead of the standard "blank
+                // means unchanged" convention -- see
+                // UsersController::editAction()).
+                $passwordPlaceholder = $this->action === 'edit'
+                    ? $this->translate('Leave blank to keep the current password')
+                    : $this->translate('Minimum 8 characters');
+                ?>
+                <input type="password" class="form-control" name="password" id="password" placeholder="<?php echo $passwordPlaceholder; ?>" value=""/>
             </div>
         </div>
 
@@ -97,9 +109,20 @@ jQuery(document).ready(function(){
                 maxlength: 30
             },
             password: {
-                required: true,
-                minlength: 5,
-                maxlength: 32,
+                // TASK-0026H (F21, Phase 5/14): required on add (a new
+                // account must get a real password); optional on edit,
+                // where blank now means "keep the current password"
+                // (UsersController::editAction()). jQuery Validate skips
+                // minlength for a blank field that isn't required, so
+                // this stays a single rule set for both modes.
+                required: <?php echo $this->action === 'add' ? 'true' : 'false'; ?>,
+                // TASK-0026H (F14): 8 is this app's new minimum -- longer
+                // than the old MD5-era "5", favoring length over
+                // arbitrary complexity rules per the task's own guidance.
+                // No maxlength: Snep_Security_Password normalizes with a
+                // fixed-length digest before hashing, so a long
+                // passphrase is never silently truncated.
+                minlength: 8
             },
             email: {
                 required: true,
