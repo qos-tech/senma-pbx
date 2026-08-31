@@ -55,10 +55,28 @@ run_suite() {
 }
 
 run_suite "lint"                   "lint.sh"
+# TASK-0027A: proves the shared harness library's own state machine
+# (used by every suite below) is sound on this project's actual bash
+# 3.2 host shell before anything that depends on it runs. Pure
+# self-contained check, no Docker dependency -- placed right after
+# lint for the same reason.
+run_suite "harness-lib-selftest"   "harness-lib-selftest.sh"
 run_suite "preauth-security"       "preauth-security-smoke-test.sh"
+# TASK-0026C: placed right after preauth-security and before
+# authorization -- both are pre-/independent-of-authorization SQL-
+# boundary proofs; sql-security additionally needs an authenticated
+# admin session for most of its checks, same precondition
+# authorization-smoke/authorization-coverage need next.
+run_suite "sql-security"           "sql-security-smoke-test.sh"
 run_suite "authorization-coverage" "authorization-coverage-check.sh"
 run_suite "authorization-smoke"    "authorization-smoke-test.sh"
 run_suite "http-smoke"             "smoke-test.sh"
+# TASK-0027A: fixed-timestamp proof of harness_cdr_report_window(),
+# which call-smoke/trunk-smoke's own CDR report-readback checks depend
+# on -- placed immediately before them so a regression in the shared
+# window logic itself is caught here rather than only showing up as a
+# confusing report-readback failure two suites later.
+run_suite "cdr-window-selftest"    "cdr-window-selftest.sh"
 run_suite "call-smoke"             "call-smoke-test.sh"
 run_suite "trunk-smoke"            "trunk-smoke-test.sh"
 run_suite "transport-smoke"        "transport-smoke-test.sh"

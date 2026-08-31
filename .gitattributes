@@ -1,0 +1,12 @@
+# TASK-0026C: snep/lib/Snep/CsvIE.php is legacy vendored-in code that has
+# always used CRLF line endings (confirmed via git history -- untouched
+# since the initial repository import). `-whitespace` disables
+# `git diff --check`'s whitespace error detection for this one path only
+# -- it does not normalize or convert the file's line endings (an
+# `eol=crlf` attribute was tried first and rejected: it caused git to
+# treat the whole file as changed on every diff, since the blob's
+# internal storage vs. the attribute's requested checkout form disagreed
+# -- far worse than the problem it was meant to solve). Without this,
+# every native CRLF line adjacent to this task's own edits is flagged as
+# "trailing whitespace", unrelated to the actual change.
+snep/lib/Snep/CsvIE.php -whitespace
