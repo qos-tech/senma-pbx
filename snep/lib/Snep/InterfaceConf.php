@@ -80,6 +80,35 @@ class Snep_InterfaceConf {
             if (count($peer_data) > 0) {
                 foreach ($peer_data as $peer) {
 
+                    // TASK-0026E (F15) defense-in-depth: reachable via
+                    // the current UI (technology=sip/iax2 remains a
+                    // selectable option on both the Extensions and
+                    // Trunks add/edit forms). The primary control is now
+                    // at the controller boundary -- ExtensionsController::execAdd()
+                    // and TrunksController::preparePost() (shared by
+                    // every technology, not only pjsip) already reject
+                    // an unsafe name/callerid/context/secret/fromuser/
+                    // fromdomain/host/defaultuser before persistence --
+                    // this re-checks independently before writing,
+                    // skipping just this one row (logged) rather than
+                    // corrupting the whole file, the same discipline
+                    // Snep_PjsipConf/Snep_PjsipTrunkConf already apply.
+                    // 'name'/'defaultuser' matter here specifically
+                    // because this generator (unlike the PJSIP one) uses
+                    // them as raw "[name]"/"[defaultuser]" section
+                    // headers below.
+                    $unsafeField = null;
+                    foreach (array('name', 'defaultuser', 'context', 'callerid', 'host', 'secret', 'fromuser', 'fromdomain') as $field) {
+                        if (isset($peer[$field]) && !Snep_PjsipConf::isSafeConfigValue($peer[$field])) {
+                            $unsafeField = $field;
+                            break;
+                        }
+                    }
+                    if ($unsafeField !== null) {
+                        error_log("Snep_InterfaceConf: skipping peer '{$peer['name']}' -- unsafe value in field '$unsafeField' (control character or ';').");
+                        continue;
+                    }
+
                     $sipallow = explode(";", $peer['allow']);
                     $allow = '';
                     foreach ($sipallow as $siper) {

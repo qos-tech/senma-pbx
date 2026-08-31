@@ -52,6 +52,35 @@ class Snep_PjsipConf {
     );
 
     /**
+     * isSafeConfigValue - TASK-0026E (F12-F15): the one shared, narrow
+     * validation strategy for every config-bound scalar value across
+     * every generator (this class, Snep_PjsipTrunkConf, and the legacy
+     * Snep_InterfaceConf) and their controllers (Extensions/Trunks).
+     * Rejects (does not silently strip) \r, \n, \0, every other C0/DEL
+     * control character, and ';' before a request-controlled value ever
+     * reaches a generated line such as "callerid=<value>\n" -- a
+     * newline would terminate that directive and let the remainder of
+     * the value be interpreted as new config syntax (a new directive,
+     * or, combined with "[", an entirely new section); ';' starts an
+     * Asterisk comment mid-line, which the audit separately flagged as
+     * a way to silently truncate/hide the rest of an attacker's own
+     * injected line. This is deliberately permissive otherwise --
+     * accented characters, spaces, punctuation a real caller-ID/
+     * hostname/username might legitimately contain are all left alone;
+     * the goal is "must never become configuration syntax", not
+     * character-set purity.
+     * @param mixed $value
+     * @return <bool>
+     */
+    public static function isSafeConfigValue($value) {
+        if (is_array($value)) {
+            return false;
+        }
+        $value = (string) $value;
+        return preg_match('/[\x00-\x1F\x7F;]/', $value) === 0;
+    }
+
+    /**
      * loadConfFromDb - regenerate the SENMA-managed PJSIP extension
      * config from the current peers table and reload res_pjsip.
      *
@@ -148,6 +177,20 @@ class Snep_PjsipConf {
      */
     private static function renderExtension(array $peer) {
         $name = $peer['name'];
+
+        // TASK-0026E (F12) defense-in-depth: ExtensionsController::execAdd()
+        // now rejects an unsafe name/callerid/context/secret before they
+        // are ever persisted (the primary control), but this generator
+        // re-checks independently before writing -- the same
+        // disabled-transport-skip discipline resolveTransportName()
+        // already established (skip just this one row, logged, rather
+        // than let one bad row corrupt the whole file), applied to a row
+        // that could in principle predate the controller-side fix.
+        foreach (array('name', 'callerid', 'context', 'secret') as $field) {
+            if (!self::isSafeConfigValue($peer[$field])) {
+                throw new PBX_Exception_NotFound("Extension '{$peer['name']}' has an unsafe value in field '$field' (control character or ';') -- skipping.");
+            }
+        }
 
         // Codecs: DB stores ";"-joined; PJSIP (like chan_sip) uses ",".
         // Identical transformation to Snep_InterfaceConf.php's own

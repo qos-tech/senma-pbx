@@ -869,7 +869,66 @@ class TrunksController extends Zend_Controller_Action {
     // docs/tasks/0015a-trunk-crud-php84-strict-sql.md.
     $trunk_data['telco'] = ($post['telco'] === "" ? NULL : $post['telco']);
 
+    // TASK-0026E (F13): every one of these reaches a raw config VALUE
+    // position in Snep_PjsipTrunkConf::renderTrunk() (context=/callerid=/
+    // from_user=/from_domain=/password=, plus host inside contact=/
+    // client_uri=/server_uri=/match=) or Snep_InterfaceConf's legacy
+    // chan_sip/iax2 generator (context=/host=/secret=, plus defaultuser
+    // as BOTH a value and, for that legacy generator only, a raw
+    // "[defaultuser]" section header) with zero prior validation -- a
+    // newline in any of them could terminate the current directive and
+    // inject a wholly new object or section. This project's own
+    // established $tests_fields-style allowlist controls which POST
+    // *keys* survive into $trunk_data/$ip_data; it never validated what
+    // characters the *values* themselves may contain. Section identity
+    // for the PJSIP generator is unaffected either way -- it is already
+    // "trunk-<trunks.id>", an internal auto-increment key, never a
+    // user-controlled field (see Snep_PjsipTrunkConf::renderTrunk()'s
+    // own class-level doc comment).
+    $error = $this->validateConfigFields($ip_data);
+    if ($error !== null) {
+      return $error;
+    }
+
     return array("trunk" => $trunk_data, "ip" => $ip_data);
+  }
+
+  /**
+   * validateConfigFields - TASK-0026E (F13): the one shared validation
+   * pass for every peers-table field that reaches a raw PJSIP/chan_sip
+   * config value, applied once here regardless of which technology was
+   * selected (rather than duplicated per-branch above). Returns a
+   * translated error string on the first unsafe field found, or null if
+   * every present field is safe -- mirrors this method's own existing
+   * "return a string on failure" convention (see the PJSIP
+   * transport-selection checks above).
+   * @param array $ip_data
+   * @return <string>|null
+   */
+  private function validateConfigFields(array $ip_data) {
+    foreach (array('context', 'callerid', 'fromuser', 'fromdomain', 'secret') as $field) {
+      if (isset($ip_data[$field]) && !Snep_PjsipConf::isSafeConfigValue($ip_data[$field])) {
+        return $this->view->translate('Trunk field "%s" contains characters that are not allowed.', $field);
+      }
+    }
+    // host: also reaches sip:<host>:<port> URI construction, so this
+    // reuses the same IP-or-hostname grammar TASK-0019/0020 already
+    // established for PJSIP transport addresses, rather than inventing
+    // a second one -- optional, matching that function's own convention
+    // (not every trunk technology requires a host).
+    if (isset($ip_data['host']) && !Snep_PjsipTransports_Manager::validateIpOrHostname($ip_data['host'])) {
+      return $this->view->translate('Invalid trunk host.');
+    }
+    // defaultuser: the legacy chan_sip/iax2 generator uses this as a
+    // raw "[defaultuser]" section header (Snep_InterfaceConf.php), so it
+    // gets the stricter identifier grammar already established for
+    // PJSIP transport names -- but only when non-empty, since not every
+    // trunk technology (e.g. KHOMP/VIRTUAL) necessarily populates it.
+    if (isset($ip_data['defaultuser']) && $ip_data['defaultuser'] !== ''
+        && !Snep_PjsipTransports_Manager::validateName($ip_data['defaultuser'])) {
+      return $this->view->translate('Trunk username must be 1-80 letters, digits, dashes or underscores.');
+    }
+    return null;
   }
 
 }

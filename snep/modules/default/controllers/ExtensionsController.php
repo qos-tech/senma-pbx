@@ -577,6 +577,32 @@ class ExtensionsController extends Zend_Controller_Action {
               $idExten = $resultGetId['id'];
             }
 
+            // TASK-0026E (F12): $exten/$extenName had zero server-side
+            // shape validation -- $exten becomes the live PJSIP
+            // [section] name (endpoint/auth/aor all keyed off it) and
+            // $extenName becomes the raw callerid=<value> directive
+            // (Snep_PjsipConf::renderExtension()); a newline in either
+            // could terminate the current directive and inject a wholly
+            // new PJSIP object, or alter an existing section's
+            // directives. $exten is the section identifier -- restricted
+            // to the exact numeric shape the form itself has always
+            // asked for ("Only numbers", addedit.phtml) and the only
+            // shape this codebase's own bulk-provisioning flow
+            // (multiaddAction()) already assumes elsewhere. $extenName
+            // only ever reaches a config VALUE position, so it keeps the
+            // broader isSafeConfigValue() allowance (accented characters,
+            // spaces, punctuation a real caller-ID display name may
+            // contain) and only rejects control characters/';'.
+            if (!preg_match('/^[0-9]{1,20}$/', (string) $exten)) {
+                return $this->view->translate('Extension must contain only numbers.');
+            }
+            if (!isset($formData["name"]) || !Snep_PjsipConf::isSafeConfigValue($formData["name"])) {
+                return $this->view->translate('Name contains characters that are not allowed.');
+            }
+            if (isset($formData["password"]) && !Snep_PjsipConf::isSafeConfigValue($formData["password"])) {
+                return $this->view->translate('Password contains characters that are not allowed.');
+            }
+
             $context = 'default';
             $extenPass = $formData["passwordpadlock"];
             $extenName = $formData["name"];

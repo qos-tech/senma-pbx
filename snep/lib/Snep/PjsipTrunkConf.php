@@ -173,6 +173,24 @@ class Snep_PjsipTrunkConf {
         $name = "trunk-$id";
         $auth = $name . self::AUTH_SUFFIX;
 
+        // TASK-0026E (F13) defense-in-depth: TrunksController::preparePost()
+        // now rejects an unsafe context/callerid/fromuser/fromdomain/
+        // host/secret/defaultuser before persistence (the primary
+        // control), but this generator re-checks independently before
+        // writing -- same discipline as Snep_PjsipConf::renderExtension().
+        // Note this class's own section identifiers ($name/$auth above)
+        // are already safe regardless -- built from trunks.id, an
+        // internal auto-increment primary key, never from any
+        // user-controlled field (TASK-0014 §10's own deliberate choice,
+        // "not trunk-<trunks.name>" -- see this method's class-level
+        // doc comment). Only the VALUE-position fields below need this
+        // check.
+        foreach (array('context', 'callerid', 'fromuser', 'fromdomain', 'host', 'secret', 'defaultuser') as $field) {
+            if (isset($peer[$field]) && !Snep_PjsipConf::isSafeConfigValue($peer[$field])) {
+                throw new PBX_Exception_NotFound("Trunk '{$peer['name']}' (id $id) has an unsafe value in field '$field' (control character or ';') -- skipping.");
+            }
+        }
+
         // Codecs/NAT: identical transformation to Snep_PjsipConf's
         // extension handling (TASK-0014 §13 confirmed no trunk-specific
         // difference).
