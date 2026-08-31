@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -99,6 +99,16 @@ pjsip-config-security-smoke: up
 # implicitly by it.
 api-security-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/api-security-smoke-test.sh
+
+# TASK-0026F1: proves the SQL-injection boundaries discovered during
+# TASK-0026F's own reconnaissance (ContactsService, CSV_ExportDataService,
+# CallsReportService, RankingReportService, ServicesReportService) hold --
+# SQL-shaped values behave as inert literal data through the real,
+# authenticated standalone API dispatcher, never a direct database
+# connection. Deliberately separate from `make smoke` -- never run
+# implicitly by it.
+api-sql-security-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/api-sql-security-smoke-test.sh
 
 # TASK-0027A: deterministic, fixed-timestamp proof of
 # harness_cdr_report_window() (lib/harness.sh) -- the timezone-safe CDR

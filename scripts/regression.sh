@@ -86,6 +86,12 @@ run_suite "pjsip-config-security"  "pjsip-config-security-smoke-test.sh"
 # proof needing its own authenticated fixture user, same precondition
 # authorization-smoke/authorization-coverage need next).
 run_suite "api-security"           "api-security-smoke-test.sh"
+# TASK-0026F1: placed right after api-security and before authorization --
+# same reasoning as the other security suites' own placement (an
+# independent trust-boundary proof needing its own authenticated fixture
+# user, same precondition authorization-smoke/authorization-coverage need
+# next).
+run_suite "api-sql-security"       "api-sql-security-smoke-test.sh"
 run_suite "authorization-coverage" "authorization-coverage-check.sh"
 run_suite "authorization-smoke"    "authorization-smoke-test.sh"
 run_suite "http-smoke"             "smoke-test.sh"
