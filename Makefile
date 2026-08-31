@@ -45,6 +45,15 @@ smoke: up
 authorization-coverage:
 	@bash scripts/authorization-coverage-check.sh
 
+# TASK-0027A: proves scripts/lib/harness.sh's own PASS/FAIL/BLOCKED/
+# INCONCLUSIVE state machine and summary printing work on this
+# project's actual bash 3.2 host shell, including the empty-row
+# "unbound variable" edge case found live and fixed by this task, and
+# the bounded container-readiness retry added alongside it. Pure
+# self-contained check (fakes $COMPOSE), no Docker dependency.
+harness-lib-selftest:
+	@bash scripts/harness-lib-selftest.sh
+
 # TASK-0026A: verifies the default-deny authorization boundary using an
 # isolated local-dev account.  It performs only harmless GETs and uses the
 # existing Users > Permission form for the grant/revoke lifecycle.
@@ -53,6 +62,22 @@ authorization-smoke: up
 
 preauth-security-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/preauth-security-smoke-test.sh
+
+# TASK-0026C: proves the F7-F11 SQL-injection boundaries (Extensions,
+# Users/Profiles, Trunks, CSV import, Data Export) hold -- SQL-shaped
+# values behave as inert literal data through the real, authenticated
+# application flows, never a direct database connection. Deliberately
+# separate from `make smoke` -- never run implicitly by it.
+sql-security-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/sql-security-smoke-test.sh
+
+# TASK-0027A: deterministic, fixed-timestamp proof of
+# harness_cdr_report_window() (lib/harness.sh) -- the timezone-safe CDR
+# report-window logic call-smoke/trunk-smoke depend on. Never reads the
+# wall clock, so it exercises the local-midnight/UTC-divergence boundary
+# on demand instead of only when the real clock happens to cross it.
+cdr-window-selftest: up
+	@set -a; . ./.env; set +a; bash scripts/cdr-window-selftest.sh
 
 call-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/call-smoke-test.sh

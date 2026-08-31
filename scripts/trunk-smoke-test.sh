@@ -589,17 +589,20 @@ fi
 # --- 17. SENMA reporting path can read it -----------------------------------
 
 log "==> checking SENMA report readback"
-if [ -n "$CDR_UNIQUEID" ]; then
-    TODAY="$($COMPOSE exec -T asterisk date +%Y-%m-%d | tr -d '\r')"
+if [ -n "$CDR_UNIQUEID" ] && harness_cdr_report_window "$CDR_CALLDATE" 5; then
+    # TASK-0027A: window anchored on this call's own already-confirmed
+    # CDR_CALLDATE (see harness_cdr_report_window in lib/harness.sh),
+    # not on "today" -- see call-smoke-test.sh's equivalent check for the
+    # full rationale.
     REPORT_JSON="$(curl -sS -u "${TEST_USER}:${TEST_PASSWORD}" \
-        "${BASE_URL}/modules/default/api/index.php?service=CallsReport&start_date=${TODAY}&start_hour=00:00:00&end_date=${TODAY}&end_hour=23:59:59&report_type=analytic&status_answered=1&src=${TEST_EXT}&order_src=equal" 2>&1)"
+        "${BASE_URL}/modules/default/api/index.php?service=CallsReport&start_date=${HARNESS_REPORT_START_DATE}&start_hour=${HARNESS_REPORT_START_HOUR}&end_date=${HARNESS_REPORT_END_DATE}&end_hour=${HARNESS_REPORT_END_HOUR}&report_type=analytic&status_answered=1&src=${TEST_EXT}&order_src=equal" 2>&1)"
     if echo "$REPORT_JSON" | grep -qF "\"uniqueid\":\"${CDR_UNIQUEID}\""; then
         harness_ok "SENMA reporting path can read it" "CallsReport API endpoint returned this exact CDR (uniqueid=$CDR_UNIQUEID)"
     else
         harness_bad "SENMA reporting path can read it" "CallsReport API did not return uniqueid=$CDR_UNIQUEID: $REPORT_JSON"
     fi
 else
-    harness_bad "SENMA reporting path can read it" "skipped -- no CDR uniqueid available to look up"
+    harness_bad "SENMA reporting path can read it" "skipped -- no CDR uniqueid available, or the report window could not be computed"
 fi
 
 # =============================================================================
@@ -717,17 +720,20 @@ fi
 # --- 26. SENMA reporting path can read it back ------------------------------
 
 log "==> checking SENMA report readback (inbound)"
-if [ -n "$CDR_IN_UNIQUEID" ]; then
-    TODAY_IN="$($COMPOSE exec -T asterisk date +%Y-%m-%d | tr -d '\r')"
+if [ -n "$CDR_IN_UNIQUEID" ] && harness_cdr_report_window "$CDR_IN_CALLDATE" 5; then
+    # TASK-0027A: window anchored on this call's own already-confirmed
+    # CDR_IN_CALLDATE (see harness_cdr_report_window in lib/harness.sh),
+    # not on "today" -- see call-smoke-test.sh's equivalent check for the
+    # full rationale.
     REPORT_JSON_IN="$(curl -sS -u "${TEST_USER}:${TEST_PASSWORD}" \
-        "${BASE_URL}/modules/default/api/index.php?service=CallsReport&start_date=${TODAY_IN}&start_hour=00:00:00&end_date=${TODAY_IN}&end_hour=23:59:59&report_type=analytic&status_answered=1&dst=${TEST_DESTINATION_INBOUND}&order_dst=equal" 2>&1)"
+        "${BASE_URL}/modules/default/api/index.php?service=CallsReport&start_date=${HARNESS_REPORT_START_DATE}&start_hour=${HARNESS_REPORT_START_HOUR}&end_date=${HARNESS_REPORT_END_DATE}&end_hour=${HARNESS_REPORT_END_HOUR}&report_type=analytic&status_answered=1&dst=${TEST_DESTINATION_INBOUND}&order_dst=equal" 2>&1)"
     if echo "$REPORT_JSON_IN" | grep -qF "\"uniqueid\":\"${CDR_IN_UNIQUEID}\""; then
         harness_ok "SENMA reporting path can read it (inbound)" "CallsReport API endpoint returned this exact CDR (uniqueid=$CDR_IN_UNIQUEID)"
     else
         harness_bad "SENMA reporting path can read it (inbound)" "CallsReport API did not return uniqueid=$CDR_IN_UNIQUEID: $REPORT_JSON_IN"
     fi
 else
-    harness_bad "SENMA reporting path can read it (inbound)" "skipped -- no CDR uniqueid available to look up"
+    harness_bad "SENMA reporting path can read it (inbound)" "skipped -- no CDR uniqueid available, or the report window could not be computed"
 fi
 
 # --- Cleanup happens via harness_complete's cleanup pass (HTTP delete of

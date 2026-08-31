@@ -392,23 +392,26 @@ fi
 # --- 13. SENMA reporting path can read it -----------------------------------
 
 log "==> checking SENMA report readback"
-if [ -n "$CDR_UNIQUEID" ]; then
+if [ -n "$CDR_UNIQUEID" ] && harness_cdr_report_window "$CDR_CALLDATE" 5; then
     # CallsReportService.php string-concatenates start_date/end_date
     # straight into "WHERE calldate >= '$start_date'" with no
     # reformatting (unlike the web UI's CallsReportController, which
     # pre-formats via Snep_Reports::fmt_date() to 'yyyy-MM-dd' first) --
-    # so this direct API caller must already send calldate's own format,
-    # ISO 'YYYY-MM-DD'.
-    TODAY="$($COMPOSE exec -T asterisk date +%Y-%m-%d | tr -d '\r')"
+    # so this direct API caller must already send calldate's own
+    # format/timezone. TASK-0027A: the window is anchored on this call's
+    # own already-confirmed CDR_CALLDATE (see harness_cdr_report_window
+    # in lib/harness.sh), not on "today" -- immune to any divergence
+    # between the harness shell's local calendar day and whatever
+    # timezone calldate is actually stored in.
     REPORT_JSON="$(curl -sS -u "${TEST_USER}:${TEST_PASSWORD}" \
-        "${BASE_URL}/modules/default/api/index.php?service=CallsReport&start_date=${TODAY}&start_hour=00:00:00&end_date=${TODAY}&end_hour=23:59:59&report_type=analytic&status_answered=1&src=${EXT_A}&order_src=equal" 2>&1)"
+        "${BASE_URL}/modules/default/api/index.php?service=CallsReport&start_date=${HARNESS_REPORT_START_DATE}&start_hour=${HARNESS_REPORT_START_HOUR}&end_date=${HARNESS_REPORT_END_DATE}&end_hour=${HARNESS_REPORT_END_HOUR}&report_type=analytic&status_answered=1&src=${EXT_A}&order_src=equal" 2>&1)"
     if echo "$REPORT_JSON" | grep -qF "\"uniqueid\":\"${CDR_UNIQUEID}\""; then
         harness_ok "SENMA reporting path can read it" "CallsReport API endpoint returned this exact CDR (uniqueid=$CDR_UNIQUEID)"
     else
         harness_bad "SENMA reporting path can read it" "CallsReport API did not return uniqueid=$CDR_UNIQUEID: $REPORT_JSON"
     fi
 else
-    harness_bad "SENMA reporting path can read it" "skipped -- no CDR uniqueid available to look up"
+    harness_bad "SENMA reporting path can read it" "skipped -- no CDR uniqueid available, or the report window could not be computed"
 fi
 
 # --- 14. Cleanup happens via harness_complete's cleanup pass (HTTP delete

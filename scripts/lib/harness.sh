@@ -124,10 +124,21 @@ harness_print_summary() {
     printf "%-40s %-8s %s\n" "CHECK" "RESULT" "DETAIL"
     echo "----------------------------------------------------------------"
     local r flow status detail
-    for r in "${_HARNESS_ROWS[@]}"; do
-        IFS='|' read -r flow status detail <<< "$r"
-        printf "%-40s %-8s %s\n" "$flow" "$status" "$detail"
-    done
+    # Bash 3.2 (the macOS host shell every caller here runs on) treats
+    # "${arr[@]}" on a *truly empty* array as an unbound-variable error
+    # under `set -u` -- fixed in bash 4.4+, but every caller of this
+    # library sets -u. This fires for real whenever harness_finalize is
+    # reached before a single harness_ok/harness_bad call has run (e.g.
+    # harness_blocked firing on the very first check, such as
+    # harness_require_containers finding a container not yet Up).
+    # ${#arr[@]} (a length check, not an element expansion) is always
+    # safe on an empty array even in bash 3.2, so it guards the loop.
+    if [ "${#_HARNESS_ROWS[@]}" -gt 0 ]; then
+        for r in "${_HARNESS_ROWS[@]}"; do
+            IFS='|' read -r flow status detail <<< "$r"
+            printf "%-40s %-8s %s\n" "$flow" "$status" "$detail"
+        done
+    fi
     echo "================================================================"
     echo "PASS: $_HARNESS_PASS_COUNT   FAIL: $_HARNESS_FAIL_COUNT"
     echo "================================================================"
@@ -264,12 +275,82 @@ harness_retry() {
     return 1
 }
 
+# harness_cdr_report_window <calldate> [margin_minutes] -- sets
+# HARNESS_REPORT_START_DATE/_START_HOUR/_END_DATE/_END_HOUR to a tight
+# [calldate - margin, calldate + margin] window (default margin: 5
+# minutes), expressed in calldate's own string format/timezone -- never
+# derived from "now" or from the harness shell's own local calendar day.
+#
+# TASK-0027A: call-smoke-test.sh/trunk-smoke-test.sh previously computed
+# the CallsReport API's start_date/end_date from the *container's local*
+# `date`, while `cdr.calldate` is stored in a different timezone (see
+# docs/tasks/0027a-timezone-safe-cdr-regression.md) -- during the ~3
+# hours of each local day where the local calendar day and calldate's
+# own calendar day disagree, that silently asked the report for the
+# wrong day entirely and the assertion failed. Anchoring the window on
+# the CDR row's own already-confirmed calldate value sidesteps the
+# question of which timezone it is in: whatever it is, offsetting *that
+# exact value* by a few minutes and formatting with the same tool stays
+# self-consistent, and CallsReportService.php's plain calldate>=/<=
+# string-range query spans a real midnight boundary correctly with no
+# special-casing needed on either side.
+#
+# Requires $COMPOSE (already set by the caller, same convention as
+# harness_require_containers) -- a running `asterisk` container supplies
+# GNU date for the relative-date parsing below. Two portability/parsing
+# pitfalls this deliberately avoids, both confirmed live:
+#   - the host shell's own `date` may be the non-GNU BSD variant (no
+#     `-d`), which is why this always execs into the container instead;
+#   - GNU date's own leading-sign relative syntax is itself ambiguous:
+#     `date -d "<timestamp> -5 minutes"` silently mis-parses the "-5" as
+#     a UTC-5 timezone marker rather than a relative offset, producing a
+#     wildly wrong result with no error. The unambiguous natural-language
+#     forms "N minutes ago" / "N minutes" (no leading sign) are used
+#     instead and were verified correct across an ordinary daytime value
+#     and both directions of a real midnight crossing.
+# An empty/missing calldate is rejected explicitly (rather than passed
+# to `date -d`) because GNU date silently treats a blank/whitespace-only
+# `-d` string as "now" instead of failing -- which would otherwise make
+# a caller's missing-CDR bug look like a valid (but wrong) window instead
+# of a clear failure.
+harness_cdr_report_window() {
+    local calldate="$1" margin="${2:-5}" start end
+    if [ -z "$calldate" ]; then
+        return 1
+    fi
+    start="$($COMPOSE exec -T asterisk date -d "$calldate ${margin} minutes ago" +"%Y-%m-%d %H:%M:%S" 2>/dev/null | tr -d '\r')"
+    end="$($COMPOSE exec -T asterisk date -d "$calldate ${margin} minutes" +"%Y-%m-%d %H:%M:%S" 2>/dev/null | tr -d '\r')"
+    if [ -z "$start" ] || [ -z "$end" ]; then
+        return 1
+    fi
+    HARNESS_REPORT_START_DATE="${start%% *}"
+    HARNESS_REPORT_START_HOUR="${start#* }"
+    HARNESS_REPORT_END_DATE="${end%% *}"
+    HARNESS_REPORT_END_HOUR="${end#* }"
+    return 0
+}
+
+_harness_container_up() {
+    $COMPOSE ps "$1" 2>/dev/null | grep -q "Up"
+}
+
 # harness_require_containers svc1 svc2 ... -- BLOCKED if any is not Up.
 # Expects $COMPOSE to already be set by the caller.
+#
+# TASK-0027A finding: a one-shot check here raced a genuinely transient
+# post-cleanup state -- confirmed live, `docker compose ps` briefly
+# reported a container not yet "Up" for the very next suite's first
+# check, one second after the previous suite's own cleanup (fixture
+# removal, PJSIP config regeneration/reload) -- the exact same class of
+# transient-check race pjsip_modules_running's callers already retry
+# around (see call-smoke-test.sh/trunk-smoke-test.sh/transport-smoke-test.sh),
+# just never applied to this specific check before. Reusing the same
+# harness_retry bound (5 attempts, 2s apart -- up to 8s worst case) here
+# closes that gap without adding any new sleep/timing mechanism.
 harness_require_containers() {
     local all_up=1 svc
     for svc in "$@"; do
-        if ! $COMPOSE ps "$svc" 2>/dev/null | grep -q "Up"; then
+        if ! harness_retry 5 2 -- _harness_container_up "$svc"; then
             all_up=0
         fi
     done
