@@ -261,24 +261,38 @@ class ParametersController extends Zend_Controller_Action {
 
     /**
      * languageAction - Modify language
+     *
+     * TASK-0026G (Phase 11, follow-up): this action used to persist a new
+     * system language as an unconditional side effect of a plain GET
+     * (the layout's language-switcher dropdown linked straight to
+     * "?language=xx") -- a state-changing GET with no CSRF protection
+     * possible on a bare link. GET no longer mutates anything; it behaves
+     * exactly like the pre-existing "no/invalid language" branch already
+     * did (redirect to parameters, no write). The actual write now only
+     * happens on POST, which the dropdown triggers via
+     * includes/javascript/csrf.js's shared jQuery.post plumbing (so it
+     * automatically carries a valid CSRF token) -- see
+     * layouts/layout.phtml. The en/pt_BR/es allowlist
+     * (Snep_Locale::isSupportedLanguage(), TASK-0026B's own invariant) is
+     * unchanged and still authoritative.
      */
     public function languageAction() {
 
-        if (!isset($_GET['language']) || !Snep_Locale::isSupportedLanguage($_GET['language'])) {
+        if (!$this->_request->isPost() || !isset($_POST['language']) || !Snep_Locale::isSupportedLanguage($_POST['language'])) {
             $this->_redirect('parameters');
             return;
         }
 
         $configFile = APPLICATION_PATH . "/includes/setup.conf";
         $config = new Zend_Config_Ini($configFile, null, true);
-        $config->system->language = $_GET["language"];
+        $config->system->language = $_POST["language"];
         $writer = new Zend_Config_Writer_Ini(array('config' => $config,
             'filename' => $configFile));
         $writer->write();
 
-        Snep_Locale::setExtensionsLanguage($_GET["language"]) ;
+        Snep_Locale::setExtensionsLanguage($_POST["language"]) ;
 
-        $module = $_GET["module"];
+        $module = $this->_request->getPost('module');
         $this->_redirect($module);
     }
 

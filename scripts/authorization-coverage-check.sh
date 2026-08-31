@@ -43,7 +43,7 @@ expected_open_actions() {
         default_index) echo 'add index' ;;
         default_information) echo 'index' ;;
         default_newversion) echo 'index' ;;
-        default_notifications) echo 'index remove' ;;
+        default_notifications) echo 'index remove markread' ;;
         default_permission) echo 'error index' ;;
         default_register) echo 'index' ;;
         default_simulator) echo 'index' ;;

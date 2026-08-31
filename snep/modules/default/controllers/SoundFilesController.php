@@ -365,12 +365,32 @@ class SoundFilesController extends Zend_Controller_Action {
 
         $file = $this->_request->getParam("arquivo");
 
-        if ($file) {
+        // TASK-0026G (Phase 11): previously restored the backup file
+        // unconditionally on GET -- a real mutating-GET (a forged
+        // cross-site link/image could trigger it with no confirmation and
+        // no CSRF token possible on a bare GET). Now follows the exact
+        // same GET-renders-confirmation/POST-performs-mutation shape this
+        // controller's own removeAction() already uses, reusing the same
+        // shared remove/remove.phtml partial (remove_action="restore").
+        // See docs/tasks/0026g-session-cookie-csrf-hardening.md.
+        $this->view->breadcrumb = Snep_Breadcrumb::renderPath(array(
+                    $this->view->translate("Sound Files"),
+                    $this->view->translate("Restore")));
+
+        $this->view->id = $file;
+        $this->view->remove_title = $this->view->translate('Restore Sound File.');
+        $this->view->remove_message = $this->view->translate('The backup sound file will be restored, replacing the current file.');
+        $this->view->remove_form = 'sound-files';
+        $this->view->remove_action = 'restore';
+        $this->renderScript('remove/remove.phtml');
+
+        if ($this->_request->getPost()) {
+            $id = $_POST['id'];
             // PHP 8 compatibility: verifySoundFiles() uses $this
             // internally, so it must be called on an instance
             // (TASK-0002 P1-B). See
             // docs/tasks/0002-php84-compatibility-baseline.md.
-            $result = (new Snep_SoundFiles_Manager())->verifySoundFiles($file, true);
+            $result = (new Snep_SoundFiles_Manager())->verifySoundFiles($id, true);
 
             if ($result['fullpath'] && $result['backuppath']) {
                 try {
@@ -381,9 +401,9 @@ class SoundFilesController extends Zend_Controller_Action {
                     throw new ErrorException($this->view->translate("Unable to restore file"));
                 }
             }
-        }
 
-        $this->_redirect($this->getRequest()->getControllerName());
+            $this->_redirect($this->getRequest()->getControllerName());
+        }
     }
 
 

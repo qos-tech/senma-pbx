@@ -9,6 +9,20 @@
             endforeach; ?>
           </div>
         </div>
+        <?php if (isset($this->notificationId) && $this->notificationId !== null && $this->notificationId !== ''): ?>
+        <script type="text/javascript">
+        // TASK-0026G (Phase 11 follow-up): viewing a single notification
+        // (this branch) still marks it read, exactly as before -- just
+        // via a CSRF-protected POST (includes/javascript/csrf.js attaches
+        // the token automatically) instead of as a side effect of this
+        // page's own GET.
+        jQuery(function($) {
+          $.post('<?php echo $this->baseUrl(); ?>/index.php/default/notifications/mark-read', {
+            id: <?php echo json_encode((string) $this->notificationId); ?>
+          });
+        });
+        </script>
+        <?php endif; ?>
       <?php }else{ ?>
         <table class="table table-striped" id="listtable">
           <thead>

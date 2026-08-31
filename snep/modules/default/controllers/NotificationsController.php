@@ -103,12 +103,43 @@ class NotificationsController extends Zend_Controller_Action {
       		$html[$cont] .= "</div>";
       		$html[$cont] .= "</div>";
       		$html[$cont] .= "</div>";
-          Snep_Notifications::setRead($options['id']);
+          // TASK-0026G (Phase 11 follow-up): Snep_Notifications::setRead()
+          // sends an HTTP PUT to the vendor notification service, keyed
+          // on this attacker-influenceable $options['id'] -- a real
+          // state-changing side effect of a plain GET. Moved out of this
+          // read-only action into the dedicated markReadAction() below,
+          // which the view triggers via a CSRF-protected POST
+          // (notifications/index.phtml), preserving the same "viewing a
+          // notification marks it read" UX without mutating on GET.
           $this->view->html = $html;
+          $this->view->notificationId = $options['id'];
 
 
         }
 
+    }
+
+    /**
+     * markReadAction - TASK-0026G (Phase 11 follow-up). POST-only,
+     * CSRF-protected (Snep_CsrfPlugin, same authenticated boundary as the
+     * rest of this always-open controller -- see
+     * Snep_PermissionPlugin::$alwaysAllow['default_notifications']).
+     * Performs the Snep_Notifications::setRead() vendor call that used to
+     * run as a side effect of indexAction()'s plain GET.
+     */
+    public function markReadAction() {
+        $this->_helper->layout()->disableLayout();
+        $this->_helper->viewRenderer->setNoRender(true);
+
+        if (!$this->_request->isPost()) {
+            $this->getResponse()->setHttpResponseCode(405);
+            return;
+        }
+
+        $id = $this->_request->getPost('id');
+        if ($id !== null && $id !== '' && $id !== 'all') {
+            Snep_Notifications::setRead($id);
+        }
     }
 
     /**

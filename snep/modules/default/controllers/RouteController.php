@@ -662,6 +662,18 @@ class RouteController extends Zend_Controller_Action {
         $this->view->layout()->disableLayout();
         $this->_helper->viewRenderer->setNoRender(true);
 
+        // TASK-0026G (Phase 11): this action mutates unconditionally as
+        // soon as it dispatches -- its only real caller
+        // (route/index.phtml) already sends it as a jQuery.post(), but
+        // with no server-side method check a plain GET (e.g. a forged
+        // cross-site <img>) reached and flipped the route's active state
+        // identically. Rejecting non-POST here both closes that gap and
+        // brings it under Snep_CsrfPlugin's POST-only enforcement.
+        if (!$this->getRequest()->isPost()) {
+            $this->getResponse()->setHttpResponseCode(405);
+            return;
+        }
+
         $route = $this->getRequest()->getParam('route');
         $regras = PBX_Rules::get($route);
 
