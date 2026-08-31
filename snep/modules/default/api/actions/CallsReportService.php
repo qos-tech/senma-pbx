@@ -531,7 +531,11 @@ class CallsReportService implements SnepService {
     if($report_type == 'synthetic'){
       return array("status" => "ok", "quantity" => $cont, "totals" => $totals, "ccustos" => $ccustos, "type" => $type, "calldate" => $calldate);
     }else{
-      return array("status" => "ok", "data" => $row, "quantity" => $cont, "totals" => $totals, "select" => $select, "selectcont" => $selectcont);
+      // TASK-0026I (F26): the generated SQL text was previously echoed
+      // back in the response ("select"/"selectcont") -- an internal
+      // implementation-detail disclosure (deferred by TASK-0026F1 §5).
+      // The functional payload (data/quantity/totals) is unchanged.
+      return array("status" => "ok", "data" => $row, "quantity" => $cont, "totals" => $totals);
     }
   }
 

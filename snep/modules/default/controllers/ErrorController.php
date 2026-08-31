@@ -62,6 +62,15 @@ class ErrorController extends Zend_Controller_Action {
         $this->view->request   = $errors->request;
         // $this->view->hideMenu  = true;
         $this->view->headTitle($this->view->title, 'PREPEND');
+
+        // TASK-0026I (F25): error.phtml no longer shows the raw exception
+        // message outside development -- log it here instead, matching
+        // this codebase's own error_log() convention (see
+        // Snep_PjsipConf/Snep_Asterisk_Operations), so operational
+        // diagnosis via `make logs` is unaffected.
+        if ($this->view->code == 500) {
+            error_log('ErrorController: uncaught ' . get_class($errors->exception) . ': ' . $errors->exception->getMessage());
+        }
     }
     /* 
      * Cass to provide SNEP Error View

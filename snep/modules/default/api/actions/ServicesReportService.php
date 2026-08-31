@@ -161,7 +161,12 @@ class ServicesReportService implements SnepService {
         $services = $stmt->fetchAll();
         
         if(!empty($services)){
-        	return array("status" => "ok", "totals" => $services, "select" => $select, "selectcount" => $selectcount);
+            // TASK-0026I (F26): the generated SQL text was previously
+            // echoed back in the response ("select"/"selectcount") -- an
+            // internal implementation-detail disclosure (deferred by
+            // TASK-0026F1 Sec.5). The functional payload ("totals") is
+            // unchanged.
+            return array("status" => "ok", "totals" => $services);
     	}else{
     		return array("status" => "empty", "message" => "No entries found.");
     	}

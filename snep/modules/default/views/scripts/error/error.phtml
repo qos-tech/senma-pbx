@@ -8,7 +8,9 @@
     <p style="font-size: 14px;"><?php echo $this->message ?></p>
 
     <?php if ($this->code != 404): ?>
+    <?php if ('development' == APPLICATION_ENV): ?>
     <p><strong>Server Message:</strong> <?php echo $this->exception->getMessage(); ?></p>
+    <?php endif; ?>
     <p style="text-align: center;"><button onclick="location.href='<?php echo $this->baseUrl(); ?>'"><?php echo $this->translate("Get me out of here"); ?></button></p>
     <?php else: ?>
     <p style="text-align: center;"><button onclick="location.href='javascript:history.back();'"><?php echo $this->translate("Go back to the last page"); ?></button></p>
