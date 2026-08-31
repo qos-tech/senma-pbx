@@ -125,6 +125,20 @@ class SoundFilesController extends Zend_Controller_Action {
                 $this->view->error_message .= $this->view->translate("File extesion is invalid.")."<br />" ;
                 $error = true;
             }
+            // TASK-0026D (F2): parseName() only substitutes a curated
+            // set of accented characters/space/@/! -- it does not strip
+            // or reject shell metacharacters, and checkType() above only
+            // ever looks at the substring after the last "." (a crafted
+            // name ending in ".wav" passed regardless of what preceded
+            // it). $originalName reaches exec("sox ...") below and is
+            // used to build every filesystem path for this upload, so
+            // it is validated as a whole here, against a fixed allowlist,
+            // before any of that -- untrusted data must not become shell
+            // syntax.
+            if ( !Snep_SoundFiles_Manager::isSafeFilename($originalName) ) {
+                $this->view->error_message .= $this->view->translate("File name is invalid.")."<br />" ;
+                $error = true;
+            }
 
             if(!file_exists('/usr/bin/sox') && !file_exists('/usr/local/bin/sox')){
               $this->view->error_message .= "<br />".$this->view->translate("The 'sox' package is not installed!") ."<br />" ;
@@ -143,14 +157,25 @@ class SoundFilesController extends Zend_Controller_Action {
                 } else {
 
                     // Move from tmp to dst and/or Convert to GSM
+                    // TASK-0026D (F2): sox is a genuinely external tool
+                    // (audio resampling/format conversion) with no
+                    // native PHP equivalent, so it stays an exec() call
+                    // -- but $arq_tmp/$fileNe/$arq_dst are now
+                    // escapeshellarg()-wrapped defense-in-depth on top
+                    // of the isSafeFilename() allowlist enforced above
+                    // (which already guarantees they contain no shell
+                    // metacharacters at all). Only the dynamic path
+                    // segments are wrapped; the surrounding literal
+                    // command text, including the pre-existing "{...}"
+                    // around the GSM destination, is unchanged.
                     if ($dados['gsm']) {
                         $fileNe = $path_sound  . '/' . $language . '/' . basename( $arq_dst, '.wav') . '.gsm';
 
-                        exec("sox " . $arq_tmp. " -r 8000 {". $fileNe . "}", $result);
+                        exec("sox " . escapeshellarg($arq_tmp). " -r 8000 {". escapeshellarg($fileNe) . "}", $result);
 
                         $originalName = basename($originalName, '.wav') . ".gsm";
                     } else {
-                        exec("sox " . $arq_tmp . " -r 8000 -c 1 -e signed-integer -b 16 " . $arq_dst, $result);
+                        exec("sox " . escapeshellarg($arq_tmp) . " -r 8000 -c 1 -e signed-integer -b 16 " . escapeshellarg($arq_dst), $result);
                     }
                     if (!empty($result)) {
                         $this->view->error_message = $result;
@@ -229,6 +254,12 @@ class SoundFilesController extends Zend_Controller_Action {
                 if ( !Snep_SoundFiles_Manager::checkType(pathinfo($originalName,PATHINFO_EXTENSION)) ) {
                     $this->view->error_message = $this->view->translate("File extesion is invalid.");
                     $this->renderScript('error/sneperror.phtml');
+                // TASK-0026D (F2): same allowlist as addAction() -- see
+                // its comment above. $originalName here reaches the
+                // same exec("sox ...")/exec("cp ...") sinks below.
+                } elseif ( !Snep_SoundFiles_Manager::isSafeFilename($originalName) ) {
+                    $this->view->error_message = $this->view->translate("File name is invalid.");
+                    $this->renderScript('error/sneperror.phtml');
                 } else {
 
                     // Move file and convert
@@ -236,16 +267,21 @@ class SoundFilesController extends Zend_Controller_Action {
                         $this->view->error_message = $this->view->translate('Unable to upload file.');
                         $this->renderScript('error/sneperror.phtml');
 
-                        // Create backup
-                        exec("cp " . $arq_dst   . " " . $arq_bkp,$result);
+                        // Create backup -- TASK-0026D (F2): was
+                        // exec("cp $arq_dst $arq_bkp"); native copy()
+                        // needs no shell at all for a plain file copy.
+                        copy($arq_dst, $arq_bkp);
 
-                        // Move from tmp to dst and/or Convert to GSM
+                        // Move from tmp to dst and/or Convert to GSM --
+                        // TASK-0026D (F2): see addAction()'s identical
+                        // comment on escapeshellarg() as defense-in-depth
+                        // here.
                         if ($gsmConvert) {
                             $fileNe = $path_sound . '/' . $language . '/' . basename( $arq_dst, '.wav') . '.gsm';
-                            exec("sox " . $arq_tmp. " -r 8000 {". $fileNe . "}", $result);
+                            exec("sox " . escapeshellarg($arq_tmp). " -r 8000 {". escapeshellarg($fileNe) . "}", $result);
                             $originalName = basename($originalName, '.wav') . ".gsm";
                         } else {
-                            exec("sox " . $arq_tmp . " -r 8000 -c 1 -e signed-integer -b 16 " . $arq_dst, $result);
+                            exec("sox " . escapeshellarg($arq_tmp) . " -r 8000 -c 1 -e signed-integer -b 16 " . escapeshellarg($arq_dst), $result);
                         }
 
                         if (!empty($result)) {
@@ -302,7 +338,10 @@ class SoundFilesController extends Zend_Controller_Action {
                     try {
                         //audit
                         Snep_Audit_Manager::SaveLog("Deleted", 'sounds', $id, $this->view->translate("Sound") . " {$id} " . $result['fullpath']);
-                        exec("rm -f {$result['fullpath']} ");
+                        // TASK-0026D (F2): was exec("rm -f {$result['fullpath']} ")
+                        // -- unlink() needs no shell at all for a plain
+                        // file delete.
+                        unlink($result['fullpath']);
 
                     } catch (Exception $e) {
                         throw new ErrorException($this->view->translate("Unable to remove file"));
@@ -335,7 +374,9 @@ class SoundFilesController extends Zend_Controller_Action {
 
             if ($result['fullpath'] && $result['backuppath']) {
                 try {
-                    exec("mv {$result['backuppath']}  {$result['fullpath']} ");
+                    // TASK-0026D (F2): was exec("mv {$result['backuppath']} {$result['fullpath']} ")
+                    // -- rename() needs no shell at all for a plain file move.
+                    rename($result['backuppath'], $result['fullpath']);
                 } catch (Exception $e) {
                     throw new ErrorException($this->view->translate("Unable to restore file"));
                 }

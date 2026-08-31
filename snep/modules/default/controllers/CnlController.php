@@ -81,11 +81,56 @@ class CnlController extends Zend_Controller_Action {
             $this->view->error_message = $adapter->getMessages();
             $this->renderScript('error/sneperror.phtml');
         } else {
-            $_fileName = $adapter->getFileName();
-            $file_name = str_replace("ZIP", "TXT",$_fileName) ;
-            // Verify shell command
-            if (`which unzip` && $_fileName != "") {  
-                exec("unzip {$_fileName} -d /tmp");   
+            // TASK-0026D (F5): was a literal `which unzip` shell
+            // backtick operator plus exec("unzip {$_fileName} -d /tmp")
+            // -- $_fileName preserves the client-supplied upload
+            // filename verbatim (Zend_File_Transfer_Adapter_Http does
+            // not sanitize it), the same unparameterized-shell-command
+            // pattern as F2-F4's confirmed findings. Untrusted data must
+            // not become shell syntax: PHP's own ZipArchive extension
+            // (confirmed present in this environment) extracts a zip
+            // natively, no shell/exec() involved at all -- the
+            // preferred remediation over merely escaping a command
+            // string.
+            //
+            // Only the basename of the uploaded path is trusted, then
+            // reconstructed against the known-fixed upload destination
+            // rather than trusting whatever the adapter reports, and
+            // required to end in ".zip" (the only shape this feature
+            // has ever accepted) -- both keep the resolved target inside
+            // /tmp (Phase 3's invariant) independent of ZipArchive's own
+            // handling.
+            $safeBaseName = basename($adapter->getFileName());
+            $uploadedZip = '/tmp/' . $safeBaseName;
+            $file_name = preg_match('/\.zip$/i', $safeBaseName)
+                ? '/tmp/' . preg_replace('/\.zip$/i', '.txt', $safeBaseName)
+                : '';
+
+            $extracted = false;
+            if ($file_name !== '' && is_file($uploadedZip)) {
+                $zip = new ZipArchive();
+                if ($zip->open($uploadedZip) === true) {
+                    // Zip Slip defense-in-depth: reject the whole
+                    // archive if any entry's own stored name would
+                    // resolve outside /tmp, before extracting anything.
+                    $safeToExtract = true;
+                    for ($i = 0; $i < $zip->numFiles; $i++) {
+                        $entryName = $zip->getNameIndex($i);
+                        if ($entryName === false
+                            || strpos($entryName, '..') !== false
+                            || substr($entryName, 0, 1) === '/') {
+                            $safeToExtract = false;
+                            break;
+                        }
+                    }
+                    if ($safeToExtract) {
+                        $extracted = $zip->extractTo('/tmp');
+                    }
+                    $zip->close();
+                }
+            }
+
+            if ($extracted) {
                 $handle = fopen($file_name, "r") ;
 
                 if ($handle) {

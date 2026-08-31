@@ -115,7 +115,29 @@ class MusicOnHoldController extends Zend_Controller_Action {
             $classes = Snep_SoundFiles_Manager::getClasses();
             $form_isValid = true;
 
-            if (file_exists($dados['directory'])) {
+            // TASK-0026D (F3 sibling): $dados['base']/'directory'] used
+            // to be trusted verbatim from the request and joined
+            // straight into a path handed to
+            // Snep_SoundFiles_Manager::addClass(), which shells out
+            // (exec("mkdir ...")) using that path -- the same
+            // unparameterized-shell-command root cause as F3's confirmed
+            // addfileAction()/removefileAction() findings. "base" is
+            // meant to be this app's own fixed MOH root (the view's own
+            // "Default path" field is rendered disabled, read-only) --
+            // never trust the client for it, always use the server's
+            // own configured value. "directory" is meant to be a bare
+            // folder name (see the view's client-side "lettersonly"
+            // rule, which is not itself a security control since it is
+            // trivially bypassed by posting directly); enforce that
+            // narrower shape server-side against a fixed allowlist that
+            // also makes traversal via "/" or ".." structurally
+            // impossible once joined onto the trusted root.
+            $dados['base'] = Zend_Registry::get('config')->system->path->asterisk->moh;
+            if (!Snep_SoundFiles_Manager::isSafeDirectoryName($dados['directory'])) {
+                $message = $this->view->translate('Directory name is invalid.');
+                $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
+                $form_isValid = false;
+            } elseif (file_exists($dados['directory'])) {
                 $message = $this->view->translate('Directory already exists');
                 $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
                 $form_isValid = false;
@@ -184,17 +206,28 @@ class MusicOnHoldController extends Zend_Controller_Action {
 
             $dados = $this->_request->getParams();
 
+            // TASK-0026D (F3 sibling): same reasoning as addAction()
+            // above -- 'directory' here does not itself reach exec(),
+            // but it is stored into snep-musiconhold.conf and later
+            // read back by removeClass()/addfileAction(), which do. The
+            // "folder" field is also rendered disabled/read-only in the
+            // edit form (this action is not meant to let a class's
+            // directory be changed at all), so a value that fails this
+            // check is necessarily not a legitimate submission.
+            $mohRoot = Zend_Registry::get('config')->system->path->asterisk->moh;
+            if (!Snep_SoundFiles_Manager::isSafeDirectoryName($dados['folder'])) {
+                $message = $this->view->translate('Directory name is invalid.');
+                $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
+            } else {
+                $class = array(
+                    'name' => $dados['nome'],
+                    'mode' => $dados['mode'],
+                    'directory' => $mohRoot.'/'.$dados['folder']);
 
+                Snep_SoundFiles_Manager::editClass($data['name'], $class);
 
-            $class = array(
-                'name' => $dados['nome'],
-                'mode' => $dados['mode'],
-                'directory' => $dados['base'].'/'.$dados['folder']);
-
-            Snep_SoundFiles_Manager::editClass($data['name'], $class);
-
-            $this->_redirect($this->getRequest()->getControllerName());
-            
+                $this->_redirect($this->getRequest()->getControllerName());
+            }
         }
 
     }
@@ -288,7 +321,20 @@ class MusicOnHoldController extends Zend_Controller_Action {
             // Information about section/class
             $class = Snep_SoundFiles_Manager::getClasse($dados['section']);
             $form_isValid = true;
-            
+
+            // TASK-0026D (F3 sibling): $dados['section'] used to be
+            // trusted to resolve to a real, existing class -- an
+            // unrecognized value makes getClasse() return an empty
+            // array, so $class['directory'] below would coerce to "",
+            // landing the upload directly in /tmp instead of inside any
+            // MOH class directory (or, previously, this controller's
+            // now-removed shell commands). Reject up front instead.
+            if (empty($class['directory'])) {
+                $message = $this->view->translate('Music on hold class not found.');
+                $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
+                $form_isValid = false;
+            }
+
             $invalid = array('â', 'ã', 'á', 'à', 'ẽ', 'é', 'è', 'ê', 'í', 'ì', 'ó', 'õ', 'ò', 'ú', 'ù', 'ç', " ", '@', '!');
             $valid = array('a', 'a', 'a', 'a', 'e', 'e', 'e', 'e', 'i', 'i', 'o', 'o', 'o', 'u', 'u', 'c', "_", '_', '_');
 
@@ -306,6 +352,18 @@ class MusicOnHoldController extends Zend_Controller_Action {
             $clean_name = strstr($originalName, '.', true);
             $validname = $clean_name . '.wav';
 
+            // TASK-0026D (F3): same allowlist as SoundFilesController's
+            // F2 fix -- the char-substitution above only replaces a
+            // curated set of accented characters/space/@/!, it does not
+            // reject shell metacharacters, and $originalName reaches
+            // exec("mv/sox ...") below and is used to build every
+            // filesystem path for this upload.
+            if (!Snep_SoundFiles_Manager::isSafeFilename($originalName)) {
+                $this->view->error_message = $this->view->translate("File name is invalid.");
+                $this->renderScript('error/sneperror.phtml');
+                $form_isValid = false;
+            }
+
             $files = $soundFiles->get($originalName);
 
             if ($files) {
@@ -321,14 +379,24 @@ class MusicOnHoldController extends Zend_Controller_Action {
                 $arq_tmp = $class['directory'] . "/tmp/" . $originalName;
                 $arq_dst = $class['directory'] . "/" . $originalName;
 
-                exec("mv $uploadName $arq_tmp");
+                // TASK-0026D (F3): was exec("mv $uploadName $arq_tmp")
+                // -- $uploadName is a PHP-managed upload tmp file, so
+                // this is exactly what move_uploaded_file() is for
+                // (matching SoundFilesController::addAction()'s own
+                // existing pattern for the same operation); no shell at
+                // all needed.
+                move_uploaded_file($uploadName, $arq_tmp);
 
+                // TASK-0026D (F3): sox is a genuinely external tool with
+                // no native PHP equivalent, so it stays an exec() call
+                // -- escapeshellarg() is defense-in-depth on top of the
+                // isSafeFilename() allowlist enforced above.
                 if ($_POST['gsm']) {
                     $fileNe = basename($arq_dst, '.wav');
-                    exec("sox $arq_tmp -r 8000 {$fileNe}.gsm");
+                    exec("sox " . escapeshellarg($arq_tmp) . " -r 8000 " . escapeshellarg("{$fileNe}.gsm"));
                     $originalName = basename($originalName, '.wav') . ".gsm";
                 } else {
-                    exec("sox $arq_tmp -r 8000 -c 1 -e signed-integer -b 16 $arq_dst");
+                    exec("sox " . escapeshellarg($arq_tmp) . " -r 8000 -c 1 -e signed-integer -b 16 " . escapeshellarg($arq_dst));
                 }
 
                 if (file_exists($arq_dst) || file_exists($fileNe)) {
@@ -405,16 +473,43 @@ class MusicOnHoldController extends Zend_Controller_Action {
 
             $dados = $this->_request->getParams();
 
-            $base_dir = Zend_Registry::get('config')->system->path->asterisk->moh; 
+            // TASK-0026D (F3): the confirmed finding -- $dados['arquivo']
+            // was a raw POST value spliced straight into
+            // exec("rm {$file_remove}") with zero sanitization (the
+            // second exec() ran unconditionally, with no file_exists()
+            // gate at all). $dados['secao'] was equally untrusted,
+            // letting $base_dir be built from an arbitrary string with
+            // no check that it names a real, existing MOH class.
+            // "secao" is validated against the actual finite set of
+            // configured class names (a real allowlist, not a made-up
+            // one) and "arquivo" against the same filename allowlist
+            // used for F2/F3's upload paths -- which also rules out "/"
+            // and "..", so $file_remove cannot be steered outside the
+            // resolved class directory once both checks pass.
+            $validSections = array('default');
+            foreach (Snep_SoundFiles_Manager::getClasses() as $existingClass) {
+                $validSections[] = $existingClass['name'];
+            }
+            if (!in_array($dados['secao'], $validSections, true)
+                || !Snep_SoundFiles_Manager::isSafeFilename($dados['arquivo'])) {
+                $message = $this->view->translate('Invalid file or section.');
+                $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
+                return;
+            }
+
+            $base_dir = Zend_Registry::get('config')->system->path->asterisk->moh;
             if ($dados['secao'] != 'default') {
                 $base_dir .= '/'.$dados['secao'] ;
             }
             $file_remove = $base_dir . '/' . $dados['arquivo'] ;
-            
+
+            // TASK-0026D (F3): was exec("rm ...") (twice, the second
+            // unconditionally) -- unlink() needs no shell at all for a
+            // plain file delete; a single, correctly-gated call replaces
+            // both.
             if (file_exists($file_remove)) {
-                exec("rm {$file_remove}");
+                unlink($file_remove);
             }
-            exec("rm {$file_remove} ");
 
             $soundFiles->remove($dados['arquivo'], $dados['secao']);
 

@@ -61,33 +61,71 @@ class Snep_Log {
      */
     public function grepLog($dia_ini, $dia_fim, $hora_ini, $hora_fim, $verbose, $others) {
 
-
-        // Gera arquivo temporario baseado nos parametros, dia, hora e verbose
+        // TASK-0026D (F4): this used to build an "awk '...' | grep
+        // $others | grep \"VERBOSE[$verbose]\" $this->arquivo > $out"
+        // shell command -- $dia_ini/$dia_fim/$hora_ini/$hora_fim/
+        // $verbose/$others were all raw request values spliced straight
+        // into shell syntax with zero quoting (F4's confirmed RCE).
+        // $others in particular had no quotes at all, so it could also
+        // inject arbitrary grep flags, not just shell metacharacters.
+        //
+        // Untrusted data must not become shell syntax, so this is now
+        // plain PHP line-by-line filtering -- no exec()/shell involved
+        // at all for this operation.
+        //
+        // This intentionally reproduces the OLD command's exact
+        // observable behavior, confirmed by direct reproduction of the
+        // original pipeline, rather than the "obviously more correct"
+        // combined filter: because the log FILE argument was appended
+        // at the very end of the whole piped command string, it always
+        // bound to the *last* stage of the pipe, which then read the
+        // file directly and ignored whatever the earlier stages had
+        // piped into it. So: if $verbose is set, only the VERBOSE
+        // marker filter ever applied (against the raw file, date range
+        // and $others silently discarded); else if $others is set, only
+        // that literal-substring filter applied (date range discarded);
+        // the date/time range only ever took effect when both were
+        // empty. Preserving this exactly, however accidental, per this
+        // project's "preserve behavior before modernizing" rule -- see
+        // docs/tasks/0026d-shell-execution-hardening.md.
         $hora_ini = ($hora_ini === null ? "00:00:00": $hora_ini);
         $hora_fim = ($hora_fim === null ? "23:59:59": $hora_fim);
-            
-        $cmd = "awk  '$0 >= \"[".$dia_ini." ".$hora_ini."\" && $0 <= \"[".$dia_fim." ".$hora_fim."\"'"  ;
 
-        if ($others != '') {
-            $cmd .= " | grep ".$others ;
-        }
-
-        if ($verbose != '') {
-            $cmd .= " | grep \"VERBOSE\[".$verbose."\]\"" ;
-        }
+        $start = "[" . $dia_ini . " " . $hora_ini;
+        $end   = "[" . $dia_fim . " " . $hora_fim;
+        $verboseMarker = "VERBOSE[" . $verbose . "]";
 
         $file_output = "/tmp/snep-log-file-".date("Y-m-d-H-i-s").".txt";
 
-        $cmd .= " " . $this->arquivo . " > ".$file_output ;
+        $matched = array();
+        $handle = is_readable($this->arquivo) ? fopen($this->arquivo, 'r') : false;
+        if ($handle) {
+            while (($line = fgets($handle)) !== false) {
+                if ($verbose != '') {
+                    if (strpos($line, $verboseMarker) !== false) {
+                        $matched[] = $line;
+                    }
+                } elseif ($others != '') {
+                    if (strpos($line, $others) !== false) {
+                        $matched[] = $line;
+                    }
+                } else {
+                    if ($line >= $start && $line <= $end) {
+                        $matched[] = $line;
+                    }
+                }
+            }
+            fclose($handle);
+        }
 
-        exec($cmd) ;
+        file_put_contents($file_output, implode('', $matched));
 
         if (file_exists($file_output) && is_readable($file_output) && filesize($file_output) > 0 ) {
             return $file_output ;
-        } else { 
+        } else {
             return 'error' ;
         }
-        
+
     }
 
 

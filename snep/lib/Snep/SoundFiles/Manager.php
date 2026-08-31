@@ -181,9 +181,20 @@ class Snep_SoundFiles_Manager {
 
         if (!file_exists($class['directory'])) {
 
-            exec("mkdir {$class['directory']}");
-            exec("mkdir {$class['directory']}/tmp");
-            exec("mkdir {$class['directory']}/backup");
+            // TASK-0026D (F3 sibling): was exec("mkdir {$class['directory']}")
+            // -- $class['directory'] is built by the controller from raw
+            // request fields (base+directory), so this was the same
+            // unparameterized-shell-command pattern as F3's confirmed
+            // addfileAction()/removefileAction() findings, just via the
+            // MOH class-management actions instead of the file actions.
+            // The caller (MusicOnHoldController) now allowlist-validates
+            // the directory name and always uses the server's own
+            // configured MOH root rather than trusting the request's
+            // "base" field; mkdir() natively needs no shell at all
+            // regardless.
+            mkdir($class['directory']);
+            mkdir($class['directory'] . '/tmp');
+            mkdir($class['directory'] . '/backup');
 
             file_put_contents('/etc/asterisk/snep/snep-musiconhold.conf', $header . $body);
 
@@ -418,8 +429,14 @@ class Snep_SoundFiles_Manager {
 
             if ($classRemove['name'] == $item['name']) {
 
+                // TASK-0026D (F3 sibling): was exec("rm -rf {$classRemove['directory']}")
+                // -- same root cause as addClass()'s mkdir() calls above.
+                // Recursive delete has no single native PHP function, so
+                // this is a small local helper instead of a shell-out
+                // (Phase 2's REMOVE_SHELL preference, not merely
+                // escaping): see self::removeDirectoryRecursive() below.
                 if (file_exists($classRemove['directory'])) {
-                    exec("rm -rf {$classRemove['directory']}");
+                    self::removeDirectoryRecursive($classRemove['directory']);
                 }
                 unset($classes[$class]);
             }
@@ -630,6 +647,62 @@ class Snep_SoundFiles_Manager {
             }
         }
         return $result;
+    }
+
+    /**
+     * isSafeFilename - TASK-0026D (F2/F3): strict allowlist for any
+     * filename that will reach a shell command (sox/mv/cp/rm) or be
+     * used to build a filesystem path from request/upload data.
+     * Deliberately narrower than parseName()'s accent/space
+     * substitution -- that is a display-normalization convenience, not
+     * a security control, and lets every other character (including
+     * every shell metacharacter and the path separator "/") through
+     * untouched. Only one dot is allowed, which also rejects
+     * double-extension tricks (e.g. "x.wav.sh"); no "/" means a
+     * traversal attempt via the filename itself can never match either.
+     * @param <string> $name
+     * @return <bool>
+     */
+    public static function isSafeFilename($name) {
+        return is_string($name) && preg_match('/^[A-Za-z0-9_-]+\.[A-Za-z0-9]+$/', $name) === 1;
+    }
+
+    /**
+     * isSafeDirectoryName - TASK-0026D (F3 sibling): strict allowlist
+     * for a bare MOH class directory *name* (never a path) submitted
+     * from a request. No "/", no ".", so joining it onto the server's
+     * own configured MOH root can never escape that root.
+     * @param <string> $name
+     * @return <bool>
+     */
+    public static function isSafeDirectoryName($name) {
+        return is_string($name) && preg_match('/^[A-Za-z0-9_-]+$/', $name) === 1;
+    }
+
+    /**
+     * removeDirectoryRecursive - TASK-0026D (F3 sibling): native
+     * replacement for exec("rm -rf $dir") -- recursive delete has no
+     * single native PHP function, so this walks the tree bottom-up
+     * (children before their parent, matching how "rm -rf" itself
+     * order removals) instead of shelling out.
+     * @param <string> $dir
+     */
+    public static function removeDirectoryRecursive($dir) {
+        if (!is_dir($dir) || is_link($dir)) {
+            return;
+        }
+        $items = new RecursiveIteratorIterator(
+            new RecursiveDirectoryIterator($dir, FilesystemIterator::SKIP_DOTS),
+            RecursiveIteratorIterator::CHILD_FIRST
+        );
+        foreach ($items as $item) {
+            if ($item->isDir() && !$item->isLink()) {
+                rmdir($item->getPathname());
+            } else {
+                unlink($item->getPathname());
+            }
+        }
+        rmdir($dir);
     }
 
     /**
