@@ -106,6 +106,27 @@ class AuthController extends Zend_Controller_Action {
                     case Zend_Auth_Result::SUCCESS:
                         $auth->getStorage()->write($result->getIdentity());
 
+                        // TASK-0026G (F18): a session identifier the client
+                        // held BEFORE authenticating must never remain valid
+                        // as the AUTHENTICATED session identifier afterward
+                        // -- this was live-proven exploitable as a full
+                        // admin-account-takeover session-fixation path (see
+                        // docs/tasks/0026-pre-pilot-security-release-audit.md
+                        // F18). Zend_Session::regenerateId() is this
+                        // codebase's own wrapper around
+                        // session_regenerate_id(true): it keeps the
+                        // just-written identity/session data but swaps the
+                        // id and invalidates the old one server-side. Called
+                        // here, before any output has been sent, per that
+                        // method's own requirement. Never called on
+                        // ordinary authenticated requests -- only here, once
+                        // per successful login.
+                        Zend_Session::regenerateId();
+                        // TASK-0026G (F20): mint a fresh CSRF token bound to
+                        // the NEW session id, so nothing pre-login could
+                        // have seeded a token an attacker already knows.
+                        Snep_Security_Csrf::rotate();
+
                         $extension = $db->query("SELECT id, name FROM users WHERE name='$username'")->fetchObject();
                         $_SESSION["ENCRYPTION_KEY"] = md5($password);
                         // Retaining the old verifica.php
@@ -298,7 +319,18 @@ class AuthController extends Zend_Controller_Action {
     public function logoutAction() {
         if (Zend_Auth::getInstance()->hasIdentity()) {
             Zend_Auth::getInstance()->clearIdentity();
-        }?>
+        }
+        // TASK-0026G (F18): clearIdentity() above only removes Zend_Auth's
+        // own storage namespace within the session -- the rest of
+        // $_SESSION (id_user, name_user, http_authorization, the CSRF
+        // token, ...) would otherwise survive logout. Destroying the whole
+        // session (and its cookie) here means the pre-logout session
+        // identifier cannot be reused for anything afterward, not just
+        // "no longer has an identity". Must run before any output --
+        // Zend_Session::destroy() sends an expired Set-Cookie -- so this
+        // stays before the inline <script> below.
+        Zend_Session::destroy();
+        ?>
         <script>
         clearInterval(system_status_interval); // That's 60 seconds
         </script>

@@ -19,8 +19,15 @@
 require_once 'Zend/Session.php';
 require_once 'Zend/Application/Bootstrap/Bootstrap.php';
 require_once 'Snep/Locale.php';
+require_once 'Snep/Session/CookiePolicy.php';
+require_once 'Snep/Security/Csrf.php';
 require_once 'modules/default/model/PermissionPlugin.php';
+require_once 'modules/default/model/CsrfPlugin.php';
 
+// TASK-0026G (F19): must run before the session is started -- this is the
+// one safe place to do so on every request. See
+// Snep_Session_CookiePolicy::apply()'s own docblock.
+Snep_Session_CookiePolicy::apply();
 Zend_Session::start();
 
 /**
@@ -84,7 +91,15 @@ class Bootstrap extends Zend_Application_Bootstrap_Bootstrap {
         $view->headLink()->setStylesheet($view->baseUrl() . "/css/systemstatus.css");
         $view->headScript()->appendFile($view->baseUrl() . "/includes/javascript/snep-env.js.php", 'text/javascript');
         $view->headScript()->appendFile($view->baseUrl() . "/includes/javascript/jquery.min.js", 'text/javascript');
+        // TASK-0026G (F20): loaded on every page (even unauthenticated
+        // ones -- harmless there, since CSRF is only ever enforced for an
+        // authenticated session) so the shared CSRF token is available to
+        // every form/AJAX submission without touching each individual
+        // view script. See snep/includes/javascript/csrf.js and the
+        // "csrfToken" meta tag emitted in layouts/layout.phtml.
+        $view->headScript()->appendFile($view->baseUrl() . "/includes/javascript/csrf.js", 'text/javascript');
         //$view->headScript()->appendFile($view->baseUrl() . "/includes/javascript/geral.js", 'text/javascript');
+        $view->csrfToken = Snep_Security_Csrf::getToken();
 
         //List installed modules to be used on the modules menu
         $systemInfo['modules'] = array();
@@ -165,6 +180,13 @@ class Bootstrap extends Zend_Application_Bootstrap_Bootstrap {
         if ($auth->hasIdentity()) {
             $front = Zend_Controller_Front::getInstance();
             $front->registerPlugin(new Snep_PermissionPlugin());
+            // TASK-0026G (F20): registered the same way, and for the same
+            // reason, as Snep_PermissionPlugin just above -- an
+            // unauthenticated request never reaches either plugin, and
+            // this one is registered AFTER PermissionPlugin so an
+            // unauthorized request is denied before CSRF validity is ever
+            // computed for it. See Snep_CsrfPlugin's own docblock.
+            $front->registerPlugin(new Snep_CsrfPlugin());
         }
     }
 
