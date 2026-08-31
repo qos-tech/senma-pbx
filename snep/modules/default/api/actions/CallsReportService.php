@@ -44,7 +44,11 @@ class CallsReportService implements SnepService {
     $report_type = $_GET['report_type'];
 
     if(isset($_GET['limit']))
-    $limit = $_GET['limit'];
+    // TASK-0026F1: LIMIT is a numeric-literal SQL position, not a
+    // bindable value or an identifier -- an int cast is the correct
+    // control here (quoting would break the query), and collapses any
+    // SQL-shaped input harmlessly to an integer.
+    $limit = (int) $_GET['limit'];
 
     if(isset($_GET['replace']))
     $replace = true;
@@ -53,8 +57,12 @@ class CallsReportService implements SnepService {
     if(isset($_GET['exceptions'])){
       $exceptions = explode("_", $_GET['exceptions']);
 
+      // TASK-0026F1: $db->quote() both escapes and wraps the value in
+      // quotes (replacing manual "'".$value."'" concatenation), so each
+      // list member becomes a safe SQL literal before it ever reaches the
+      // IN (...) fragments built below.
       foreach($exceptions as $key => $value){
-        (isset($exceptionsAll)) ? $exceptionsAll .= "'".$value."'," : $exceptionsAll = "'".$value."',";
+        (isset($exceptionsAll)) ? $exceptionsAll .= $db->quote($value)."," : $exceptionsAll = $db->quote($value).",";
       }
       $exceptions = substr($exceptionsAll, 0,-1);
     }
@@ -65,8 +73,10 @@ class CallsReportService implements SnepService {
       $clausulepeer = explode("_", $_GET['clausulepeer']);
       $where_binds = '';
 
+      // TASK-0026F1: same $db->quote() treatment as $exceptions above --
+      // peer names were previously concatenated completely unquoted.
       foreach( $clausulepeer as $key => $value){
-        $where_binds .= $value.",";
+        $where_binds .= $db->quote($value).",";
       }
       $where_binds = substr($where_binds, 0,-1);
 
@@ -113,41 +123,45 @@ class CallsReportService implements SnepService {
     if(isset($_GET['status_failed']))
     unset($where_options[3]);
 
+    // TASK-0026F1: contactGroupSrcId/contactSrcId/contactGroupDstId/
+    // contactDstId are foreign-key ids -- (int) cast plus quoteInto()
+    // ensures a SQL-shaped value can never alter these subqueries'
+    // syntax, regardless of what non-numeric text is supplied.
     if (isset($_GET['contactGroupSrcId'])) {
-      $contactGroupSrcId = $_GET['contactGroupSrcId'];
+      $contactGroupSrcId = (int) $_GET['contactGroupSrcId'];
       $where_contactGroupSrc = " AND src IN (";
       $where_contactGroupSrc .= " SELECT phone FROM contacts_names cn ";
       $where_contactGroupSrc .= " INNER JOIN contacts_phone cp ON cp.contact_id = cn.id ";
       $where_contactGroupSrc .= " INNER JOIN contacts_group cg on cg.id = cn.group ";
-      $where_contactGroupSrc .= " WHERE cn.group = $contactGroupSrcId ";
+      $where_contactGroupSrc .= $db->quoteInto(" WHERE cn.group = ? ", $contactGroupSrcId);
       $where_contactGroupSrc .= ") ";
     }
 
     if (isset($_GET['contactSrcId'])) {
-      $contactSrcId = $_GET['contactSrcId'];
+      $contactSrcId = (int) $_GET['contactSrcId'];
       $where_contactSrc = " AND src IN ( ";
       $where_contactSrc .= " SELECT phone FROM contacts_names cn ";
       $where_contactSrc .= " INNER JOIN contacts_phone cp ON cp.contact_id = cn.id ";
-      $where_contactSrc .= " WHERE cn.id = $contactSrcId ";
+      $where_contactSrc .= $db->quoteInto(" WHERE cn.id = ? ", $contactSrcId);
       $where_contactSrc .= ") ";
     }
 
     if (isset($_GET['contactGroupDstId'])) {
-      $contactGroupDstId = $_GET['contactGroupDstId'];
+      $contactGroupDstId = (int) $_GET['contactGroupDstId'];
       $where_contactGroupDst = " AND dst IN (";
       $where_contactGroupDst .= " SELECT phone FROM contacts_names cn ";
       $where_contactGroupDst .= " INNER JOIN contacts_phone cp ON cp.contact_id = cn.id ";
       $where_contactGroupDst .= " INNER JOIN contacts_group cg on cg.id = cn.group ";
-      $where_contactGroupDst .= " WHERE cn.group = $contactGroupDstId ";
+      $where_contactGroupDst .= $db->quoteInto(" WHERE cn.group = ? ", $contactGroupDstId);
       $where_contactGroupDst .= ") ";
     }
 
     if (isset($_GET['contactDstId'])) {
-      $contactDstId = $_GET['contactDstId'];
+      $contactDstId = (int) $_GET['contactDstId'];
       $where_contactDst = " AND dst IN ( ";
       $where_contactDst .= " SELECT phone FROM contacts_names cn ";
       $where_contactDst .= " INNER JOIN contacts_phone cp ON cp.contact_id = cn.id ";
-      $where_contactDst .= " WHERE cn.id = $contactDstId ";
+      $where_contactDst .= $db->quoteInto(" WHERE cn.id = ? ", $contactDstId);
       $where_contactDst .= ") ";
     }
 
@@ -194,43 +208,58 @@ class CallsReportService implements SnepService {
     }
 
     // Src or dst value
+    // TASK-0026F1: every src/dst comparison below now crosses into SQL
+    // via $db->quoteInto() instead of raw interpolation; the OR-chain /
+    // substr(...,3) accumulation shape (each fragment still starts with
+    // " OR (") and the equal-vs-LIKE branching are otherwise unchanged.
     if (isset($_GET['src'])) {
       $src = $_GET['src'];
+      $srcEqual = isset($_GET['order_src']) && $_GET['order_src'] == 'equal';
       if (strpos($src, ",")) {
         $where_src = '';
         $arrSrc = explode(",", $src);
 
         foreach ($arrSrc as $srcs) {
-          ($_GET['order_src'] == 'equal') ? $where_src .= " OR (src = $srcs)" : $where_src .= " OR (src LIKE '%$srcs%')";
+          $where_src .= $srcEqual
+            ? $db->quoteInto(" OR (src = ?)", $srcs)
+            : $db->quoteInto(" OR (src LIKE ?)", '%' . $srcs . '%');
         }
 
         $where_src = " AND (" . substr($where_src, 3) . ")";
 
       } else {
-        ($_GET['order_src'] == 'equal') ? $where_src = "AND (src = $src)" : $where_src = "AND (src LIKE '%$src%')";
+        $where_src = $srcEqual
+          ? $db->quoteInto("AND (src = ?)", $src)
+          : $db->quoteInto("AND (src LIKE ?)", '%' . $src . '%');
       }
     }
 
     if (isset($_GET['dst'])) {
       $dst = $_GET['dst'];
+      $dstEqual = isset($_GET['order_dst']) && $_GET['order_dst'] == 'equal';
       if (strpos($dst, ",")) {
         $where_dst = '';
         $arrdst = explode(",", $dst);
 
         foreach ($arrdst as $dsts) {
-          ($_GET['order_dst'] == 'equal') ? $where_dst .= " OR (dst = $dsts)" : $where_dst .= " OR (dst LIKE '%$dsts%')";
+          $where_dst .= $dstEqual
+            ? $db->quoteInto(" OR (dst = ?)", $dsts)
+            : $db->quoteInto(" OR (dst LIKE ?)", '%' . $dsts . '%');
         }
 
         $where_dst = " AND (" . substr($where_dst, 3) . ")";
 
       } else {
-        ($_GET['order_dst'] == 'equal') ? $where_dst = "AND (dst = $dst)" : $where_dst = "AND (dst LIKE '%$dst%')";
+        $where_dst = $dstEqual
+          ? $db->quoteInto("AND (dst = ?)", $dst)
+          : $db->quoteInto("AND (dst LIKE ?)", '%' . $dst . '%');
       }
     }
 
-    // Time call option
-    (isset($_GET['time_call_init'])) ? $where_options[] = ' duration >= '.$_GET['time_call_init'].' ' : null ;
-    (isset($_GET['time_call_end'])) ? $where_options[] = ' duration <= '.$_GET['time_call_end'].' ' : null ;
+    // Time call option -- duration is a numeric column position, same
+    // treatment as `limit` above.
+    (isset($_GET['time_call_init'])) ? $where_options[] = $db->quoteInto(' duration >= ? ', (int) $_GET['time_call_init']) : null ;
+    (isset($_GET['time_call_end'])) ? $where_options[] = $db->quoteInto(' duration <= ? ', (int) $_GET['time_call_end']) : null ;
 
 
     // Cost center
@@ -241,7 +270,7 @@ class CallsReportService implements SnepService {
       if (count($cost_centers) > 0) {
         $tmp_cc = "";
         foreach ($cost_centers as $valor) {
-          $tmp_cc .= " cdr.accountcode like '" . $valor . "%'";
+          $tmp_cc .= $db->quoteInto(" cdr.accountcode like ? ", $valor . '%');
           $tmp_cc .= " OR ";
         }
         $cost_centers = implode(",", $cost_centers);
@@ -299,7 +328,7 @@ class CallsReportService implements SnepService {
       $select .= " FROM cdr ";
     }
     $select .= " LEFT JOIN ccustos ON accountcode = ccustos.codigo ";
-    $select .= " WHERE ( calldate >= '$start_date' AND calldate <= '$end_date') ";
+    $select .= " WHERE ( " . $db->quoteInto('calldate >= ?', $start_date) . " AND " . $db->quoteInto('calldate <= ?', $end_date) . ") ";
     $select .= (isset($where_cost_center)) ? $where_cost_center : '';
     $select .= (isset($where)) ? $where : '';
     $select .= (isset($where_contactGroupSrc)) ? $where_contactGroupSrc : '';
@@ -320,7 +349,7 @@ class CallsReportService implements SnepService {
 
       $selectcont = "SELECT count(*) as cont,disposition,accountcode,date_format(calldate,'%d/%m/%Y') AS key_dia ";
       $selectcont .= (isset($where_cost_center)) ? ", ccustos.tipo  FROM cdr, ccustos " : " FROM cdr";
-      $selectcont .= " WHERE ( calldate >= '$start_date' AND calldate <= '$end_date') ";
+      $selectcont .= " WHERE ( " . $db->quoteInto('calldate >= ?', $start_date) . " AND " . $db->quoteInto('calldate <= ?', $end_date) . ") ";
       $selectcont .= (isset($where_cost_center)) ? $where_cost_center : '';
       $selectcont .= (isset($where)) ? $where : '';
       $selectcont .= (isset($where_contactGroupSrc)) ? $where_contactGroupSrc : '';

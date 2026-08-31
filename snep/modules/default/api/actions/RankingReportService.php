@@ -51,8 +51,10 @@ class RankingReportService implements SnepService {
       $clausulepeer = explode("_", $_GET['clausulepeer']);
       $where_binds = '';
 
+      // TASK-0026F1: $db->quote() escapes and quotes each list member --
+      // previously concatenated completely unquoted.
       foreach( $clausulepeer as $key => $value){
-        $where_binds .= $value.",";
+        $where_binds .= $db->quote($value).",";
       }
       $where_binds = substr($where_binds, 0,-1);
 
@@ -98,7 +100,7 @@ class RankingReportService implements SnepService {
 
     $select = "SELECT cdr.src, cdr.dst, cdr.disposition, cdr.duration, cdr.billsec, cdr.userfield, cdr.uniqueid ";
     $select .= " FROM cdr JOIN peers on cdr.src = peers.name WHERE";
-    $select .= " ( calldate >= '$start_date' AND calldate <= '$end_date')";
+    $select .= " ( " . $db->quoteInto('calldate >= ?', $start_date) . " AND " . $db->quoteInto('calldate <= ?', $end_date) . ")";
     $select .= isset($where_binds) ? $where_binds : '';
     $select .= isset($where_prefix) ? $where_prefix : '';
     $select .= isset($where_exceptions) ? $where_exceptions : '';

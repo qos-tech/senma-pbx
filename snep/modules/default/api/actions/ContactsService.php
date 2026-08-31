@@ -54,17 +54,37 @@ class ContactsService implements SnepService {
         from contacts_phone inner join contacts_names
         on contacts_names.id = contacts_phone.contact_id
         inner join contacts_group on contacts_names.group = contacts_group.id
-        where contacts_phone.phone like '%{$phone}'";
+        where " . $db->quoteInto('contacts_phone.phone like ?', '%' . $phone);
       }
 
       // get by name
       if(isset($_GET["name"])){
+        // TASK-0026F1: minimal guard -- the unqualified `name` column is
+        // ambiguous once joined against contacts_group (which also has a
+        // `name` column), a pre-existing bug independent of SQL-shaping
+        // (confirmed live: an ordinary name=John request already fataled
+        // identically before this task -- SQLSTATE[23000] "Column 'name'
+        // in WHERE is ambiguous"). Qualifying it as contacts_names.name,
+        // exactly like the SELECT list already does two lines above, is
+        // required to validate the parameterized fix on this line at all;
+        // isolated to this one token, not a broader fix of unrelated debt.
         $select = "select contacts_phone.phone as phone,
         contacts_names.name as name, contacts_group.name as group_name
         from contacts_phone inner join contacts_names
         on contacts_names.id = contacts_phone.contact_id
         inner join contacts_group on contacts_names.group = contacts_group.id
-        where name like '%{$_GET['name']}'";
+        where " . $db->quoteInto('contacts_names.name like ?', '%' . $_GET['name']);
+      }
+
+      // TASK-0026F1: minimal guard -- if neither a phone/callerid nor a
+      // name was supplied, $select is undefined (pre-existing PHP 8.4
+      // crash on $db->query(null), see docs/tasks/0026f1-...). Required
+      // here because the parameterized rewrite above still leaves $select
+      // unset in exactly that case; returning the same "no match" shape
+      // the empty-result branch below already uses is the minimal safe
+      // guard, not a broader fix of that debt.
+      if (!isset($select)) {
+        return array("status" => "empty", "message" => "No entries found.");
       }
 
       $stmt = $db->query($select);

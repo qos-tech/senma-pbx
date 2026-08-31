@@ -46,9 +46,11 @@ class ServicesReportService implements SnepService {
             
             $clausulepeer = explode("_", $_GET['clausulepeer']);
             $where_binds = '';
-            
+
+            // TASK-0026F1: $db->quote() escapes and quotes each list
+            // member -- previously concatenated completely unquoted.
             foreach( $clausulepeer as $key => $value){
-                $where_binds .= $value.","; 
+                $where_binds .= $db->quote($value).",";
             }
             $where_binds = substr($where_binds, 0,-1);
 
@@ -146,12 +148,12 @@ class ServicesReportService implements SnepService {
         }
 
         $selectcount = "SELECT count(*) as tot FROM services_log";
-        $selectcount .= " WHERE ( date >= '$fromDay' AND date <= '$tillDay') ";
+        $selectcount .= " WHERE ( " . $db->quoteInto('date >= ?', $fromDay) . " AND " . $db->quoteInto('date <= ?', $tillDay) . ") ";
         $selectcount .= (isset($where_binds)) ? $where_binds : '';
         $selectcount .= (isset($where)) ? $where : '';
 
         $select = "SELECT * FROM services_log";
-        $select .= " WHERE ( date >= '$fromDay' AND date <= '$tillDay') ";
+        $select .= " WHERE ( " . $db->quoteInto('date >= ?', $fromDay) . " AND " . $db->quoteInto('date <= ?', $tillDay) . ") ";
         $select .= (isset($where_binds)) ? $where_binds : '';
         $select .= (isset($where)) ? $where : '';
 
