@@ -31,6 +31,26 @@ require_once "includes/ParseDown.php";
 class DocsController extends Zend_Controller_Action {
 
     /**
+     * TASK-0026I (F28): explicit allowlist of the only documents this
+     * viewer may ever serve -- request-parameter NAME (as sent by
+     * index.phtml's buttons, e.g. name="changelog") mapped to the exact
+     * on-disk filename under snep/docs/. Replaces free-form
+     * strtoupper($key).'.md' path construction, which let a POST
+     * parameter NAME containing "../" traverse outside snep/docs/
+     * (contained only by the unconditional ".md" suffix). See
+     * docs/tasks/0026i-disclosure-path-traversal-hardening.md.
+     */
+    private static $allowedDocs = array(
+        'changelog'             => 'CHANGELOG.md',
+        'install_guide'         => 'INSTALL_GUIDE.md',
+        'practical_guide'       => 'PRACTICAL_GUIDE.md',
+        'realtime_disable'      => 'REALTIME_DISABLE.md',
+        'register_error'        => 'REGISTER_ERROR.md',
+        'repository_snep_guide' => 'REPOSITORY_SNEP_GUIDE.md',
+        'translation'           => 'TRANSLATION.md',
+    );
+
+    /**
      * Initial settings of the class
      */
      public function init() {
@@ -61,13 +81,27 @@ class DocsController extends Zend_Controller_Action {
             unset($data["action"]);
             unset($data["module"]);
 
+            // TASK-0026I (F28): $key here is a REQUEST PARAMETER NAME, not
+            // a value -- it must never reach the filesystem directly.
+            // Resolve it against the fixed allowlist above; any name not
+            // in the map (including any traversal payload) is ignored,
+            // exactly as an unrecognized button name always was.
+            $docsRoot = realpath(APPLICATION_PATH . '/docs');
             foreach ($data as $key => $value) {
+                if (!isset(self::$allowedDocs[$key])) {
+                    continue;
+                }
+
+                $docPath = realpath($docsRoot . '/' . self::$allowedDocs[$key]);
+                if ($docPath === false || strpos($docPath, $docsRoot . DIRECTORY_SEPARATOR) !== 0) {
+                    continue;
+                }
+
+                $html = file_get_contents($docPath);
                 $Parsedown = new Parsedown();
-                $html = file_get_contents('/var/www/html/snep/docs/'. strtoupper($key) .'.md');
-                $Parsedown = new Parsedown();
-                $this->view->doc = $Parsedown->text($html); 
+                $this->view->doc = $Parsedown->text($html);
             }
-            
+
         }
 
     }
