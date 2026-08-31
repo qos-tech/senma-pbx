@@ -74,6 +74,12 @@ run_suite "sql-security"           "sql-security-smoke-test.sh"
 # of its checks, same precondition authorization-smoke/
 # authorization-coverage need next).
 run_suite "shell-security"         "shell-security-smoke-test.sh"
+# TASK-0026E: placed right after shell-security and before authorization
+# -- same reasoning as sql-security/shell-security's own placement (an
+# independent trust-boundary proof needing an authenticated admin
+# session for most of its checks, same precondition authorization-smoke/
+# authorization-coverage need next).
+run_suite "pjsip-config-security"  "pjsip-config-security-smoke-test.sh"
 run_suite "authorization-coverage" "authorization-coverage-check.sh"
 run_suite "authorization-smoke"    "authorization-smoke-test.sh"
 run_suite "http-smoke"             "smoke-test.sh"
