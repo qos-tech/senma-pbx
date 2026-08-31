@@ -102,6 +102,16 @@ run_suite "api-sql-security"       "api-sql-security-smoke-test.sh"
 # here should surface on its own, not be masked by an unrelated
 # authorization-suite failure.
 run_suite "session-csrf-security"  "session-csrf-security-smoke-test.sh"
+# TASK-0026H: placed right after session-csrf-security and before
+# authorization -- same reasoning: an independent trust-boundary proof
+# (password storage/verification, rate limiting, default-install
+# credential) needing its own authenticated fixtures, same precondition
+# authorization-smoke/authorization-coverage need next. This suite
+# rewrites the shared browser+API password-authentication adapter, so it
+# runs before authorization for the same "surface its own regression
+# first, don't let it hide behind an unrelated authorization failure"
+# reason session-csrf-security's own placement comment gives.
+run_suite "auth-hardening-security" "auth-hardening-security-smoke-test.sh"
 run_suite "authorization-coverage" "authorization-coverage-check.sh"
 run_suite "authorization-smoke"    "authorization-smoke-test.sh"
 run_suite "http-smoke"             "smoke-test.sh"

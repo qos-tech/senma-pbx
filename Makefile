@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -120,6 +120,18 @@ api-sql-security-smoke: up
 # Deliberately separate from `make smoke` -- never run implicitly by it.
 session-csrf-security-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/session-csrf-security-smoke-test.sh
+
+# TASK-0026H: proves the F21-F24/F27 authentication-hardening boundaries
+# hold -- modern password_hash() storage on every write path, legacy MD5
+# accounts migrate transparently on successful login, a stored hash can
+# never itself authenticate (pass-the-hash), the standalone API uses the
+# same password semantics as browser login, failed logins are rate-
+# limited (per-account+source and per-source, both auto-expiring), wrong
+# password and unknown user are indistinguishable, and a fresh install no
+# longer ships an operational admin/admin123 credential. Deliberately
+# separate from `make smoke` -- never run implicitly by it.
+auth-hardening-security-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/auth-hardening-security-smoke-test.sh
 
 # TASK-0027A: deterministic, fixed-timestamp proof of
 # harness_cdr_report_window() (lib/harness.sh) -- the timezone-safe CDR
