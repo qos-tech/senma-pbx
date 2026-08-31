@@ -77,85 +77,131 @@ class AuthController extends Zend_Controller_Action {
             $f = new Zend_Filter_StripTags();
             $username = $f->filter($this->_request->getPost('user'));
             $password = $this->_request->getPost('password');
+            // TASK-0026H (F22): REMOTE_ADDR, matching the exact same
+            // convention SystemstatusController::logRestartAuthorizationDenied()
+            // already established for this codebase.
+            $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
 
-            $case = Snep_Acl::getCaseSensitive($username);
-
-            if (empty($username) || empty($case)) {
+            // TASK-0026H: previously merged with "user not found" below
+            // (empty($username) || empty($case)), which made "unknown
+            // user" and "blank username field" produce a DIFFERENT
+            // message than "wrong password" -- a username-enumeration
+            // oracle. This branch now only ever fires for a genuinely
+            // blank submission, unrelated to whether any user exists.
+            if ($username === '' || $username === null) {
                 $this->view->message = $this->view->translate("Please enter a username");
                 $this->view->msgclass = 'failure';
             } else {
                 $db = Zend_Registry::get('db');
 
-                $authAdapter = new Zend_Auth_Adapter_DbTable($db);
-                $authAdapter->setTableName('users');
-                $authAdapter->setIdentityColumn('name');
-                $authAdapter->setCredentialColumn('password');
-                $authAdapter->setIdentity($username);
-                $authAdapter->setCredential(md5($password));
+                // TASK-0026H (F22): must run BEFORE credential
+                // verification -- a throttled request never computes a
+                // password comparison at all.
+                if (Snep_Security_LoginThrottle::isThrottled($db, $username, $ip)) {
+                    $this->view->message = $this->view->translate('Too many failed login attempts. Please try again later.');
+                    $this->view->msgclass = 'failure';
+                } else {
 
-                // Autentication
-                $auth = Zend_Auth::getInstance();
-                $result = $auth->authenticate($authAdapter);
+                    // TASK-0026H (F21): Zend_Auth_Adapter_DbTable compared
+                    // the credential in SQL ("WHERE password = ?"), which
+                    // only ever worked for a deterministic hash like
+                    // md5(). password_hash()'s salted, non-deterministic
+                    // output must be verified in PHP instead -- see
+                    // Snep_Auth_Adapter_Password's own docblock. This
+                    // adapter also absorbs the case-sensitive identity
+                    // lookup Snep_Acl::getCaseSensitive() used to do as a
+                    // separate pre-check.
+                    $authAdapter = new Snep_Auth_Adapter_Password($db, $username, $password);
 
-                switch ($result->getCode()) {
-                    case Zend_Auth_Result::FAILURE_IDENTITY_NOT_FOUND:
-                    case Zend_Auth_Result::FAILURE_CREDENTIAL_INVALID:
-                        $this->view->message = $this->view->translate('User or password invalid');
-                        $this->view->msgclass = 'failure';
-                        break;
-                    case Zend_Auth_Result::SUCCESS:
-                        $auth->getStorage()->write($result->getIdentity());
+                    // Autentication
+                    $auth = Zend_Auth::getInstance();
+                    $result = $auth->authenticate($authAdapter);
 
-                        // TASK-0026G (F18): a session identifier the client
-                        // held BEFORE authenticating must never remain valid
-                        // as the AUTHENTICATED session identifier afterward
-                        // -- this was live-proven exploitable as a full
-                        // admin-account-takeover session-fixation path (see
-                        // docs/tasks/0026-pre-pilot-security-release-audit.md
-                        // F18). Zend_Session::regenerateId() is this
-                        // codebase's own wrapper around
-                        // session_regenerate_id(true): it keeps the
-                        // just-written identity/session data but swaps the
-                        // id and invalidates the old one server-side. Called
-                        // here, before any output has been sent, per that
-                        // method's own requirement. Never called on
-                        // ordinary authenticated requests -- only here, once
-                        // per successful login.
-                        Zend_Session::regenerateId();
-                        // TASK-0026G (F20): mint a fresh CSRF token bound to
-                        // the NEW session id, so nothing pre-login could
-                        // have seeded a token an attacker already knows.
-                        Snep_Security_Csrf::rotate();
+                    switch ($result->getCode()) {
+                        case Zend_Auth_Result::FAILURE_IDENTITY_NOT_FOUND:
+                        case Zend_Auth_Result::FAILURE_CREDENTIAL_INVALID:
+                            // TASK-0026H (F22): identical outcome/message
+                            // for "unknown user" and "wrong password" --
+                            // see the enumeration note above.
+                            Snep_Security_LoginThrottle::recordFailure($db, $username, $ip);
+                            $this->view->message = $this->view->translate('User or password invalid');
+                            $this->view->msgclass = 'failure';
+                            break;
+                        case Zend_Auth_Result::SUCCESS:
+                            // TASK-0026H (F22): a legitimate login clears
+                            // this (ip, username) pair's own failure
+                            // history -- see Snep_Security_LoginThrottle's
+                            // own docblock for why the broader per-IP
+                            // counter is deliberately left alone here.
+                            Snep_Security_LoginThrottle::clearAccount($db, $username, $ip);
 
-                        $extension = $db->query("SELECT id, name FROM users WHERE name='$username'")->fetchObject();
-                        $_SESSION["ENCRYPTION_KEY"] = md5($password);
-                        // Retaining the old verifica.php
-                        $_SESSION['id_user'] = $extension->id;
-                        $_SESSION['name_user'] = $username;
-                        $_SESSION['active_user'] = $extension->name;
-                        $_SESSION['http_authorization'] = Snep_Usuario::encrypt("{$username}:{$password}", $_SESSION["ENCRYPTION_KEY"]);
-                        $_SESSION['vinculos_user'] = "";
+                            $auth->getStorage()->write($result->getIdentity());
 
-                        $registered = $db->query("SELECT uuid,registered_itc,noregister FROM itc_register")->fetch();
+                            // TASK-0026G (F18): a session identifier the client
+                            // held BEFORE authenticating must never remain valid
+                            // as the AUTHENTICATED session identifier afterward
+                            // -- this was live-proven exploitable as a full
+                            // admin-account-takeover session-fixation path (see
+                            // docs/tasks/0026-pre-pilot-security-release-audit.md
+                            // F18). Zend_Session::regenerateId() is this
+                            // codebase's own wrapper around
+                            // session_regenerate_id(true): it keeps the
+                            // just-written identity/session data but swaps the
+                            // id and invalidates the old one server-side. Called
+                            // here, before any output has been sent, per that
+                            // method's own requirement. Never called on
+                            // ordinary authenticated requests -- only here, once
+                            // per successful login.
+                            Zend_Session::regenerateId();
+                            // TASK-0026G (F20): mint a fresh CSRF token bound to
+                            // the NEW session id, so nothing pre-login could
+                            // have seeded a token an attacker already knows.
+                            Snep_Security_Csrf::rotate();
 
-                        $_SESSION['registered'] = $registered['registered_itc'];
-                        $_SESSION['uuid'] = $registered['uuid'];
-                        $_SESSION['noregister'] = $registered['noregister'];
+                            // TASK-0026H (F8-class SQLi, same code block
+                            // being rewritten): was raw string
+                            // interpolation of $username into SQL syntax.
+                            $extension = $db->fetchRow(
+                                $db->select()->from('users', array('id', 'name'))->where('name = ?', $username)
+                            );
+                            // TASK-0026H (Password handling invariant):
+                            // this codebase's own AES-encrypted-plaintext
+                            // session fields ($_SESSION['ENCRYPTION_KEY'],
+                            // $_SESSION['http_authorization'], "Retaining
+                            // the old verifica.php") persisted the
+                            // plaintext password outside the hash (a
+                            // reversible cipher whose key was ALSO stored
+                            // in the same session) and had no reader
+                            // anywhere else in the current codebase
+                            // (confirmed by a full-repo grep) -- removed
+                            // rather than carried forward.
+                            $_SESSION['id_user'] = $extension['id'];
+                            $_SESSION['name_user'] = $username;
+                            $_SESSION['active_user'] = $extension['name'];
+                            $_SESSION['vinculos_user'] = "";
 
-                        if(!isset($_SESSION['uuid'])){
+                            $registered = $db->query("SELECT uuid,registered_itc,noregister FROM itc_register")->fetch();
 
-                            $v4uuid = self::v4();
-                            $_SESSION['uuid'] = $v4uuid;
-                            Snep_Auth_Manager::adduuid($v4uuid);
+                            $_SESSION['registered'] = $registered['registered_itc'];
+                            $_SESSION['uuid'] = $registered['uuid'];
+                            $_SESSION['noregister'] = $registered['noregister'];
 
-                        }
+                            if(!isset($_SESSION['uuid'])){
 
-                        $this->_redirect('/');
-                        break;
-                    default:
-                        $this->view->message = $this->view->translate('Authentication failure');
-                        $this->view->msgclass = 'failure';
-                        break;
+                                $v4uuid = self::v4();
+                                $_SESSION['uuid'] = $v4uuid;
+                                Snep_Auth_Manager::adduuid($v4uuid);
+
+                            }
+
+                            $this->_redirect('/');
+                            break;
+                        default:
+                            Snep_Security_LoginThrottle::recordFailure($db, $username, $ip);
+                            $this->view->message = $this->view->translate('Authentication failure');
+                            $this->view->msgclass = 'failure';
+                            break;
+                    }
                 }
             }
         }
@@ -227,6 +273,11 @@ class AuthController extends Zend_Controller_Action {
                 if ($data['password'] != $data['newpassword']) {
                     $this->view->msgclass = 'failure';
                     $this->view->message = $this->view->translate("Passwords do not match");
+                } elseif (!Snep_Security_Password::meetsMinimumLength($data['newpassword'])) {
+                    // TASK-0026H (F21, Phase 14): server-side enforcement,
+                    // same policy as UsersController's add/edit paths.
+                    $this->view->msgclass = 'failure';
+                    $this->view->message = $this->view->translate("Password must be at least 8 characters.");
                 } else {
                     $recuperation = Snep_Auth_Manager::getPassword($data['user']);
 
@@ -304,11 +355,16 @@ class AuthController extends Zend_Controller_Action {
      * @return <string>
      */
     public function aleatorio() {
+        // TASK-0026H (F23): was srand((double) microtime() * 1000000)
+        // seeding rand() -- a legacy, non-cryptographic PRNG whose seed
+        // is theoretically narrowable by an attacker who can measure
+        // request timing. random_int() is cryptographically secure and
+        // has been available since PHP 7.
         $key = "";
         $valor = "ABCDEFGHJKLMNOPQRSTUVWXYZ0123456789";
-        srand((double) microtime() * 1000000);
+        $max = strlen($valor) - 1;
         for ($i = 0; $i < 6; $i++) {
-            $key.= $valor[rand() % strlen($valor)];
+            $key .= $valor[random_int(0, $max)];
         }
         return $key;
     }

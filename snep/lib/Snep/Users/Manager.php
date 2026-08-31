@@ -49,7 +49,9 @@ class Snep_Users_Manager {
         $db = Zend_Registry::get('db');
 
         $insert_data = array('name' => $user['name'],
-            'password' => md5($user['password']),
+            // TASK-0026H (F21): was md5($user['password']) -- see
+            // Snep_Security_Password's own docblock.
+            'password' => Snep_Security_Password::hash($user['password']),
             'email' => $user['email'],
             // TASK-0023: users.dashboard is TEXT NOT NULL with no
             // default -- omitting it fails under strict MariaDB. ''

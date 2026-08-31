@@ -99,18 +99,19 @@ function resolveApiCredentials() {
 list($apiUser, $apiPlainPasswd) = resolveApiCredentials();
 
 if ($apiUser && $apiPlainPasswd) {
-    // TASK-0026F: current compatibility -- plaintext credential -> md5 ->
-    // compare against the stored MD5 hash in users.password, applied here
-    // exactly once. This mirrors AuthController::loginAction()'s existing
-    // convention and is deliberately NOT modernized to password_hash()/
-    // password_verify() in this task; see docs/tasks/0026f-... for the
-    // deferred password-hashing modernization boundary.
-    $authAdapter = new Zend_Auth_Adapter_DbTable($db);
-    $authAdapter->setTableName('users');
-    $authAdapter->setIdentityColumn('name');
-    $authAdapter->setCredentialColumn('password');
-    $authAdapter->setIdentity($apiUser);
-    $authAdapter->setCredential(md5($apiPlainPasswd));
+    // TASK-0026H (F21): now the SAME password semantic as browser login
+    // (AuthController) -- one shared adapter (Snep_Auth_Adapter_Password),
+    // one shared verification/migration helper (Snep_Security_Password).
+    // TASK-0026F's own deferred-modernization boundary is what this task
+    // closes: a stored MD5 hash still authenticates (legacy accounts
+    // migrate transparently, exactly like browser login), a stored
+    // password_hash() account authenticates via password_verify(), and
+    // neither a stored MD5 nor a stored password_hash() value can itself
+    // be submitted AS the password (pass-the-hash) -- re-verified by
+    // scripts/auth-hardening-security-smoke-test.sh's own pass-the-hash
+    // checks, re-running TASK-0026F's original F17-A coverage against
+    // this new adapter.
+    $authAdapter = new Snep_Auth_Adapter_Password($db, $apiUser, $apiPlainPasswd);
 
     // Autentication
     $auth = Zend_Auth::getInstance();

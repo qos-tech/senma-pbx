@@ -122,10 +122,16 @@ class Snep_Auth_Manager {
 
         $db = Zend_Registry::get('db');
 
-        $update_data = array('password' => md5($data['password']),
+        // TASK-0026H (F21): was md5($data['password']) -- see
+        // Snep_Security_Password's own docblock.
+        $update_data = array('password' => Snep_Security_Password::hash($data['password']),
             'updated' => date('Y-m-d H:i:s'));
 
-        $db->update("users", $update_data, "name = '{$data['user']}'");
+        // TASK-0026H (SQLi, same code block being rewritten for F21):
+        // was raw string interpolation of $data['user']
+        // ($_POST['username'], AuthController::recuperationAction()) into
+        // SQL syntax.
+        $db->update("users", $update_data, $db->quoteInto('name = ?', $data['user']));
     }
 
     /**

@@ -99,6 +99,14 @@ class UsersController extends Zend_Controller_Action {
                 $message = $this->view->translate("Name already exists.");
                 $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
 
+            } elseif (!Snep_Security_Password::meetsMinimumLength($dados['password'])) {
+
+                // TASK-0026H (F21, Phase 14): server-side enforcement --
+                // the client-side minlength rule (addedit.phtml) is a UX
+                // nicety, not a security control.
+                $message = $this->view->translate("Password must be at least 8 characters.");
+                $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
+
             }else{
 
                 $id = Snep_Users_Manager::add($dados);
@@ -166,8 +174,25 @@ class UsersController extends Zend_Controller_Action {
 
             $dados['created'] = $user['created'];
 
-            if (strlen($dados['password']) != 32) {
-                $dados['password'] = md5($dados['password']);
+            // TASK-0026H (F21, Phase 5): the old strlen()==32 heuristic
+            // ("looks like an MD5 hash, so it must be the unchanged
+            // stored value, don't rehash it") was only needed because
+            // the edit form used to pre-fill the password field with the
+            // raw stored hash, sending it back to the browser on every
+            // page load. addedit.phtml no longer does that -- the field
+            // now renders blank, so "blank submission" unambiguously
+            // means "leave the password unchanged", and any non-blank
+            // submission is always a real new plaintext password to hash.
+            if ($dados['password'] === '' || $dados['password'] === null) {
+                $dados['password'] = $user['password'];
+            } elseif (!Snep_Security_Password::meetsMinimumLength($dados['password'])) {
+                // TASK-0026H (F21, Phase 14): server-side enforcement,
+                // same policy/reasoning as addAction() above.
+                $message = $this->view->translate("Password must be at least 8 characters.");
+                $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
+                return;
+            } else {
+                $dados['password'] = Snep_Security_Password::hash($dados['password']);
             }
 
             // if change profile, remove permissions
