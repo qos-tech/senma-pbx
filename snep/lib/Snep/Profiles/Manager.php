@@ -80,8 +80,10 @@ class Snep_Profiles_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F8 sibling boundary): was raw string interpolation
+        // of $id into SQL syntax.
         $db->beginTransaction();
-        $db->delete('profiles', "id = '$id'");
+        $db->delete('profiles', $db->quoteInto('id = ?', $id));
 
         try {
             $db->commit();
@@ -98,8 +100,10 @@ class Snep_Profiles_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F8 sibling boundary): was raw string interpolation
+        // of $id into SQL syntax.
         $db->beginTransaction();
-        $db->delete('profiles_permissions', "profile_id = '$id'");
+        $db->delete('profiles_permissions', $db->quoteInto('profile_id = ?', $id));
 
         try {
             $db->commit();
@@ -139,7 +143,9 @@ class Snep_Profiles_Manager {
             'created' => $profile['created'],
             'updated' => date('Y-m-d H:i:s'));
 
-        $db->update("profiles", $update_data, "id = '{$profile['id']}'");
+        // TASK-0026C (F8 sibling boundary): was raw string interpolation
+        // of $profile['id'] into SQL syntax.
+        $db->update("profiles", $update_data, $db->quoteInto('id = ?', $profile['id']));
     }
 
     /**
@@ -154,7 +160,9 @@ class Snep_Profiles_Manager {
         $update_data = array('profile_id' => 1,
             'updated' => date('Y-m-d H:i:s'));
 
-        $db->update("users", $update_data, "id = '{$member['id']}'");
+        // TASK-0026C (F8 sibling boundary): was raw string interpolation
+        // of $member['id'] into SQL syntax.
+        $db->update("users", $update_data, $db->quoteInto('id = ?', $member['id']));
     }
 
     /**

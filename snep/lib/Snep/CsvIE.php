@@ -162,7 +162,8 @@ class Snep_CsvIE {
         $db = Zend_Registry::get('db');
 
         $table = $_SESSION['exportData']['table'];
-        $total = $db->fetchOne("SELECT COUNT(*) AS count FROM $table");
+        // TASK-0026C (F11 sibling): ExportDataController::exportAction() now only ever stores an allowlist-validated table name here before this method runs -- quoteIdentifier() is defense-in-depth, not the primary control, since a table name can never be bound as an ordinary parameter value.
+        $total = $db->fetchOne("SELECT COUNT(*) AS count FROM " . $db->quoteIdentifier($table, true));
 
         $label = Snep_Locale::getInstance()->getZendTranslate()->translate("Export to CSV");
         $label2 = Snep_Locale::getInstance()->getZendTranslate()->translate("Total entries to be exported: ");
@@ -246,11 +247,23 @@ class Snep_CsvIE {
         $buffer = array();
         $pedido = 0;
         $inserido = 0;
+        // TASK-0026C (F10): each CSV cell was previously spliced straight into the INSERT's SQL text ("('" . implode("','", $data) . "')") with only a "\\\"" -> "\"" unescape -- a single quote in any cell broke out of the string literal. $table/$columns are never attacker-controlled here (set by the instantiating controller / $db->describeTable()), so quoting them as identifiers is defense-in-depth; the actual fix is binding every CSV value as a parameter instead of concatenating it. $buffer now holds one plain value-array per row (not a preformatted SQL tuple string) so it can still be batched exactly as before (flushed every 10 rows or at EOF). Confirmed unreachable through any current controller (see docs/tasks/0026c-sql-boundary-hardening.md) -- fixed anyway since the cost is low and it removes a live landmine.
+        $columnList = implode(', ', array_map(function ($column) use ($db) {
+            return $db->quoteIdentifier($column, true);
+        }, $columns));
         do {
             $line = fgetcsv($f);
             if ($buffer && (!$line || !($i % 10))) {
-                $query = "INSERT IGNORE INTO $table(`" . implode("`, `", $columns) . "`) VALUES " . implode(",", $buffer);
-                $inserido += $db->Query($query)->rowCount();
+                $rowPlaceholders = '(' . implode(',', array_fill(0, count($columns), '?')) . ')';
+                $placeholders = implode(',', array_fill(0, count($buffer), $rowPlaceholders));
+                $bind = array();
+                foreach ($buffer as $row) {
+                    foreach ($row as $value) {
+                        $bind[] = $value;
+                    }
+                }
+                $query = "INSERT IGNORE INTO " . $db->quoteIdentifier($table, true) . " ($columnList) VALUES $placeholders";
+                $inserido += $db->query($query, $bind)->rowCount();
                 $i = 0;
                 $buffer = array();
             }
@@ -261,7 +274,7 @@ class Snep_CsvIE {
                 }
                 foreach ($data as $key => $value)
                     $data[$key] = str_replace('\\"', '"', $value);
-                $buffer[] = "('" . implode("','", $data) . "')";
+                $buffer[] = array_values($data);
                 $pedido++;
             }
             $i++;

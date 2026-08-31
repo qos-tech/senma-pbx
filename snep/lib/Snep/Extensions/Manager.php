@@ -70,8 +70,14 @@ class Snep_Extensions_Manager {
 
         $db = Zend_Registry::get('db');
 
-        $rulesQuery = "SELECT rule.id, rule.desc FROM regras_negocio as rule, regras_negocio_actions_config as rconf WHERE (rconf.regra_id = rule.id AND rconf.value = '$id')";
-        $regras = $db->query($rulesQuery)->fetchAll();
+        // TASK-0026C (F7): was raw string interpolation of $id into SQL
+        // syntax.
+        $select = $db->select()
+                ->from(array('rule' => 'regras_negocio'), array('id', 'desc'))
+                ->join(array('rconf' => 'regras_negocio_actions_config'), 'rconf.regra_id = rule.id', array())
+                ->where('rconf.value = ?', $id);
+
+        $regras = $db->query($select)->fetchAll();
 
         return $regras;
     }
@@ -104,8 +110,10 @@ class Snep_Extensions_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F7): was raw string interpolation of $id into SQL
+        // syntax.
         $db->beginTransaction();
-        $db->delete('peers', "name = '$id'");
+        $db->delete('peers', $db->quoteInto('name = ?', $id));
 
         try {
             $db->commit();
@@ -122,8 +130,10 @@ class Snep_Extensions_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F7): was raw string interpolation of $id into SQL
+        // syntax.
         $db->beginTransaction();
-        $db->delete('voicemail_users', "customer_id = '$id'");
+        $db->delete('voicemail_users', $db->quoteInto('customer_id = ?', $id));
 
         try {
             $db->commit();
@@ -177,8 +187,10 @@ class Snep_Extensions_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F7): was raw string interpolation of $id into SQL
+        // syntax.
         $update_data = array('disabled' => true );
-        $db->update("peers", $update_data, "name = '$id'");
+        $db->update("peers", $update_data, $db->quoteInto('name = ?', $id));
 
     }
 
@@ -190,8 +202,10 @@ class Snep_Extensions_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F7): was raw string interpolation of $id into SQL
+        // syntax.
         $update_data = array('disabled' => false );
-        $db->update("peers", $update_data, "name = '$id'");
+        $db->update("peers", $update_data, $db->quoteInto('name = ?', $id));
 
     }
 

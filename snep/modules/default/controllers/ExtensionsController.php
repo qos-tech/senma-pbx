@@ -566,9 +566,10 @@ class ExtensionsController extends Zend_Controller_Action {
 
             $db = Zend_Registry::get('db');
             $exten = $formData["exten"];
-            $sqlValidName = "SELECT * from peers where name = '$exten'";
-            $selectValidName = $db->query($sqlValidName);
-            $resultGetId = $selectValidName->fetch();
+            // TASK-0026C (F7): was raw string interpolation of $exten
+            // into SQL syntax ("... where name = '$exten'"). Reuses this
+            // manager's own already-parameterized lookup.
+            $resultGetId = Snep_Extensions_Manager::getPeer($exten);
 
             if ($resultGetId && !$update) {
               return $this->view->translate('Extension already taken. Please, choose another denomination.');
@@ -582,7 +583,10 @@ class ExtensionsController extends Zend_Controller_Action {
             $extenGroup = $formData["exten_group"];
             $pickup_group = Snep_PickupGroups_Manager::getName($formData["pickup_group"]);
 
-            $extenPickGrp = $formData["pickup_group"] == '' ? "NULL" : $pickup_group["cod_grupo"];
+            // TASK-0026C: was the literal string "NULL" (unquoted SQL
+            // syntax built by hand); now a plain PHP null so it can be
+            // bound as a parameter -- see the INSERT/UPDATE rewrite below.
+            $extenPickGrp = $formData["pickup_group"] == '' ? null : $pickup_group["cod_grupo"];
             $peerType = "R";
 
             $techType = $formData["technology"];
@@ -613,7 +617,10 @@ class ExtensionsController extends Zend_Controller_Action {
                 return $this->view->translate('Selected PJSIP transport is disabled and cannot be newly assigned.');
               }
             }
-            $transportIdSql = ($transportId === null) ? "NULL" : $transportId;
+            // TASK-0026C: $transportId itself (already null or a
+            // validated int, see above) is bound directly now -- the
+            // separate "NULL"-as-string SQL-syntax variable is no longer
+            // needed.
 
             if ($techType == 'sip' || $techType == 'iax2' || $techType == 'pjsip') {
               $nat_types = array('no','comedia','force_rport','auto_comedia','auto_force_rport');
@@ -689,40 +696,45 @@ class ExtensionsController extends Zend_Controller_Action {
             if ($formData["minute_control"]) {
               $advMinCtrl = true;
               $advTimeTotal = $formData["timetotal"] * 60;
-              $advTimeTotal = $advTimeTotal == 0 ? "NULL" : "'$advTimeTotal'";
+              // TASK-0026C: was the SQL-syntax strings "NULL"/"'123'"
+              // built by hand; now a plain PHP null or int for binding.
+              $advTimeTotal = $advTimeTotal == 0 ? null : $advTimeTotal;
               $advCtrlType = $formData['controltype'];
             } else {
               $advMinCtrl = false;
-              $advTimeTotal = 'NULL';
+              $advTimeTotal = null;
               $advCtrlType = 'N';
             }
 
+            // TASK-0026C: fixed defaults only (no request data), kept as
+            // plain PHP values now that they feed an $db->insert() array
+            // instead of being spliced into hand-built SQL text.
             $defFielsExten = array(
-              "accountcode" => "''",
-              "amaflags" => "''",
-              "defaultip" => "''",
-              "host" => "'dynamic'",
-              "insecure" => "''",
+              "accountcode" => '',
+              "amaflags" => '',
+              "defaultip" => '',
+              "host" => 'dynamic',
+              "insecure" => '',
               // TASK-0011: `peers.language` is CHAR(2) DEFAULT 'br'
               // (schema.sql) -- was 'pt_BR' (5 chars), always too long for
               // the column under strict SQL mode (SQLSTATE 22001, another
               // pre-existing, technology-agnostic bug this task's real-UI
               // testing surfaced). Using the column's own correct native
               // default instead of a value that never fit it.
-              "language" => "'br'",
-              "deny" => "''",
-              "permit" => "''",
-              "mask" => "''",
-              "port" => "''",
-              "restrictcid" => "''",
-              "rtptimeout" => "''",
-              "rtpholdtimeout" => "''",
-              "musiconhold" => "'cliente'",
+              "language" => 'br',
+              "deny" => '',
+              "permit" => '',
+              "mask" => '',
+              "port" => '',
+              "restrictcid" => '',
+              "rtptimeout" => '',
+              "rtpholdtimeout" => '',
+              "musiconhold" => 'cliente',
               "regseconds" => 0,
-              "ipaddr" => "''",
-              "regexten" => "''",
-              "setvar" => "''",
-              "disallow" => "'all'",
+              "ipaddr" => '',
+              "regexten" => '',
+              "setvar" => '',
+              "disallow" => 'all',
               // TASK-0011: `lastms` is NOT NULL with no column default
               // (schema.sql) and was never in this INSERT's column list at
               // all -- a pre-existing bug (unrelated to PJSIP, affects
@@ -735,12 +747,6 @@ class ExtensionsController extends Zend_Controller_Action {
               "lastms" => 0
             );
 
-            $sqlFieldsExten = $sqlDefaultValues = "";
-            foreach ($defFielsExten as $key => $value) {
-              $sqlFieldsExten .= ",$key";
-              $sqlDefaultValues .= ",$value";
-            }
-
             $advEmail = $formData["email"];
 
             if ($techType == "sip" || $techType == "iax2" || $techType == "pjsip") {
@@ -749,61 +755,91 @@ class ExtensionsController extends Zend_Controller_Action {
               $allow = "ulaw";
             }
 
-            if ($update) {
-              $sql = "UPDATE peers ";
-              $sql.=" SET name='$exten',password='$extenPass' , callerid='$extenName', ";
-              $sql.= "context='$context',mailbox='$exten',qualify='$qualify',";
-              $sql.= "secret='$secret',type='$type', allow='$allow', ";
-              $sql.= "defaultuser='$exten',fullcontact='',dtmfmode='$dtmfmode',";
-              $sql.= "email='$advEmail', `call-limit`='$callLimit',";
-              $sql.= "outgoinglimit='1', incominglimit='1',";
-              $sql.= "usa_vc='$advVoiceMail',pickupgroup=$extenPickGrp,callgroup='$extenPickGrp',";
-              $sql.= "nat='$nat',canal='$channel', authenticate=$advPadLock, ";
-              $sql.= "`directmedia`='$directmedia',";
-              $sql.= "time_total=$advTimeTotal, time_chargeby='$advCtrlType', cancallforward='$advCancallforward', blf='$blf',";
-              // TASK-0019: written explicitly on every UPDATE, including
-              // the literal NULL case -- this UPDATE is a hand-built
-              // column allow-list, so omitting transport_id when
-              // switching EXPLICIT->AUTO would silently preserve the old
-              // explicit value while the UI claims Automatic was saved.
-              $sql.= "transport_id=$transportIdSql";
-              $sql.= "  WHERE id=$idExten";
-            } else {
-              $sql = "INSERT INTO peers (";
-              $sql.= "name, password,callerid,context,mailbox,qualify,";
-              $sql.= "secret,type,allow,defaultuser,fullcontact,";
-              $sql.= "dtmfmode,email,`call-limit`,incominglimit,";
-              $sql.= "outgoinglimit, usa_vc, pickupgroup, canal,nat,peer_type, authenticate,";
-              $sql.= "trunk, callgroup, time_total, cancallforward, directmedia, ";
-              // TASK-0019: transport_id always written explicitly (NULL
-              // for AUTO, same reasoning as the UPDATE branch above) --
-              // never omitted, so a fresh non-PJSIP extension is
-              // unambiguously AUTO from the moment it's created.
-              $sql.= "time_chargeby, blf, transport_id " . $sqlFieldsExten;
-              $sql.= ") values (";
-              $sql.= "'$exten','$extenPass','$extenName','$context','$exten','$qualify',";
-              $sql.= "'$secret','$type','$allow','$exten','$fullcontact',";
-              $sql.= "'$dtmfmode','$advEmail','$callLimit','1',";
-              $sql.= "'1', '$advVoiceMail', $extenPickGrp ,'$channel','$nat', '$peerType',$advPadLock,";
-              $sql.= "'no','$extenPickGrp', $advTimeTotal, '$advCancallforward', '$directmedia', ";
-              $sql.= "'$advCtrlType', '$blf', $transportIdSql " . $sqlDefaultValues;
-              $sql.= ")";
-            }
+            // TASK-0026C (F7): the entire hand-built "UPDATE peers SET
+            // col='$var',..." / "INSERT INTO peers (...) VALUES ('$var',...)"
+            // strings below interpolated every one of these fields --
+            // most of them raw, unvalidated request data (name, password,
+            // callerid, secret, type, dtmfmode, email, directmedia,
+            // controltype, blf, and the derived $channel for
+            // technology=MANUAL) -- directly into SQL syntax with only a
+            // single-quote wrapper and zero escaping. A single quote in
+            // any of them broke out of the string literal. Replaced with
+            // Zend_Db_Adapter's own parameterized insert()/update(),
+            // which bind every value (PDO positional parameters), never
+            // splicing request data into SQL text. Column set, defaults,
+            // and NULL/int semantics for pickupgroup/callgroup/
+            // time_total/transport_id are preserved exactly (see the
+            // null-instead-of-"NULL"-string changes made to those
+            // variables above).
+            $peerData = array(
+              "name" => $exten,
+              "password" => $extenPass,
+              "callerid" => $extenName,
+              "context" => $context,
+              "mailbox" => $exten,
+              "qualify" => $qualify,
+              "secret" => $secret,
+              "type" => $type,
+              "allow" => $allow,
+              "defaultuser" => $exten,
+              "fullcontact" => '',
+              "dtmfmode" => $dtmfmode,
+              "email" => $advEmail,
+              "call-limit" => $callLimit,
+              "outgoinglimit" => 1,
+              "incominglimit" => 1,
+              "usa_vc" => $advVoiceMail,
+              "pickupgroup" => $extenPickGrp,
+              "callgroup" => $extenPickGrp,
+              "nat" => $nat,
+              "canal" => $channel,
+              "authenticate" => $advPadLock,
+              "directmedia" => $directmedia,
+              "time_total" => $advTimeTotal,
+              "time_chargeby" => $advCtrlType,
+              "cancallforward" => $advCancallforward,
+              "blf" => $blf,
+              // TASK-0019: written explicitly on every save, including
+              // the NULL case -- this is a hand-built column set, so
+              // omitting transport_id when switching EXPLICIT->AUTO would
+              // silently preserve the old explicit value while the UI
+              // claims Automatic was saved.
+              "transport_id" => $transportId,
+            );
 
-            $stmt = $db->query($sql);
+            if ($update) {
+              $db->update("peers", $peerData, $db->quoteInto('id = ?', $idExten));
+            } else {
+              $peerData["peer_type"] = $peerType;
+              $peerData["trunk"] = 'no';
+              // TASK-0011: `defFielsExten`'s fixed, non-request-derived
+              // defaults -- unrelated to the request, appended once here
+              // so the array-based insert covers the exact same column
+              // set the old hand-built INSERT's $sqlFieldsExten/
+              // $sqlDefaultValues did.
+              $peerData = array_merge($peerData, $defFielsExten);
+              $db->insert("peers", $peerData);
+            }
             if (! $update) {
               $idExten = $db->lastInsertId();
             }
 
             if ($advVoiceMail == 'yes') {
+              // TASK-0026C (F7): both the DELETE's WHERE clause and the
+              // INSERT below interpolated request data ($exten,
+              // $extenName, $advEmail, $extenPass) raw into SQL syntax.
               if ($update) {
-                $db->delete("voicemail_users", " mailbox='$exten' ");
+                $db->delete("voicemail_users", $db->quoteInto('mailbox = ?', $exten));
               }
-              $sql = "INSERT INTO voicemail_users ";
-              $sql.= " (context, fullname, email, mailbox, password, customer_id, `delete`) VALUES ";
-              $sql.= " ('default','$extenName', '$advEmail','$exten','$extenPass','$exten', 'no')";
-              $stmt = $db->prepare($sql);
-              $stmt->execute();
+              $db->insert("voicemail_users", array(
+                "context" => 'default',
+                "fullname" => $extenName,
+                "email" => $advEmail,
+                "mailbox" => $exten,
+                "password" => $extenPass,
+                "customer_id" => $exten,
+                "delete" => 'no',
+              ));
             }
             if (isset($extenGroup)) {
               $extensions_group = Snep_ExtensionsGroups_Manager::getGroupsExtensions($idExten);
@@ -865,9 +901,9 @@ class ExtensionsController extends Zend_Controller_Action {
 
                   $exten = $_POST['id'];
                   $db = Zend_Registry::get('db');
-                  $sql = "SELECT * from peers where name = '$exten'";
-                  $stmt = $db->query($sql);
-                  $result = $stmt->fetch();
+                  // TASK-0026C (F7): was raw string interpolation of
+                  // $_POST['id'] into SQL syntax.
+                  $result = Snep_Extensions_Manager::getPeer($exten);
                   $idExten = $result['id'];
 
                   try {
@@ -1054,9 +1090,12 @@ class ExtensionsController extends Zend_Controller_Action {
                     foreach ($extensions as $key => $value) {
                       $exten = $key;
                       $db = Zend_Registry::get('db');
-                      $sql = "SELECT * from peers where name = '$exten'";
-                      $stmt = $db->query($sql);
-                      $result = $stmt->fetch();
+                      // TASK-0026C (F7 sibling): $exten is already
+                      // is_numeric()/int-range validated above, so this
+                      // was not independently exploitable, but it shares
+                      // the exact same unparameterized construction as
+                      // the confirmed F7 sinks in this same controller.
+                      $result = Snep_Extensions_Manager::getPeer($exten);
                       $idExten = $result['id'];
 
                       try {

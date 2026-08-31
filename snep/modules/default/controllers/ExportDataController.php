@@ -67,6 +67,34 @@ class ExportDataController extends Zend_Controller_Action {
     }
 
     /**
+     * getExportTables - canonical allowlist of table => valid column
+     * names for the data-export feature.
+     *
+     * TASK-0026C (F11): the single source of truth exportAction()
+     * validates $formData['group']/'coluns'/'orderby' against before any
+     * of them reach SQL syntax. Table/column names are identifier
+     * positions, not value positions, so ordinary parameter binding
+     * (`where('col = ?', $v)`) does not apply -- a finite allowlist
+     * mapped to trusted, hardcoded identifiers is the correct control
+     * here (this task's own Phase 3 guidance). Mirrors indexAction()'s
+     * existing per-table column keys exactly, so legitimate behavior is
+     * unchanged; kept independent of indexAction()'s own arrays (which
+     * also carry translated display labels, a display concern, not a
+     * validation one) rather than derived from them, so a future label
+     * text change can never silently alter the security allowlist.
+     * @return array<string, array<string>>
+     */
+    private function getExportTables() {
+        return array(
+            'users' => array('id', 'name', 'email', 'created', 'updated'),
+            'peers' => array('name', 'callerid', 'secret', 'dtmfmode', 'allow', 'canal', 'nat', 'directmedia'),
+            'ccustos' => array('codigo', 'tipo', 'nome', 'descricao'),
+            'trunks' => array('id', 'callerid', 'dtmfmode', 'host', 'username', 'secret', 'allow', 'type', 'channel', 'domain'),
+            'queues' => array('id', 'name', 'musiconhold'),
+        );
+    }
+
+    /**
      * exportAction - Export contacts for CSV file.
      */
     public function exportAction() {
@@ -74,15 +102,45 @@ class ExportDataController extends Zend_Controller_Action {
         $this->view->breadcrumb = Snep_Breadcrumb::renderPath(array($this->view->translate("Reports"),$this->view->translate("Export Data Table")));
 
         $formData = $this->_request->getPost();
-            
+        $exportTables = $this->getExportTables();
+
         if ($this->_request->getParam('download')) {
-            
+
             $table = $_SESSION['exportData']['table'];
             $db = Zend_Registry::get('db');
 
-            $select = "SELECT " . $_SESSION['exportData']['coluns'] . " FROM " . $table . " ORDER BY " . $_SESSION['exportData']['order'];
+            // TASK-0026C (F11): $table/coluns/order previously came
+            // straight from $_SESSION['exportData'], itself populated
+            // below with zero validation against indexAction()'s own
+            // $tables allowlist -- an attacker could set an arbitrary
+            // table, column list, and ORDER BY clause. Every identifier
+            // used below is now required to be a member of the fixed
+            // allowlist above; anything else is rejected before a query
+            // is ever built.
+            if (!isset($exportTables[$table])) {
+                $this->view->error = $this->view->translate("No records found.");
+                $this->renderScript('error/sneperror.phtml');
+                return;
+            }
+            $validColumns = $exportTables[$table];
+            // array_intersect() preserves $selectedColumns' own order
+            // (the order the user's checkboxes were posted in), it just
+            // drops anything not in $validColumns.
+            $selectedColumns = array_values(array_intersect(explode(',', $_SESSION['exportData']['coluns']), $validColumns));
+            if (empty($selectedColumns)) {
+                $this->view->error = $this->view->translate("No records found.");
+                $this->renderScript('error/sneperror.phtml');
+                return;
+            }
+            $orderColumn = in_array($_SESSION['exportData']['order'], $validColumns, true)
+                ? $_SESSION['exportData']['order']
+                : $selectedColumns[0];
+
+            $select = $db->select()
+                ->from($table, $selectedColumns)
+                ->order($orderColumn);
             $stmt = $db->query($select);
-            $values = $stmt->fetchAll();           
+            $values = $stmt->fetchAll();
 
             // Varre array verificando se existe ; ou ,
             foreach($values as $key => $array){
@@ -93,12 +151,12 @@ class ExportDataController extends Zend_Controller_Action {
             }
 
             $reportData['data'] = $res;
-            $reportData['cols'] = explode(',', $_SESSION['exportData']['coluns']);
+            $reportData['cols'] = $selectedColumns;
 
             if ($reportData) {
                 $this->_helper->layout->disableLayout();
                 $this->_helper->viewRenderer->setNoRender();
-                
+
                 $csv = new Snep_Csv();
                 $csvData = $csv->generate($reportData['data'], $reportData['cols']);
 
@@ -114,17 +172,32 @@ class ExportDataController extends Zend_Controller_Action {
                 $this->renderScript('error/sneperror.phtml');
             }
         } else {
-            
-            // Selected columns
-            $fields = "" ;
-            foreach($formData['coluns'][$formData['group']] as $key => $value){
-                $fields .= $key.",";
+
+            // TASK-0026C (F11): reject an unknown/attacker-supplied
+            // "group" (table) before anything derived from it is stored
+            // in the session at all.
+            if (!isset($formData['group']) || !isset($exportTables[$formData['group']])) {
+                $this->view->error = $this->view->translate("No records found.");
+                $this->renderScript('error/sneperror.phtml');
+                return;
             }
-            
+            $validColumns = $exportTables[$formData['group']];
+
+            // Selected columns -- only column KEYS present in this
+            // table's own allowlist are kept (see getExportTables()).
+            $fields = "" ;
+            foreach((array) $formData['coluns'][$formData['group']] as $key => $value){
+                if (in_array($key, $validColumns, true)) {
+                    $fields .= $key.",";
+                }
+            }
+
             $ie = new Snep_CsvIE();
             $_SESSION['exportData']['table'] = $formData['group'];
             $_SESSION['exportData']['coluns'] = substr($fields, 0,-1);
-            $_SESSION['exportData']['order'] = $formData['orderby'][$formData['group']];
+            $_SESSION['exportData']['order'] = in_array($formData['orderby'][$formData['group']], $validColumns, true)
+                ? $formData['orderby'][$formData['group']]
+                : $validColumns[0];
 
             $this->view->form = $ie->exportResult();
             $this->view->title = "Export";

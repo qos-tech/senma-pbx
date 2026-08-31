@@ -124,8 +124,14 @@ class Snep_Trunks_Manager {
 
         $db = Zend_Registry::get('db');
 
-        $rules_query = "SELECT rule.id, rule.desc FROM regras_negocio as rule, regras_negocio_actions_config as rconf WHERE (rconf.regra_id = rule.id AND rconf.value = '$id' AND (rconf.key = 'tronco' OR rconf.key = 'trunk'))";
-        $regras = $db->query($rules_query)->fetchAll();
+        // TASK-0026C (F9 sibling boundary): was raw string interpolation
+        // of $id into SQL syntax.
+        $select = $db->select()
+                ->from(array('rule' => 'regras_negocio'), array('id', 'desc'))
+                ->join(array('rconf' => 'regras_negocio_actions_config'), 'rconf.regra_id = rule.id', array())
+                ->where('rconf.value = ?', $id)
+                ->where("(rconf.key = 'tronco' OR rconf.key = 'trunk')");
+        $regras = $db->query($select)->fetchAll();
 
         return $regras;
     }
@@ -138,8 +144,10 @@ class Snep_Trunks_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F9 sibling boundary): was raw string interpolation
+        // of $id into SQL syntax.
         $db->beginTransaction();
-        $db->delete('trunks', "id = '$id'");
+        $db->delete('trunks', $db->quoteInto('id = ?', $id));
 
         try {
             $db->commit();
@@ -156,8 +164,18 @@ class Snep_Trunks_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F9 sibling boundary): was raw string interpolation
+        // of $name (the client-POSTed trunk "name" field, see
+        // TrunksController::removeAction()) into SQL syntax. Note: that
+        // controller still trusts the client-POSTed name rather than
+        // deriving it from the trunk id server-side (a separate,
+        // already-documented product-behavior concern, see
+        // docs/tasks/0018-pjsip-transports.md §14 and
+        // docs/tasks/0027-regression-harness-reliability.md §6) -- out of
+        // this task's scope, which is only that whatever name reaches
+        // here can no longer alter SQL syntax.
         $db->beginTransaction();
-        $db->delete('peers', "name = '$name'");
+        $db->delete('peers', $db->quoteInto('name = ?', $name));
 
         try {
             $db->commit();
@@ -229,8 +247,10 @@ class Snep_Trunks_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F9 sibling boundary): was raw string interpolation
+        // of $id into SQL syntax.
         $update_data = array('disabled' => false );
-        $db->update("trunks", $update_data, "id = '$id'");
+        $db->update("trunks", $update_data, $db->quoteInto('id = ?', $id));
 
     }
 

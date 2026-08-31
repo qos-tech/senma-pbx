@@ -370,7 +370,13 @@ class TrunksController extends Zend_Controller_Action {
       }
 
       if ($trunk['trunktype'] == "I") {
-        $ip_info = $db->query("select * from peers where name='{$trunk['name']}'")->fetch();
+        // TASK-0026C (F9): was raw string interpolation of the
+        // trunk's own stored `name` (mass-assignable from POST at
+        // creation time, see preparePost() below -- a second-order
+        // injection triggered simply by viewing this edit page) into
+        // SQL syntax.
+        $ip_info = $db->select()->from('peers')->where('name = ?', $trunk['name']);
+        $ip_info = $db->query($ip_info)->fetch();
         $this->view->infoTrunk = $ip_info;
 
         $type = $ip_info["type"];
@@ -508,9 +514,14 @@ class TrunksController extends Zend_Controller_Action {
           $db = Snep_Db::getInstance();
           $db->beginTransaction();
           try {
-            $db->update("trunks", $trunk_data['trunk'], "id='$idTrunk'");
+            // TASK-0026C (F9 boundary): $idTrunk is the raw "trunk" route
+            // param, and $trunk_data['trunk']['name'] is mass-assigned
+            // straight from this same POST body (preparePost() merges
+            // the entire $_POST into $trunk_data) -- both were spliced
+            // raw into these UPDATE WHERE clauses.
+            $db->update("trunks", $trunk_data['trunk'], $db->quoteInto('id = ?', $idTrunk));
             if ($trunk_data['trunk']['trunktype'] === "I") {
-              $db->update("peers", $trunk_data['ip'], "name='{$trunk_data['trunk']['name']}' and peer_type='T'");
+              $db->update("peers", $trunk_data['ip'], $db->quoteInto('name = ?', $trunk_data['trunk']['name']) . " AND peer_type = 'T'");
             }
             $db->commit();
 

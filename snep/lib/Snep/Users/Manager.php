@@ -76,8 +76,10 @@ class Snep_Users_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F8): was raw string interpolation of $id into SQL
+        // syntax.
         $db->beginTransaction();
-        $db->delete('users', "id = '$id'");
+        $db->delete('users', $db->quoteInto('id = ?', $id));
 
         try {
             $db->commit();
@@ -94,8 +96,10 @@ class Snep_Users_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F8): was raw string interpolation of $id into SQL
+        // syntax.
         $db->beginTransaction();
-        $db->delete('password_recovery', "user_id = '$id'");
+        $db->delete('password_recovery', $db->quoteInto('user_id = ?', $id));
 
         try {
             $db->commit();
@@ -112,8 +116,10 @@ class Snep_Users_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F8): was raw string interpolation of $id into SQL
+        // syntax.
         $db->beginTransaction();
-        $db->delete('users_permissions', "user_id = '$id'");
+        $db->delete('users_permissions', $db->quoteInto('user_id = ?', $id));
 
         try {
             $db->commit();
@@ -134,7 +140,9 @@ class Snep_Users_Manager {
         $update_data = array('profile_id' => $data['profile'],
             'updated' => date('Y-m-d H:i:s'));
 
-        $db->update("users", $update_data, "id = '{$data['user']}'");
+        // TASK-0026C (F8): was raw string interpolation of $data['user']
+        // into SQL syntax.
+        $db->update("users", $update_data, $db->quoteInto('id = ?', $data['user']));
     }
 
     /**
@@ -188,7 +196,9 @@ class Snep_Users_Manager {
             'created' => $user['created'],
             'updated' => date('Y-m-d H:i:s'));
 
-        $db->update("users", $update_data, "id = '{$user['id']}'");
+        // TASK-0026C (F8): was raw string interpolation of $user['id']
+        // (the request's own route/POST id param) into SQL syntax.
+        $db->update("users", $update_data, $db->quoteInto('id = ?', $user['id']));
     }
 
     /**
@@ -200,8 +210,12 @@ class Snep_Users_Manager {
 
         $db = Zend_Registry::get('db');
         $db->beginTransaction();
-        $cond = $data['box'];
-        $where = "`users`.`name` = '{$cond}'";
+        // TASK-0026C (F8): was raw string interpolation of $data['box']
+        // (posted as duallistbox_profile[]) into SQL syntax -- the exact
+        // mass-privilege-escalation sink the audit named: an
+        // always-true condition here reassigned EVERY user's profile_id
+        // in one request.
+        $where = $db->quoteInto('`users`.`name` = ?', $data['box']);
 
         try {
 
@@ -230,7 +244,9 @@ class Snep_Users_Manager {
         $update_data = array('profile_id' => 1,
             'updated' => date('Y-m-d H:i:s'));
 
-        $db->update("users", $update_data, "name = '{$name}'");
+        // TASK-0026C (F8): was raw string interpolation of $name into
+        // SQL syntax.
+        $db->update("users", $update_data, $db->quoteInto('name = ?', $name));
     }
 
     /**
@@ -293,8 +309,10 @@ class Snep_Users_Manager {
 
         $db = Zend_Registry::get('db');
 
+        // TASK-0026C (F8): was raw string interpolation of $id into SQL
+        // syntax.
         $db->beginTransaction();
-        $db->delete('users_queues_permissions', "user_id = '$id'");
+        $db->delete('users_queues_permissions', $db->quoteInto('user_id = ?', $id));
 
         try {
             $db->commit();
