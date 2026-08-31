@@ -112,6 +112,12 @@ run_suite "session-csrf-security"  "session-csrf-security-smoke-test.sh"
 # first, don't let it hide behind an unrelated authorization failure"
 # reason session-csrf-security's own placement comment gives.
 run_suite "auth-hardening-security" "auth-hardening-security-smoke-test.sh"
+# TASK-0026I: placed right after auth-hardening-security and before
+# authorization -- same reasoning as the other security suites' own
+# placement (an independent trust-boundary proof needing its own
+# authenticated fixture session, same precondition authorization-smoke/
+# authorization-coverage need next).
+run_suite "disclosure-path-security" "disclosure-path-security-smoke-test.sh"
 run_suite "authorization-coverage" "authorization-coverage-check.sh"
 run_suite "authorization-smoke"    "authorization-smoke-test.sh"
 run_suite "http-smoke"             "smoke-test.sh"
