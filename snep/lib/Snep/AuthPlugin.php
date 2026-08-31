@@ -43,7 +43,15 @@ class Snep_AuthPlugin extends Zend_Controller_Plugin_Abstract{
       $controller = $this->getRequest()->getControllerName();
       $module = $this->getRequest()->getModuleName();
 
-      if (!$auth->hasIdentity() && ($action != "redefine" && $action != "recuperation")) {
+      // TASK-0026H (F24): was action-name-only ($action != "redefine" &&
+      // $action != "recuperation"), with no controller check -- any
+      // future controller defining an action literally named
+      // redefineAction()/recuperationAction() would have silently become
+      // reachable without authentication. $controller == "auth" scopes
+      // this to the one controller that actually owns those actions
+      // today (confirmed by grep before this fix; no behavior change for
+      // the current codebase).
+      if (!$auth->hasIdentity() && !($controller == "auth" && ($action == "redefine" || $action == "recuperation"))) {
 	    	$request->setModuleName("default");
 	    	$request->setControllerName("auth");
 	    	$request->setActionName("login");
