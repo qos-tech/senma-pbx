@@ -69,71 +69,97 @@ function error($cause) {
     die('{"status":"error","cause":"' . $cause . '"}');
 }
 
-if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
-        if (strpos(strtolower($_SERVER['HTTP_AUTHORIZATION']),'basic')===0)
-          list($user,$passwd) = explode(':',base64_decode(substr($_SERVER['HTTP_AUTHORIZATION'], 6)));
+/**
+ * TASK-0026F (F17-A): single Basic-auth parsing path. Both server-variable
+ * shapes a deployment may populate (HTTP_AUTHORIZATION vs PHP_AUTH_USER/
+ * PHP_AUTH_PW) are normalized here into one (username, plaintext-password)
+ * pair *before* any hashing, so there is exactly one place downstream that
+ * turns a password into its stored representation. Returns array(null, null)
+ * when no usable credentials were supplied.
+ */
+function resolveApiCredentials() {
+    if (isset($_SERVER['HTTP_AUTHORIZATION'])) {
+        if (stripos($_SERVER['HTTP_AUTHORIZATION'], 'basic') === 0) {
+            $decoded = base64_decode(substr($_SERVER['HTTP_AUTHORIZATION'], 6), true);
+            if ($decoded !== false && strpos($decoded, ':') !== false) {
+                list($httpAuthUser, $httpAuthPasswd) = explode(':', $decoded, 2);
+                return array($httpAuthUser, $httpAuthPasswd);
+            }
+        }
+        return array(null, null);
+    }
 
-}else if (isset($_SERVER['PHP_AUTH_USER'])) {
-	$passwd = md5($_SERVER['PHP_AUTH_PW']);
-	$user = $_SERVER['PHP_AUTH_USER'];
+    if (isset($_SERVER['PHP_AUTH_USER'])) {
+        return array($_SERVER['PHP_AUTH_USER'], (string) $_SERVER['PHP_AUTH_PW']);
+    }
+
+    return array(null, null);
 }
 
-if(($user && $passwd) || ($_GET['service'] == "Signup")){
-  if($_GET["service"] != "Signup"){
+list($apiUser, $apiPlainPasswd) = resolveApiCredentials();
+
+if ($apiUser && $apiPlainPasswd) {
+    // TASK-0026F: current compatibility -- plaintext credential -> md5 ->
+    // compare against the stored MD5 hash in users.password, applied here
+    // exactly once. This mirrors AuthController::loginAction()'s existing
+    // convention and is deliberately NOT modernized to password_hash()/
+    // password_verify() in this task; see docs/tasks/0026f-... for the
+    // deferred password-hashing modernization boundary.
     $authAdapter = new Zend_Auth_Adapter_DbTable($db);
     $authAdapter->setTableName('users');
     $authAdapter->setIdentityColumn('name');
     $authAdapter->setCredentialColumn('password');
-    $authAdapter->setIdentity($user);
-    $authAdapter->setCredential($passwd);
+    $authAdapter->setIdentity($apiUser);
+    $authAdapter->setCredential(md5($apiPlainPasswd));
 
     // Autentication
     $auth = Zend_Auth::getInstance();
     $result = $auth->authenticate($authAdapter);
-    switch ($result->getCode()) {
-         case Zend_Auth_Result::FAILURE_IDENTITY_NOT_FOUND:
-         case Zend_Auth_Result::FAILURE_CREDENTIAL_INVALID:
-               error("User or password invalid: {$user}:{$passwd}");
-               break;
-  	}
-  }
-  require_once(dirname(__FILE__) . "/actions/SnepService.php");
+    if ($result->getCode() !== Zend_Auth_Result::SUCCESS) {
+        error("User or password invalid");
+    }
 
-	if(!isset($_GET['service'])){
-		$service_name = "CallsReportService";
-	}else{
-		$service_name = $_GET['service'] . "Service";
-	}
+    require_once(dirname(__FILE__) . "/actions/SnepService.php");
 
-	$filename = dirname(__FILE__) . "/actions/" . $service_name . ".php";
+    // TASK-0026F (F17-B): finite, trusted registry of service name ->
+    // filename. $_GET['service'] only ever selects a key into this array --
+    // it is never concatenated into a filesystem path, so no request value
+    // can reach require_once() with an unexpected path, even after
+    // validation. Unknown services fail closed.
+    $serviceRegistry = array(
+        'CallsReport'    => 'CallsReportService.php',
+        'Contacts'       => 'ContactsService.php',
+        'CSV_ExportData' => 'CSV_ExportDataService.php',
+        'CSV_GetParams'  => 'CSV_GetParamsService.php',
+        'RankingReport'  => 'RankingReportService.php',
+        'ServicesReport' => 'ServicesReportService.php',
+    );
 
+    $requestedService = isset($_GET['service']) ? $_GET['service'] : 'CallsReport';
 
+    if (!is_string($requestedService) || !array_key_exists($requestedService, $serviceRegistry)) {
+        error("Servico nao encontrado");
+    }
 
+    $service_name = $requestedService . "Service";
+    require_once(dirname(__FILE__) . "/actions/" . $serviceRegistry[$requestedService]);
 
-	// Verifica a existencia do serviço
-	if (file_exists($filename)) {
-		require_once($filename);
-	} else {
-	    error("Servico nao encontrado; $service_name") ;
-	}
+    // Carrega o serviç
+    $service = new $service_name;
+    // Executa o serviço
+    $resultado = $service->execute();
 
+    // Seta o HTTP header de conteudo de resposta para application/json
+    header('Content-Type: application/json');
 
-	// Carrega o serviç
-	$service = new $service_name;
-	// Executa o serviço
-	$resultado = $service->execute();
-
-	// Seta o HTTP header de conteudo de resposta para application/json
-	header('Content-Type: application/json');
-
-  // // Imprime resultado
-  if ($_GET['service'] == "CallsReport") {
-      echo str_replace('\\/', '/', json_encode($resultado));
-  } else {
-      echo json_encode($resultado);
-  }
-}else{
-	header('WWW-Authenticate: Basic realm="SNEP Services"');
-	header('HTTP/1.0 401 Unauthorized');
-	error("Unauthorized!");
+    // // Imprime resultado
+    if (isset($_GET['service']) && $_GET['service'] == "CallsReport") {
+        echo str_replace('\\/', '/', json_encode($resultado));
+    } else {
+        echo json_encode($resultado);
+    }
+} else {
+    header('WWW-Authenticate: Basic realm="SNEP Services"');
+    header('HTTP/1.0 401 Unauthorized');
+    error("Unauthorized!");
 }
