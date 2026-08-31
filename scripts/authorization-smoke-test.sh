@@ -107,6 +107,13 @@ if [ "$code" = 302 ]; then pass 'admin login' "HTTP $code"; else harness_blocked
 code="$(request "$RESTRICTED_JAR" POST /index.php/auth/login "user=${RESTRICTED_USER}&password=${RESTRICTED_PASSWORD}")"
 if [ "$code" = 302 ]; then pass 'restricted login' "HTTP $code"; else harness_blocked "restricted test user login did not return 302 (HTTP $code) -- cannot proceed"; fi
 
+# TASK-0026G: every authenticated POST below now needs a valid
+# snep_csrf_token (Snep_CsrfPlugin) -- fetched once per jar right after
+# that jar's own login succeeded, since the token is a stable per-session
+# value, not one-shot/rotating.
+ADMIN_CSRF="$(harness_csrf_token "$ADMIN_JAR" "$BASE_URL")"
+if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session's CSRF token"; fi
+
 code="$(request "$RESTRICTED_JAR" GET /index.php/index/add)"
 if [ "$code" = 200 ] && grep -q 'var controller = "index"' "$BODY"; then pass 'restricted basic dashboard works' "HTTP $code"; else fail 'restricted basic dashboard works' "HTTP $code"; fi
 
@@ -117,7 +124,7 @@ code="$(request "$RESTRICTED_JAR" GET /index.php/default/nonexistent-sensitive-a
 if [ "$code" = 302 ] && redirects_to_permission_error; then pass 'unknown/unregistered action fails closed' "HTTP $code, Location: permission/error"; else fail 'unknown/unregistered action fails closed' "HTTP $code"; fi
 
 echo '==> Supported UI grant/revoke lifecycle'
-code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$id "user=$id&$READ_PERMISSION=1&$AJAX_PERMISSION=1")"
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$id "user=$id&$READ_PERMISSION=1&$AJAX_PERMISSION=1&snep_csrf_token=$ADMIN_CSRF")"
 if [ "$code" = 302 ]; then pass 'admin UI grants exact read permissions' "HTTP $code"; else fail 'admin UI grants exact read permissions' "HTTP $code"; fi
 code="$(request "$RESTRICTED_JAR" GET /index.php/default/errors-tdm)"
 # A denial always 302s to permission/error (PermissionPlugin's own
@@ -128,7 +135,7 @@ code="$(request "$RESTRICTED_JAR" GET /index.php/default/errors-tdm)"
 if [ "$code" != 302 ]; then pass "explicit read grant dispatches intended resource" "HTTP $code (not a permission denial)"; else fail 'explicit read grant allows intended resource' "HTTP $code"; fi
 code="$(request "$RESTRICTED_JAR" GET /index.php/default/khomp-links)"
 if [ "$code" = 200 ]; then pass 'authorized internal/AJAX alias works' "HTTP $code"; else fail 'authorized internal/AJAX alias works' "HTTP $code"; fi
-code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$id "user=$id")"
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$id "user=$id&snep_csrf_token=$ADMIN_CSRF")"
 if [ "$code" = 302 ]; then pass 'admin UI revokes permissions' "HTTP $code"; else fail 'admin UI revokes permissions' "HTTP $code"; fi
 code="$(request "$RESTRICTED_JAR" GET /index.php/default/errors-tdm)"
 if [ "$code" = 302 ] && redirects_to_permission_error; then pass 'permission removal revokes access' "HTTP $code, Location: permission/error"; else fail 'permission removal revokes access' "HTTP $code"; fi

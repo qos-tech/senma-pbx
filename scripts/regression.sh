@@ -92,6 +92,16 @@ run_suite "api-security"           "api-security-smoke-test.sh"
 # user, same precondition authorization-smoke/authorization-coverage need
 # next).
 run_suite "api-sql-security"       "api-sql-security-smoke-test.sh"
+# TASK-0026G: placed right after api-sql-security and before authorization
+# -- same reasoning as the other security suites' own placement (an
+# independent trust-boundary proof needing its own authenticated fixture
+# user, same precondition authorization-smoke/authorization-coverage need
+# next). This suite changes a shared cross-cutting request boundary
+# (session lifecycle, cookie policy, CSRF enforcement) rather than one
+# controller, so it runs before authorization -- a CSRF/session regression
+# here should surface on its own, not be masked by an unrelated
+# authorization-suite failure.
+run_suite "session-csrf-security"  "session-csrf-security-smoke-test.sh"
 run_suite "authorization-coverage" "authorization-coverage-check.sh"
 run_suite "authorization-smoke"    "authorization-smoke-test.sh"
 run_suite "http-smoke"             "smoke-test.sh"

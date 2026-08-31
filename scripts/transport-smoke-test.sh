@@ -174,6 +174,7 @@ ${TRANSPORT_LOCAL_NET_2}" \
         --data-urlencode "symmetric_transport=1" \
         --data-urlencode "allow_reload=1" \
         --data-urlencode "enabled=1" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/pjsip-transports/add")"
     if [ "$httpcode" = "302" ]; then
         rm -f "$body"
@@ -201,6 +202,7 @@ ${TRANSPORT_LOCAL_NET_2}" \
         --data-urlencode "symmetric_transport=1" \
         --data-urlencode "allow_reload=1" \
         --data-urlencode "enabled=1" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/pjsip-transports/edit/id/${id}")"
     if [ "$httpcode" = "302" ]; then
         rm -f "$body"
@@ -223,6 +225,7 @@ delete_transport() {
     DELETE_HTTPCODE="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
         --data-urlencode "id=${id}" \
         --data-urlencode "delete=Delete" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/pjsip-transports/remove")"
     DELETE_BODY="$(cat "$body")"
     rm -f "$body"
@@ -250,6 +253,7 @@ create_ref_extension() {
         --data-urlencode "codec=alaw" \
         --data-urlencode "codec1=ulaw" \
         --data-urlencode "codec2=gsm" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/extensions/add")"
     if [ "$httpcode" = "302" ]; then
         rm -f "$body"
@@ -265,6 +269,7 @@ delete_extension() {
     httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null -w '%{http_code}' \
         --data-urlencode "id=${ext}" \
         --data-urlencode "delete=Delete" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/extensions/remove")"
     [ "$httpcode" = "302" ]
 }
@@ -300,6 +305,7 @@ create_trunk_fixture() {
         --data-urlencode "codec2=gsm" \
         --data-urlencode "reverse_auth=reverse_auth" \
         --data-urlencode "telco=" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/trunks/add")"
     if [ "$httpcode" = "302" ]; then
         rm -f "$body"
@@ -330,6 +336,7 @@ delete_trunk_fixture() {
         --data-urlencode "id=${id}" \
         --data-urlencode "name=${name}" \
         --data-urlencode "delete=Delete" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/trunks/remove")"
     [ "$httpcode" = "302" ]
 }
@@ -376,6 +383,7 @@ save_transport() {
             --data-urlencode "local_net=" \
             --data-urlencode "allow_reload=1" \
             --data-urlencode "enabled=1" \
+            --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
             "$url")"
     else
         SAVE_TRANSPORT_HTTPCODE="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
@@ -389,6 +397,7 @@ save_transport() {
             --data-urlencode "external_media_address=" \
             --data-urlencode "local_net=" \
             --data-urlencode "allow_reload=1" \
+            --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
             "$url")"
     fi
     SAVE_TRANSPORT_BODY="$(cat "$body")"
@@ -427,6 +436,7 @@ save_ref_extension() {
         --data-urlencode "codec1=ulaw" \
         --data-urlencode "codec2=gsm" \
         --data-urlencode "transport_id=${transport_id}" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "$url")"
     SAVE_EXT_BODY="$(cat "$body")"
     rm -f "$body"
@@ -461,6 +471,7 @@ create_ux_trunk_fixture() {
         --data-urlencode "codec2=gsm" \
         --data-urlencode "reverse_auth=reverse_auth" \
         --data-urlencode "telco=" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/trunks/add")"
     if [ "$httpcode" = "302" ]; then
         rm -f "$body"
@@ -501,6 +512,7 @@ edit_ux_trunk_fixture() {
         --data-urlencode "reverse_auth=reverse_auth" \
         --data-urlencode "telco=" \
         --data-urlencode "transport_id=${transport_id}" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/trunks/edit/trunk/${id}")"
     EDIT_TRUNK_BODY="$(cat "$body")"
     rm -f "$body"
@@ -604,6 +616,13 @@ log "==> logging in as ${TEST_USER}"
 TEST_HASH="$($COMPOSE exec -T app php -r "echo md5('${TEST_PASSWORD}');" 2>/dev/null | tr -d '\r')"
 db_query "UPDATE users SET password = '${TEST_HASH}' WHERE name = '${TEST_USER}';" >&2
 http_login
+# TASK-0026G: every authenticated POST helper below (create/edit/delete
+# transport, extension, trunk) now needs a valid snep_csrf_token
+# (Snep_CsrfPlugin) -- fetched once here, reused for the rest of this
+# script's run, including Part 2/3 below (stable per-session value, not
+# one-shot/rotating).
+ADMIN_CSRF="$(harness_csrf_token "$COOKIEJAR" "$BASE_URL")"
+if [ -z "$ADMIN_CSRF" ]; then stop "could not read the admin session's CSRF token"; fi
 
 log "==> checking for pre-existing fixtures"
 EXISTING_TRANSPORT="$(db_query "SELECT id FROM pjsip_transports WHERE name='${TRANSPORT_NAME}';")"
@@ -1183,7 +1202,7 @@ else
     bad "delete succeeds once unreferenced, for all three ux transports" "A=$DEL_A_CODE B(renamed)=$DEL_B_CODE disabled=$DEL_D_CODE"
 fi
 
-curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null --data-urlencode "id=${UX_REF_EXT}" --data-urlencode "delete=Delete" "${BASE_URL}/index.php/default/extensions/remove" >/dev/null
+curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null --data-urlencode "id=${UX_REF_EXT}" --data-urlencode "delete=Delete" --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" "${BASE_URL}/index.php/default/extensions/remove" >/dev/null
 UX_CREATED_EXT=0
 
 # ===========================================================================
@@ -1381,6 +1400,7 @@ curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null -w '' \
     --data-urlencode "domain=task0020.example.test" --data-urlencode "external_signaling_address=" \
     --data-urlencode "external_signaling_port=" --data-urlencode "external_media_address=" \
     --data-urlencode "local_net=" --data-urlencode "allow_reload=1" --data-urlencode "enabled=1" \
+    --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
     "${BASE_URL}/index.php/default/pjsip-transports/edit/id/${T20_COL_C_ID}"
 LIST_HTML="$(t20_list_html)"
 BADGE_C="$(t20_runtime_badge "$LIST_HTML" "$T20_COL_C")"

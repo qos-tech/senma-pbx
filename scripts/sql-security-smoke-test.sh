@@ -95,6 +95,14 @@ fi
 db_query "UPDATE users SET password = '${TEST_HASH}' WHERE name = '${TEST_USER}';" >&2
 http_login
 
+# TASK-0026G: every authenticated POST below now needs a valid
+# snep_csrf_token (Snep_CsrfPlugin) -- fetched once, reused for the rest
+# of this script's run (the token is a stable per-session value, not
+# one-shot/rotating). RESTRICTED_JAR only ever performs GETs in this
+# script, so it needs no token.
+ADMIN_CSRF="$(harness_csrf_token "$COOKIEJAR" "$BASE_URL")"
+if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session's CSRF token"; fi
+
 FATALS_BEFORE="$(fatal_count)"
 log "==> baseline PHP Fatal Error count: ${FATALS_BEFORE}"
 
@@ -173,13 +181,14 @@ create_extension() {
         --data-urlencode "codec=alaw" \
         --data-urlencode "codec1=ulaw" \
         --data-urlencode "codec2=gsm" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/extensions/add"
 }
 
 delete_extension() {
     local ext="$1" httpcode
     httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null -w '%{http_code}' \
-        --data-urlencode "id=${ext}" --data-urlencode "delete=Delete" \
+        --data-urlencode "id=${ext}" --data-urlencode "delete=Delete" --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/extensions/remove")"
     [ "$httpcode" = "302" ]
 }
@@ -225,6 +234,7 @@ httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$BODY" -w '%{http_code}
     --data-urlencode "codec=alaw" \
     --data-urlencode "codec1=ulaw" \
     --data-urlencode "codec2=gsm" \
+    --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
     "${BASE_URL}/index.php/default/extensions/edit/id/${EXT_F7}")"
 after_fatals="$(fatal_count)"
 stored_name="$(db_query "SELECT callerid FROM peers WHERE name='${EXT_F7}';")"
@@ -247,6 +257,7 @@ before_count="$(db_query "SELECT COUNT(*) FROM peers WHERE name IN ('${EXT_F7}',
 httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$BODY" -w '%{http_code}' \
     --data-urlencode "id=${EXT_F7_CANARY}' OR '1'='1" \
     --data-urlencode "delete=Delete" \
+    --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
     "${BASE_URL}/index.php/default/extensions/remove")"
 after_count="$(db_query "SELECT COUNT(*) FROM peers WHERE name IN ('${EXT_F7}','${EXT_F7_CANARY}');")"
 if [ "$before_count" = "$after_count" ] && [ "$after_count" = "2" ]; then
@@ -287,6 +298,7 @@ create_user() {
         --data-urlencode "email=${name}@example.test" \
         --data-urlencode "password=${USER_PW}" \
         --data-urlencode "profile_id=1" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/users/add"
 }
 
@@ -295,7 +307,7 @@ for u in "$USER_A" "$USER_B"; do
     httpcode="$(create_user "$u")"
     if [ "$httpcode" = "302" ]; then
         uid="$(db_query "SELECT id FROM users WHERE name='${u}';")"
-        harness_register_cleanup "user ${u} (F8 fixture, id=${uid})" "curl -sS -c '$COOKIEJAR' -b '$COOKIEJAR' -o /dev/null --data-urlencode 'id=${uid}' '${BASE_URL}/index.php/default/users/remove'"
+        harness_register_cleanup "user ${u} (F8 fixture, id=${uid})" "curl -sS -c '$COOKIEJAR' -b '$COOKIEJAR' -o /dev/null --data-urlencode 'id=${uid}' --data-urlencode 'snep_csrf_token=${ADMIN_CSRF}' '${BASE_URL}/index.php/default/users/remove'"
         harness_ok "F8 valid: create user ${u}" "HTTP 302, id=${uid}, profile_id=1"
     else
         harness_blocked "F8 fixture user '${u}' creation failed (HTTP $httpcode) -- see $BODY"
@@ -335,7 +347,7 @@ NEW_PROFILE_ID="$(db_query "SELECT id FROM profiles WHERE name='${PROFILE_NAME}'
 if [ -z "$NEW_PROFILE_ID" ]; then
     harness_blocked "could not provision the F8 fixture profile via Snep_Profiles_Manager::add()"
 fi
-harness_register_cleanup "profile ${PROFILE_NAME} (F8 fixture, id=${NEW_PROFILE_ID})" "curl -sS -c '$COOKIEJAR' -b '$COOKIEJAR' -o /dev/null --data-urlencode 'id=${NEW_PROFILE_ID}' '${BASE_URL}/index.php/default/profiles/remove'"
+harness_register_cleanup "profile ${PROFILE_NAME} (F8 fixture, id=${NEW_PROFILE_ID})" "curl -sS -c '$COOKIEJAR' -b '$COOKIEJAR' -o /dev/null --data-urlencode 'id=${NEW_PROFILE_ID}' --data-urlencode 'snep_csrf_token=${ADMIN_CSRF}' '${BASE_URL}/index.php/default/profiles/remove'"
 
 # 2/3. Submit ProfilesController::editAction() (the real vulnerable
 # route) with a boolean-always-true duallistbox_profile[] entry instead
@@ -350,6 +362,7 @@ before_b="$(db_query "SELECT profile_id FROM users WHERE id=${UID_B};")"
 httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$BODY" -w '%{http_code}' \
     --data-urlencode "name=${PROFILE_NAME}" \
     --data-urlencode "duallistbox_profile[]=nonexistent' OR '1'='1" \
+    --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
     "${BASE_URL}/index.php/default/profiles/edit/id/${NEW_PROFILE_ID}")"
 after_a="$(db_query "SELECT profile_id FROM users WHERE id=${UID_A};")"
 after_b="$(db_query "SELECT profile_id FROM users WHERE id=${UID_B};")"
@@ -364,6 +377,7 @@ fi
 httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$BODY" -w '%{http_code}' \
     --data-urlencode "name=${PROFILE_NAME}" \
     --data-urlencode "duallistbox_profile[]=${USER_A}" \
+    --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
     "${BASE_URL}/index.php/default/profiles/edit/id/${NEW_PROFILE_ID}")"
 after_legit_a="$(db_query "SELECT profile_id FROM users WHERE id=${UID_A};")"
 after_legit_b="$(db_query "SELECT profile_id FROM users WHERE id=${UID_B};")"
@@ -425,7 +439,7 @@ sweep_orphaned_trunk_peers() {
     local orphan_name
     for orphan_name in $(db_query "SELECT p.name FROM peers p LEFT JOIN trunks t ON t.name = p.name WHERE p.peer_type='T' AND t.id IS NULL;"); do
         log "found an orphaned trunk-type peers row (name='${orphan_name}') with no matching trunks row -- removing via the supported extensions/remove HTTP path"
-        curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null --data-urlencode "id=${orphan_name}" --data-urlencode "delete=Delete" "${BASE_URL}/index.php/default/extensions/remove" >/dev/null
+        curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null --data-urlencode "id=${orphan_name}" --data-urlencode "delete=Delete" --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" "${BASE_URL}/index.php/default/extensions/remove" >/dev/null
         if [ -n "$(db_query "SELECT canal FROM peers WHERE name='${orphan_name}';")" ]; then
             log "WARNING: could not remove orphaned peers row (name='${orphan_name}') via the supported HTTP path -- may need manual cleanup"
             return 1
@@ -461,6 +475,7 @@ create_trunk() {
         --data-urlencode "codec2=gsm" \
         --data-urlencode "reverse_auth=reverse_auth" \
         --data-urlencode "telco=" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/trunks/add"
 }
 
@@ -478,7 +493,7 @@ delete_trunk() {
     [ -z "$name" ] && return 0
     local httpcode
     httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null -w '%{http_code}' \
-        --data-urlencode "id=${id}" --data-urlencode "name=${name}" --data-urlencode "delete=Delete" \
+        --data-urlencode "id=${id}" --data-urlencode "name=${name}" --data-urlencode "delete=Delete" --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/trunks/remove")"
     [ "$httpcode" = "302" ]
 }
@@ -532,6 +547,7 @@ httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$BODY" -w '%{http_code}
     --data-urlencode "codec2=gsm" \
     --data-urlencode "reverse_auth=reverse_auth" \
     --data-urlencode "telco=" \
+    --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
     "${BASE_URL}/index.php/default/trunks/edit/trunk/${TRUNK_ID}")"
 after_fatals="$(fatal_count)"
 stored_trunk_name="$(db_query "SELECT name FROM trunks WHERE id=${TRUNK_ID};")"
@@ -569,6 +585,7 @@ curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$BODY" -w '%{http_code}' \
     --data-urlencode "id=999999999' OR '1'='1" \
     --data-urlencode "name=${CANARY_TRUNK_NAME}' OR '1'='1" \
     --data-urlencode "delete=Delete" \
+    --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
     "${BASE_URL}/index.php/default/trunks/remove" >/dev/null
 after_trunk_count="$(db_query "SELECT COUNT(*) FROM trunks WHERE id IN (${TRUNK_ID},${CANARY_TRUNK_ID});")"
 after_peers_count="$(db_query "SELECT COUNT(*) FROM peers WHERE name IN ('${TRUNK_ID}','${CANARY_TRUNK_NAME}');")"
@@ -654,6 +671,7 @@ httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$BODY" -w '%{http_code}
     --data-urlencode "coluns[users][id]=1" \
     --data-urlencode "coluns[users][name]=1" \
     --data-urlencode "orderby[users]=id" \
+    --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
     "${BASE_URL}/index.php/default/export-data/export")"
 if [ "$httpcode" = "200" ]; then
     harness_ok "F11 valid: legitimate export selection works" "HTTP 200, confirmation page rendered for table=users"
@@ -679,6 +697,7 @@ httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$BODY" -w '%{http_code}
     --data-urlencode "group=users' OR '1'='1" \
     --data-urlencode "coluns[users' OR '1'='1][password]=1" \
     --data-urlencode "orderby[users' OR '1'='1]=password" \
+    --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
     "${BASE_URL}/index.php/default/export-data/export")"
 after_fatals="$(fatal_count)"
 if [ "$after_fatals" = "$before_fatals" ] && ! grep -qi "Fatal error\|Stack trace" "$BODY"; then
@@ -693,6 +712,7 @@ httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$BODY" -w '%{http_code}
     --data-urlencode "coluns[users][id]=1" \
     --data-urlencode "coluns[users][password]=1" \
     --data-urlencode "orderby[users]=password" \
+    --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
     "${BASE_URL}/index.php/default/export-data/export")"
 download_code2="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$BODY" -w '%{http_code}' \
     "${BASE_URL}/index.php/default/export-data/export/download/true")"

@@ -330,6 +330,23 @@ harness_cdr_report_window() {
     return 0
 }
 
+# harness_csrf_token <cookiejar> <base_url> -- TASK-0026G. Fetches an
+# authenticated page (the dashboard) using the given cookie jar and
+# extracts the session-bound CSRF token from the "csrf-token" <meta> tag
+# layouts/layout.phtml emits (Snep_Security_Csrf::getToken()). Every
+# authenticated state-changing POST made by a curl-based harness script
+# must carry this as the "snep_csrf_token" field -- Snep_CsrfPlugin
+# rejects an authenticated POST with a missing/invalid one, exactly like
+# a real browser form would fail without includes/javascript/csrf.js
+# having run. Echoes the token (possibly empty on failure -- callers must
+# treat an empty result as BLOCKED, not silently proceed without one).
+harness_csrf_token() {
+    local jar="$1" base_url="$2"
+    curl -sS -b "$jar" -c "$jar" "${base_url}/index.php/index/add" \
+        | grep -o 'name="csrf-token" content="[^"]*"' | head -1 \
+        | sed -E 's/.*content="([^"]*)".*/\1/'
+}
+
 _harness_container_up() {
     $COMPOSE ps "$1" 2>/dev/null | grep -q "Up"
 }

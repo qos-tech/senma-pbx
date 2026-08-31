@@ -167,8 +167,14 @@ wait_for_restart_state() {
 }
 
 create_extension() {
-    local ext="$1" secret="$2" body httpcode
+    local ext="$1" secret="$2" body httpcode token
     body="$(mktemp)"
+    # TASK-0026G: fetched fresh (not a pre-fetched global) because this
+    # script repoints $COOKIEJAR at different fixture users' sessions
+    # further down (RESTRICTED_JAR/AUTHORIZED_JAR/back to ADMIN_JAR) --
+    # always using whichever session $COOKIEJAR currently points at is
+    # simpler and more robust than tracking that across every call site.
+    token="$(harness_csrf_token "$COOKIEJAR" "$BASE_URL")"
     httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
         --data-urlencode "name=SENMA restart-smoke ${ext}" \
         --data-urlencode "exten=${ext}" \
@@ -188,6 +194,7 @@ create_extension() {
         --data-urlencode "codec=alaw" \
         --data-urlencode "codec1=ulaw" \
         --data-urlencode "codec2=gsm" \
+        --data-urlencode "snep_csrf_token=${token}" \
         "${BASE_URL}/index.php/default/extensions/add")"
     if [ "$httpcode" = "302" ]; then
         rm -f "$body"
@@ -199,10 +206,12 @@ create_extension() {
 }
 
 delete_extension() {
-    local ext="$1" httpcode body
+    local ext="$1" httpcode body token
     body="$(mktemp)"
+    # TASK-0026G: fetched fresh, same reasoning as create_extension() above.
+    token="$(harness_csrf_token "$COOKIEJAR" "$BASE_URL")"
     httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
-        --data-urlencode "id=${ext}" --data-urlencode "delete=Delete" \
+        --data-urlencode "id=${ext}" --data-urlencode "delete=Delete" --data-urlencode "snep_csrf_token=${token}" \
         "${BASE_URL}/index.php/default/extensions/remove")"
     if [ "$httpcode" = "302" ]; then
         rm -f "$body"

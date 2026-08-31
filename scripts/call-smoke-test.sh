@@ -111,6 +111,7 @@ create_extension() {
         --data-urlencode "codec=alaw" \
         --data-urlencode "codec1=ulaw" \
         --data-urlencode "codec2=gsm" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/extensions/add")"
     if [ "$httpcode" = "302" ]; then
         rm -f "$body"
@@ -128,6 +129,7 @@ delete_extension() {
     httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null -w '%{http_code}' \
         --data-urlencode "id=${ext}" \
         --data-urlencode "delete=Delete" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/extensions/remove")"
     [ "$httpcode" = "302" ]
 }
@@ -174,6 +176,12 @@ if [ -z "$TEST_HASH" ]; then
 fi
 db_query "UPDATE users SET password = '${TEST_HASH}' WHERE name = '${TEST_USER}';" >&2
 http_login
+# TASK-0026G: create_extension()/delete_extension() below now need a valid
+# snep_csrf_token (Snep_CsrfPlugin) on every POST -- fetched once, reused
+# for the rest of this script's run (stable per-session value, not
+# one-shot/rotating).
+ADMIN_CSRF="$(harness_csrf_token "$COOKIEJAR" "$BASE_URL")"
+if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session's CSRF token"; fi
 
 log "==> checking for pre-existing rows / provisioning ${EXT_A}, ${EXT_B} via the real UI"
 for pair in "${EXT_A}:${SECRET_A}" "${EXT_B}:${SECRET_B}"; do

@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -109,6 +109,17 @@ api-security-smoke: up
 # implicitly by it.
 api-sql-security-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/api-sql-security-smoke-test.sh
+
+# TASK-0026G: proves the F18-F20 session-fixation/cookie/CSRF boundaries
+# hold -- the session id changes on login and the pre-login id cannot
+# access an authenticated page afterward, logout invalidates the session,
+# the session cookie carries HttpOnly/SameSite/Secure-when-HTTPS, and
+# authenticated state-changing POSTs are rejected without a valid
+# session-bound CSRF token (missing, invalid, or from a foreign session)
+# while GETs and the standalone Basic-auth API remain unaffected.
+# Deliberately separate from `make smoke` -- never run implicitly by it.
+session-csrf-security-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/session-csrf-security-smoke-test.sh
 
 # TASK-0027A: deterministic, fixed-timestamp proof of
 # harness_cdr_report_window() (lib/harness.sh) -- the timezone-safe CDR

@@ -166,6 +166,15 @@ RESTRICTED_JAR="$(mktemp)"
 harness_register_best_effort_cleanup "restricted cookie jar" "rm -f '$RESTRICTED_JAR'"
 request "$RESTRICTED_JAR" POST /index.php/auth/login "user=${RESTRICTED_USER}&password=${RESTRICTED_PASSWORD}" >/dev/null
 
+# TASK-0026G: every authenticated POST below now needs a valid
+# snep_csrf_token (Snep_CsrfPlugin) -- fetched once per jar, reused for
+# the rest of this script's run (the token is a stable per-session value,
+# not one-shot/rotating).
+ADMIN_CSRF="$(harness_csrf_token "$ADMIN_JAR" "$BASE_URL")"
+if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session's CSRF token"; fi
+RESTRICTED_CSRF="$(harness_csrf_token "$RESTRICTED_JAR" "$BASE_URL")"
+if [ -z "$RESTRICTED_CSRF" ]; then harness_blocked "could not read the restricted session's CSRF token"; fi
+
 for boundary_path in "/index.php/default/extensions/add" "/index.php/default/trunks/add" "/index.php/default/pjsip-transports/add"; do
     code="$(request "$RESTRICTED_JAR" GET "$boundary_path")"
     if [ "$code" = 302 ] && redirects_to_permission_error; then
@@ -175,7 +184,7 @@ for boundary_path in "/index.php/default/extensions/add" "/index.php/default/tru
     fi
 done
 
-code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_extensions_write=1&default_trunks_write=1&default_pjsip-transports_write=1&default_pjsip-transports_read=1")"
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_extensions_write=1&default_trunks_write=1&default_pjsip-transports_write=1&default_pjsip-transports_read=1&snep_csrf_token=${ADMIN_CSRF}")"
 if [ "$code" = 302 ]; then
     harness_ok "admin grants exactly the three F12-F15 permissions" "HTTP $code"
 else
@@ -193,7 +202,7 @@ EXT_B="10972"
 
 code="$(post_fields "$RESTRICTED_JAR" /index.php/default/extensions/add \
     "exten=${EXT_A}" "name=Task0026e Legit" "password=" "passwordpadlock=" "technology=pjsip" "type=friend" "exten_group=" \
-    "dtmf=rfc2833" "directmedia=no" "calllimit=1" "pickup_group=" "gsm=0" "transport_id=")"
+    "dtmf=rfc2833" "directmedia=no" "calllimit=1" "pickup_group=" "gsm=0" "transport_id=" "snep_csrf_token=${RESTRICTED_CSRF}")"
 EXT_A_EXISTS="$(db_query "SELECT name FROM peers WHERE name='${EXT_A}' AND peer_type='R';")"
 if [ "$code" = 302 ] && [ -n "$EXT_A_EXISTS" ]; then
     harness_ok "F12 valid: create a legitimate PJSIP extension" "HTTP $code, stored via the real execAdd() HTTP flow"
@@ -201,7 +210,7 @@ else
     harness_bad "F12 valid: create a legitimate PJSIP extension" "HTTP $code, db row present='${EXT_A_EXISTS}'"
 fi
 harness_register_cleanup "extension ${EXT_A} (F12 fixture)" \
-    "request \"\$RESTRICTED_JAR\" POST /index.php/default/extensions/remove \"id=${EXT_A}\" >/dev/null; true"
+    "request \"\$RESTRICTED_JAR\" POST /index.php/default/extensions/remove \"id=${EXT_A}&snep_csrf_token=${RESTRICTED_CSRF}\" >/dev/null; true"
 
 GENERATED="$(app_exec "cat '$EXT_CONF' 2>/dev/null")"
 if echo "$GENERATED" | grep -qF "[${EXT_A}]" && echo "$GENERATED" | grep -qF "[${EXT_A}-auth]" && echo "$GENERATED" | grep -qF "callerid=Task0026e Legit <${EXT_A}>"; then
@@ -214,7 +223,7 @@ fi
 INJECTED_NAME="Task0026e$(printf '\r\n')[${MARKER_SECTION}]$(printf '\r\n')type=endpoint$(printf '\r\n')${MARKER_DIRECTIVE}=yes"
 code="$(post_fields "$RESTRICTED_JAR" /index.php/default/extensions/add \
     "exten=${EXT_B}" "name=${INJECTED_NAME}" "password=" "passwordpadlock=" "technology=pjsip" "type=friend" "exten_group=" \
-    "dtmf=rfc2833" "directmedia=no" "calllimit=1" "pickup_group=" "gsm=0" "transport_id=")"
+    "dtmf=rfc2833" "directmedia=no" "calllimit=1" "pickup_group=" "gsm=0" "transport_id=" "snep_csrf_token=${RESTRICTED_CSRF}")"
 EXT_B_EXISTS="$(db_query "SELECT name FROM peers WHERE name='${EXT_B}' AND peer_type='R';")"
 if [ -z "$EXT_B_EXISTS" ] && marker_absent_in_config app "$EXT_CONF"; then
     harness_ok "F12: newline/section-injection-shaped 'name' cannot execute" "HTTP $code, rejected before persistence, no marker in generated config"
@@ -223,14 +232,14 @@ else
 fi
 if [ -n "$EXT_B_EXISTS" ]; then
     harness_register_cleanup "extension ${EXT_B} (F12 malicious-name leak, should not exist)" \
-        "request \"\$RESTRICTED_JAR\" POST /index.php/default/extensions/remove \"id=${EXT_B}\" >/dev/null; true"
+        "request \"\$RESTRICTED_JAR\" POST /index.php/default/extensions/remove \"id=${EXT_B}&snep_csrf_token=${RESTRICTED_CSRF}\" >/dev/null; true"
 fi
 
 # Section injection via the exten/name identifier itself.
 INJECTED_EXTEN="1099]${MARKER_DIRECTIVE}=yes"
 code="$(post_fields "$RESTRICTED_JAR" /index.php/default/extensions/add \
     "exten=${INJECTED_EXTEN}" "name=Task0026e" "password=" "passwordpadlock=" "technology=pjsip" "type=friend" "exten_group=" \
-    "dtmf=rfc2833" "directmedia=no" "calllimit=1" "pickup_group=" "gsm=0" "transport_id=")"
+    "dtmf=rfc2833" "directmedia=no" "calllimit=1" "pickup_group=" "gsm=0" "transport_id=" "snep_csrf_token=${RESTRICTED_CSRF}")"
 if marker_absent_in_config app "$EXT_CONF"; then
     harness_ok "F12: section-shaped 'exten' identifier cannot execute" "HTTP $code, rejected by the numeric-only exten allowlist, no marker in generated config"
 else
@@ -269,7 +278,7 @@ sweep_orphaned_trunk_peers() {
     local orphan_name
     for orphan_name in $(db_query "SELECT p.name FROM peers p LEFT JOIN trunks t ON t.name = p.name WHERE p.peer_type='T' AND t.id IS NULL;"); do
         log "found an orphaned trunk-type peers row (name='${orphan_name}') with no matching trunks row -- removing via the supported extensions/remove HTTP path"
-        request "$ADMIN_JAR" POST /index.php/default/extensions/remove "id=${orphan_name}" >/dev/null
+        request "$ADMIN_JAR" POST /index.php/default/extensions/remove "id=${orphan_name}&snep_csrf_token=${ADMIN_CSRF}" >/dev/null
     done
 }
 sweep_orphaned_trunk_peers
@@ -278,7 +287,7 @@ harness_register_cleanup "orphaned trunk-type peers row sweep (F13 fixture side 
 code="$(post_fields "$RESTRICTED_JAR" /index.php/default/trunks/add \
     "technology=pjsip" "peer_type=friend" "domain=" "callerid=Task0026e Trunk" "username=task0026etrunk" "secret=Sup3rSecret" \
     "host=sip.example.test" "dtmfmode=rfc2833" "dialmethod=INVITE" "reverse_auth=" "map_extensions=" \
-    "dtmf_dial=" "codec=ulaw" "codec1=alaw" "codec2=gsm" "qualify=yes" "transport_id=")"
+    "dtmf_dial=" "codec=ulaw" "codec1=alaw" "codec2=gsm" "qualify=yes" "transport_id=" "snep_csrf_token=${RESTRICTED_CSRF}")"
 TRUNK_ID="$(db_query "SELECT id FROM trunks WHERE callerid='Task0026e Trunk' ORDER BY id DESC LIMIT 1;")"
 if [ "$code" = 302 ] && [ -n "$TRUNK_ID" ]; then
     harness_ok "F13 valid: create a legitimate PJSIP trunk" "HTTP $code, trunk id=${TRUNK_ID} via the real preparePost() HTTP flow"
@@ -286,7 +295,7 @@ else
     harness_bad "F13 valid: create a legitimate PJSIP trunk" "HTTP $code, trunk id present='${TRUNK_ID}'"
 fi
 harness_register_cleanup "trunk id=${TRUNK_ID:-none} (F13 fixture)" \
-    "[ -n '${TRUNK_ID}' ] && request \"\$RESTRICTED_JAR\" POST /index.php/default/trunks/remove \"id=${TRUNK_ID}&delete=1\" >/dev/null; true"
+    "[ -n '${TRUNK_ID}' ] && request \"\$RESTRICTED_JAR\" POST /index.php/default/trunks/remove \"id=${TRUNK_ID}&delete=1&snep_csrf_token=${RESTRICTED_CSRF}\" >/dev/null; true"
 
 if [ -n "$TRUNK_ID" ]; then
     GENERATED_TRUNK="$(app_exec "cat '$TRUNK_CONF' 2>/dev/null")"
@@ -302,7 +311,7 @@ INJECTED_CALLERID="Task0026e$(printf '\r\n')[${MARKER_SECTION}]$(printf '\r\n')t
 code="$(post_fields "$RESTRICTED_JAR" /index.php/default/trunks/add \
     "technology=pjsip" "peer_type=friend" "domain=" "callerid=${INJECTED_CALLERID}" "username=task0026etrunkbad" "secret=Sup3rSecret" \
     "host=sip.example.test" "dtmfmode=rfc2833" "dialmethod=INVITE" "reverse_auth=" "map_extensions=" \
-    "dtmf_dial=" "codec=ulaw" "codec1=alaw" "codec2=gsm" "qualify=yes" "transport_id=")"
+    "dtmf_dial=" "codec=ulaw" "codec1=alaw" "codec2=gsm" "qualify=yes" "transport_id=" "snep_csrf_token=${RESTRICTED_CSRF}")"
 BAD_TRUNK_ID="$(db_query "SELECT id FROM trunks WHERE username='task0026etrunkbad';")"
 if [ -z "$BAD_TRUNK_ID" ] && marker_absent_in_config app "$TRUNK_CONF"; then
     harness_ok "F13: newline/section-injection-shaped 'callerid' cannot execute" "HTTP $code, rejected before persistence, no marker in generated config"
@@ -311,14 +320,14 @@ else
 fi
 if [ -n "$BAD_TRUNK_ID" ]; then
     harness_register_cleanup "trunk id=${BAD_TRUNK_ID} (F13 malicious-callerid leak, should not exist)" \
-        "request \"\$RESTRICTED_JAR\" POST /index.php/default/trunks/remove \"id=${BAD_TRUNK_ID}&delete=1\" >/dev/null; true"
+        "request \"\$RESTRICTED_JAR\" POST /index.php/default/trunks/remove \"id=${BAD_TRUNK_ID}&delete=1&snep_csrf_token=${RESTRICTED_CSRF}\" >/dev/null; true"
 fi
 
 INJECTED_HOST="sip.example.test$(printf '\r\n')${MARKER_DIRECTIVE}=yes"
 code="$(post_fields "$RESTRICTED_JAR" /index.php/default/trunks/add \
     "technology=pjsip" "peer_type=friend" "domain=" "callerid=Task0026e Trunk2" "username=task0026etrunkbad2" "secret=Sup3rSecret" \
     "host=${INJECTED_HOST}" "dtmfmode=rfc2833" "dialmethod=INVITE" "reverse_auth=" "map_extensions=" \
-    "dtmf_dial=" "codec=ulaw" "codec1=alaw" "codec2=gsm" "qualify=yes" "transport_id=")"
+    "dtmf_dial=" "codec=ulaw" "codec1=alaw" "codec2=gsm" "qualify=yes" "transport_id=" "snep_csrf_token=${RESTRICTED_CSRF}")"
 BAD_TRUNK_ID2="$(db_query "SELECT id FROM trunks WHERE username='task0026etrunkbad2';")"
 if [ -z "$BAD_TRUNK_ID2" ] && marker_absent_in_config app "$TRUNK_CONF"; then
     harness_ok "F13: newline-injection-shaped 'host' cannot execute" "HTTP $code, rejected before persistence (invalid host), no marker in generated config"
@@ -327,7 +336,7 @@ else
 fi
 if [ -n "$BAD_TRUNK_ID2" ]; then
     harness_register_cleanup "trunk id=${BAD_TRUNK_ID2} (F13 malicious-host leak, should not exist)" \
-        "request \"\$RESTRICTED_JAR\" POST /index.php/default/trunks/remove \"id=${BAD_TRUNK_ID2}&delete=1\" >/dev/null; true"
+        "request \"\$RESTRICTED_JAR\" POST /index.php/default/trunks/remove \"id=${BAD_TRUNK_ID2}&delete=1&snep_csrf_token=${RESTRICTED_CSRF}\" >/dev/null; true"
 fi
 
 PJSIP_TRUNK_LOOKUP="$(ast_exec "asterisk -rx 'pjsip show endpoint ${MARKER_SECTION}'")"
@@ -354,7 +363,7 @@ log "==> F14: PJSIP Transports boundary (reconfirming pre-existing TASK-0019/002
 TRANSPORT_NAME="task0026etransport"
 code="$(post_fields "$RESTRICTED_JAR" /index.php/default/pjsip-transports/add \
     "name=${TRANSPORT_NAME}" "protocol=udp" "bind_address=0.0.0.0" "bind_port=5098" "domain=" \
-    "external_signaling_address=" "external_signaling_port=" "external_media_address=" "local_net=")"
+    "external_signaling_address=" "external_signaling_port=" "external_media_address=" "local_net=" "snep_csrf_token=${RESTRICTED_CSRF}")"
 TRANSPORT_EXISTS="$(db_query "SELECT name FROM pjsip_transports WHERE name='${TRANSPORT_NAME}';")"
 if [ "$code" = 302 ] && [ -n "$TRANSPORT_EXISTS" ]; then
     harness_ok "F14 valid: create a legitimate transport" "HTTP $code, stored via the real addAction() HTTP flow"
@@ -362,12 +371,12 @@ else
     harness_bad "F14 valid: create a legitimate transport" "HTTP $code, db row present='${TRANSPORT_EXISTS}'"
 fi
 harness_register_cleanup "transport ${TRANSPORT_NAME} (F14 fixture)" \
-    "TID=\$(db_query \"SELECT id FROM pjsip_transports WHERE name='${TRANSPORT_NAME}';\"); [ -n \"\$TID\" ] && request \"\$RESTRICTED_JAR\" POST /index.php/default/pjsip-transports/remove/id/\$TID \"confirm=1\" >/dev/null; true"
+    "TID=\$(db_query \"SELECT id FROM pjsip_transports WHERE name='${TRANSPORT_NAME}';\"); [ -n \"\$TID\" ] && request \"\$RESTRICTED_JAR\" POST /index.php/default/pjsip-transports/remove/id/\$TID \"confirm=1&snep_csrf_token=${RESTRICTED_CSRF}\" >/dev/null; true"
 
 INJECTED_DOMAIN="legit.example$(printf '\r\n')[${MARKER_SECTION}]$(printf '\r\n')type=transport"
 code="$(post_fields "$RESTRICTED_JAR" /index.php/default/pjsip-transports/add \
     "name=task0026etransportbad" "protocol=udp" "bind_address=0.0.0.0" "bind_port=5097" "domain=${INJECTED_DOMAIN}" \
-    "external_signaling_address=" "external_signaling_port=" "external_media_address=" "local_net=")"
+    "external_signaling_address=" "external_signaling_port=" "external_media_address=" "local_net=" "snep_csrf_token=${RESTRICTED_CSRF}")"
 BAD_TRANSPORT_EXISTS="$(db_query "SELECT name FROM pjsip_transports WHERE name='task0026etransportbad';")"
 if [ -z "$BAD_TRANSPORT_EXISTS" ] && marker_absent_in_config app "$TRANSPORT_CONF"; then
     harness_ok "F14: newline/section-injection-shaped 'domain' cannot execute" "HTTP $code, rejected before persistence (pre-existing TASK-0019/0020 validateIpOrHostname()), no marker in generated config"
@@ -376,7 +385,7 @@ else
 fi
 if [ -n "$BAD_TRANSPORT_EXISTS" ]; then
     harness_register_cleanup "transport task0026etransportbad (F14 malicious-domain leak, should not exist)" \
-        "TID=\$(db_query \"SELECT id FROM pjsip_transports WHERE name='task0026etransportbad';\"); [ -n \"\$TID\" ] && request \"\$RESTRICTED_JAR\" POST /index.php/default/pjsip-transports/remove/id/\$TID \"confirm=1\" >/dev/null; true"
+        "TID=\$(db_query \"SELECT id FROM pjsip_transports WHERE name='task0026etransportbad';\"); [ -n \"\$TID\" ] && request \"\$RESTRICTED_JAR\" POST /index.php/default/pjsip-transports/remove/id/\$TID \"confirm=1&snep_csrf_token=${RESTRICTED_CSRF}\" >/dev/null; true"
 fi
 
 FATALS_AFTER_F14="$(fatal_count)"
@@ -396,7 +405,7 @@ log "==> F15: legacy chan_sip boundary (technology=sip, confirmed reachable via 
 EXT_SIP="10973"
 code="$(post_fields "$RESTRICTED_JAR" /index.php/default/extensions/add \
     "exten=${EXT_SIP}" "name=Task0026e Sip" "password=" "passwordpadlock=" "technology=sip" "type=friend" "exten_group=" \
-    "dtmf=rfc2833" "directmedia=no" "calllimit=1" "pickup_group=" "gsm=0")"
+    "dtmf=rfc2833" "directmedia=no" "calllimit=1" "pickup_group=" "gsm=0" "snep_csrf_token=${RESTRICTED_CSRF}")"
 EXT_SIP_EXISTS="$(db_query "SELECT name FROM peers WHERE name='${EXT_SIP}';")"
 if [ "$code" = 302 ] && [ -n "$EXT_SIP_EXISTS" ]; then
     harness_ok "F15 valid: create a legitimate technology=sip extension" "HTTP $code, stored via the same shared execAdd() HTTP flow"
@@ -404,7 +413,7 @@ else
     harness_bad "F15 valid: create a legitimate technology=sip extension" "HTTP $code, db row present='${EXT_SIP_EXISTS}'"
 fi
 harness_register_cleanup "extension ${EXT_SIP} (F15 fixture)" \
-    "request \"\$RESTRICTED_JAR\" POST /index.php/default/extensions/remove \"id=${EXT_SIP}\" >/dev/null; true"
+    "request \"\$RESTRICTED_JAR\" POST /index.php/default/extensions/remove \"id=${EXT_SIP}&snep_csrf_token=${RESTRICTED_CSRF}\" >/dev/null; true"
 
 if [ -n "$EXT_SIP_EXISTS" ]; then
     GENERATED_LEGACY="$(app_exec "cat '$LEGACY_SIP_CONF' 2>/dev/null")"
@@ -423,7 +432,7 @@ EXT_SIP_BAD="10974"
 INJECTED_NAME_SIP="Task0026eSip$(printf '\r\n')[${MARKER_SECTION}]$(printf '\r\n')type=friend$(printf '\r\n')${MARKER_DIRECTIVE}=yes"
 code="$(post_fields "$RESTRICTED_JAR" /index.php/default/extensions/add \
     "exten=${EXT_SIP_BAD}" "name=${INJECTED_NAME_SIP}" "password=" "passwordpadlock=" "technology=sip" "type=friend" "exten_group=" \
-    "dtmf=rfc2833" "directmedia=no" "calllimit=1" "pickup_group=" "gsm=0")"
+    "dtmf=rfc2833" "directmedia=no" "calllimit=1" "pickup_group=" "gsm=0" "snep_csrf_token=${RESTRICTED_CSRF}")"
 EXT_SIP_BAD_EXISTS="$(db_query "SELECT name FROM peers WHERE name='${EXT_SIP_BAD}';")"
 if [ -z "$EXT_SIP_BAD_EXISTS" ] && marker_absent_in_config app "$LEGACY_SIP_CONF" && marker_absent_in_config app "$LEGACY_IAX2_CONF"; then
     harness_ok "F15: newline/section-injection-shaped 'name' cannot execute (legacy generator)" "HTTP $code, rejected before persistence by the same shared controller boundary as F12, no marker in generated legacy config"
@@ -432,7 +441,7 @@ else
 fi
 if [ -n "$EXT_SIP_BAD_EXISTS" ]; then
     harness_register_cleanup "extension ${EXT_SIP_BAD} (F15 malicious-name leak, should not exist)" \
-        "request \"\$RESTRICTED_JAR\" POST /index.php/default/extensions/remove \"id=${EXT_SIP_BAD}\" >/dev/null; true"
+        "request \"\$RESTRICTED_JAR\" POST /index.php/default/extensions/remove \"id=${EXT_SIP_BAD}&snep_csrf_token=${RESTRICTED_CSRF}\" >/dev/null; true"
 fi
 
 FATALS_AFTER_F15="$(fatal_count)"

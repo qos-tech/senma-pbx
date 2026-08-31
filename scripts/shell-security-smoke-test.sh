@@ -195,6 +195,15 @@ RESTRICTED_JAR="$(mktemp)"
 harness_register_best_effort_cleanup "restricted cookie jar" "rm -f '$RESTRICTED_JAR'"
 request "$RESTRICTED_JAR" POST /index.php/auth/login "user=${RESTRICTED_USER}&password=${RESTRICTED_PASSWORD}" >/dev/null
 
+# TASK-0026G: every authenticated POST below now needs a valid
+# snep_csrf_token (Snep_CsrfPlugin) -- fetched once per jar, reused for
+# the rest of this script's run (the token is a stable per-session value,
+# not one-shot/rotating).
+ADMIN_CSRF="$(harness_csrf_token "$ADMIN_JAR" "$BASE_URL")"
+if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session's CSRF token"; fi
+RESTRICTED_CSRF="$(harness_csrf_token "$RESTRICTED_JAR" "$BASE_URL")"
+if [ -z "$RESTRICTED_CSRF" ]; then harness_blocked "could not read the restricted session's CSRF token"; fi
+
 for boundary_path in "/index.php/default/sound-files/add" "/index.php/default/music-on-hold/addfile" "/index.php/default/music-on-hold/removefile" "/index.php/default/logs/view" "/index.php/default/cnl"; do
     code="$(request "$RESTRICTED_JAR" GET "$boundary_path")"
     if [ "$code" = 302 ] && redirects_to_permission_error; then
@@ -210,7 +219,7 @@ done
 # perform the normal action" and "authorized malicious-looking input
 # still cannot alter command syntax" through a genuinely limited
 # account, not superuser bypass.
-code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_sound-files_write=1&default_music-on-hold_write=1&default_logs_read=1&default_cnl_read=1")"
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_sound-files_write=1&default_music-on-hold_write=1&default_logs_read=1&default_cnl_read=1&snep_csrf_token=${ADMIN_CSRF}")"
 if [ "$code" = 302 ]; then
     harness_ok "admin grants exactly the four F2-F5 permissions" "HTTP $code"
 else
@@ -236,7 +245,7 @@ if [ ! -s "$LOCAL_WAV" ]; then
 fi
 
 SF_NAME="task0026dsound.wav"
-code="$(multipart_upload "$RESTRICTED_JAR" /index.php/default/sound-files/add inputFile "$LOCAL_WAV" "$SF_NAME" description=task0026d gsm=0)"
+code="$(multipart_upload "$RESTRICTED_JAR" /index.php/default/sound-files/add inputFile "$LOCAL_WAV" "$SF_NAME" description=task0026d gsm=0 "snep_csrf_token=${RESTRICTED_CSRF}")"
 # This checks the converted file landing on disk, not the DB row: a
 # real, pre-existing, unrelated strict-SQL schema bug was found live
 # while building this test -- sounds.secao is `varchar(30) NOT NULL`
@@ -266,7 +275,7 @@ harness_register_cleanup "sound file ${SF_NAME} (F2 fixture)" \
     "db_query \"DELETE FROM sounds WHERE arquivo='${SF_NAME}';\" >/dev/null; app_exec \"rm -f '${SOUNDS_ROOT}/${SYS_LANG}/${SF_NAME}' '${SOUNDS_ROOT}/${SYS_LANG}/tmp/${SF_NAME}'\"; true"
 
 SF_MALICIOUS_NAME='`touch '"$MARKER"'`.wav'
-code="$(multipart_upload "$RESTRICTED_JAR" /index.php/default/sound-files/add inputFile "$LOCAL_WAV" "$SF_MALICIOUS_NAME" description=task0026d gsm=0)"
+code="$(multipart_upload "$RESTRICTED_JAR" /index.php/default/sound-files/add inputFile "$LOCAL_WAV" "$SF_MALICIOUS_NAME" description=task0026d gsm=0 "snep_csrf_token=${RESTRICTED_CSRF}")"
 SF_MALICIOUS_EXISTS="$(db_query "SELECT COUNT(*) FROM sounds WHERE arquivo LIKE '%touch%';")"
 if marker_absent "$MARKER" && [ "${SF_MALICIOUS_EXISTS:-0}" = "0" ]; then
     harness_ok "F2: shell-shaped upload filename cannot execute" "HTTP $code, no marker file created, no sound row stored with the malicious name (rejected by the new filename allowlist)"
@@ -303,7 +312,7 @@ log "==> F3: Music on Hold boundary"
 # the same value for both here avoids exercising that unrelated bug.
 MOH_CLASS_NAME="task0026dmoh"
 MOH_DIR_NAME="$MOH_CLASS_NAME"
-code="$(request "$RESTRICTED_JAR" POST /index.php/default/music-on-hold/add "nome=${MOH_CLASS_NAME}&mode=files&directory=${MOH_DIR_NAME}&base=/should/be/ignored")"
+code="$(request "$RESTRICTED_JAR" POST /index.php/default/music-on-hold/add "nome=${MOH_CLASS_NAME}&mode=files&directory=${MOH_DIR_NAME}&base=/should/be/ignored&snep_csrf_token=${RESTRICTED_CSRF}")"
 MOH_DIR_CREATED="$(app_exec "test -d '${MOH_ROOT}/${MOH_DIR_NAME}' && echo yes || echo no")"
 if [ "$code" = 302 ] && [ "$MOH_DIR_CREATED" = "yes" ]; then
     harness_ok "F3 valid: create a MOH class" "HTTP $code, ${MOH_ROOT}/${MOH_DIR_NAME} created via the real addAction() HTTP flow (client 'base' ignored, server's own MOH root used)"
@@ -311,10 +320,10 @@ else
     harness_bad "F3 valid: create a MOH class" "HTTP $code, directory created=${MOH_DIR_CREATED}"
 fi
 harness_register_cleanup "MOH class ${MOH_CLASS_NAME} (F3 fixture)" \
-    "request \"\$ADMIN_JAR\" POST /index.php/default/music-on-hold/remove \"id=${MOH_CLASS_NAME}&delete=1\" >/dev/null; app_exec \"rm -rf '${MOH_ROOT}/${MOH_DIR_NAME}'\" 2>/dev/null; true"
+    "request \"\$ADMIN_JAR\" POST /index.php/default/music-on-hold/remove \"id=${MOH_CLASS_NAME}&delete=1&snep_csrf_token=${ADMIN_CSRF}\" >/dev/null; app_exec \"rm -rf '${MOH_ROOT}/${MOH_DIR_NAME}'\" 2>/dev/null; true"
 
 MOH_MALICIOUS_DIR='x`touch '"$MARKER"'`'
-code="$(request "$RESTRICTED_JAR" POST /index.php/default/music-on-hold/add "nome=task0026dmohbad&mode=files&directory=${MOH_MALICIOUS_DIR}&base=/should/be/ignored")"
+code="$(request "$RESTRICTED_JAR" POST /index.php/default/music-on-hold/add "nome=task0026dmohbad&mode=files&directory=${MOH_MALICIOUS_DIR}&base=/should/be/ignored&snep_csrf_token=${RESTRICTED_CSRF}")"
 if marker_absent "$MARKER"; then
     harness_ok "F3: shell-shaped MOH class directory cannot execute" "HTTP $code, no marker file created (rejected by the new directory-name allowlist)"
 else
@@ -326,7 +335,7 @@ fi
 LOCAL_MOH_WAV="$LOCAL_WAV"
 
 MOH_FILE_NAME="task0026dmohfile.wav"
-code="$(multipart_upload "$RESTRICTED_JAR" /index.php/default/music-on-hold/addfile inputFile "$LOCAL_MOH_WAV" "$MOH_FILE_NAME" section="$MOH_CLASS_NAME" description=task0026d __content_type__=audio/wav)"
+code="$(multipart_upload "$RESTRICTED_JAR" /index.php/default/music-on-hold/addfile inputFile "$LOCAL_MOH_WAV" "$MOH_FILE_NAME" section="$MOH_CLASS_NAME" description=task0026d __content_type__=audio/wav "snep_csrf_token=${RESTRICTED_CSRF}")"
 MOH_FILE_EXISTS="$(db_query "SELECT arquivo FROM sounds WHERE arquivo='${MOH_FILE_NAME}' AND tipo='MOH';")"
 if [ "$code" = 302 ] && [ -n "$MOH_FILE_EXISTS" ]; then
     harness_ok "F3 valid: upload a legitimate MOH file" "HTTP $code, stored as '${MOH_FILE_EXISTS}' via the real addfileAction() HTTP flow"
@@ -337,7 +346,7 @@ harness_register_cleanup "MOH file ${MOH_FILE_NAME} (F3 fixture)" \
     "db_query \"DELETE FROM sounds WHERE arquivo='${MOH_FILE_NAME}' AND tipo='MOH';\" >/dev/null; true"
 
 MOH_MALICIOUS_FILE='`touch '"$MARKER"'`.wav'
-code="$(multipart_upload "$RESTRICTED_JAR" /index.php/default/music-on-hold/addfile inputFile "$LOCAL_MOH_WAV" "$MOH_MALICIOUS_FILE" section="$MOH_CLASS_NAME" description=task0026d __content_type__=audio/wav)"
+code="$(multipart_upload "$RESTRICTED_JAR" /index.php/default/music-on-hold/addfile inputFile "$LOCAL_MOH_WAV" "$MOH_MALICIOUS_FILE" section="$MOH_CLASS_NAME" description=task0026d __content_type__=audio/wav "snep_csrf_token=${RESTRICTED_CSRF}")"
 MOH_MALICIOUS_ROWS="$(db_query "SELECT COUNT(*) FROM sounds WHERE arquivo LIKE '%touch%' AND tipo='MOH';")"
 if marker_absent "$MARKER" && [ "${MOH_MALICIOUS_ROWS:-0}" = "0" ]; then
     harness_ok "F3: shell-shaped MOH upload filename cannot execute" "HTTP $code, no marker file created, no sound row stored with the malicious name"
@@ -345,14 +354,14 @@ else
     harness_bad "F3: shell-shaped MOH upload filename cannot execute" "HTTP $code, malicious rows=${MOH_MALICIOUS_ROWS}"
 fi
 
-code="$(request "$RESTRICTED_JAR" POST /index.php/default/music-on-hold/removefile "secao=\`touch ${MARKER}\`&arquivo=${MOH_FILE_NAME}")"
+code="$(request "$RESTRICTED_JAR" POST /index.php/default/music-on-hold/removefile "secao=\`touch ${MARKER}\`&arquivo=${MOH_FILE_NAME}&snep_csrf_token=${RESTRICTED_CSRF}")"
 if marker_absent "$MARKER"; then
     harness_ok "F3: shell-shaped 'secao' on file removal cannot execute" "HTTP $code, no marker file created (rejected -- 'secao' does not name a real MOH class)"
 else
     harness_bad "F3: shell-shaped 'secao' on file removal cannot execute" "HTTP $code, marker file was created"
 fi
 
-code="$(request "$RESTRICTED_JAR" POST /index.php/default/music-on-hold/removefile "secao=${MOH_CLASS_NAME}&arquivo=\`touch ${MARKER}\`.wav")"
+code="$(request "$RESTRICTED_JAR" POST /index.php/default/music-on-hold/removefile "secao=${MOH_CLASS_NAME}&arquivo=\`touch ${MARKER}\`.wav&snep_csrf_token=${RESTRICTED_CSRF}")"
 MOH_FILE_STILL_THERE="$(app_exec "test -f '${MOH_ROOT}/${MOH_DIR_NAME}/${MOH_FILE_NAME}' && echo yes || echo no")"
 if marker_absent "$MARKER" && [ "$MOH_FILE_STILL_THERE" = "yes" ]; then
     harness_ok "F3: shell-shaped 'arquivo' on file removal cannot execute" "HTTP $code, no marker file created, the real MOH file was left untouched (rejected by the filename allowlist)"
@@ -360,7 +369,7 @@ else
     harness_bad "F3: shell-shaped 'arquivo' on file removal cannot execute" "HTTP $code, real file still present=${MOH_FILE_STILL_THERE}"
 fi
 
-code="$(request "$RESTRICTED_JAR" POST /index.php/default/music-on-hold/removefile "secao=${MOH_CLASS_NAME}&arquivo=${MOH_FILE_NAME}")"
+code="$(request "$RESTRICTED_JAR" POST /index.php/default/music-on-hold/removefile "secao=${MOH_CLASS_NAME}&arquivo=${MOH_FILE_NAME}&snep_csrf_token=${RESTRICTED_CSRF}")"
 MOH_FILE_GONE="$(app_exec "test -f '${MOH_ROOT}/${MOH_DIR_NAME}/${MOH_FILE_NAME}' && echo no || echo yes")"
 if [ "$code" = 302 ] && [ "$MOH_FILE_GONE" = "yes" ]; then
     harness_ok "F3 valid: legitimate file removal still works" "HTTP $code, file removed via the real removefileAction() HTTP flow"
@@ -408,28 +417,28 @@ else
     log "==> ${LOG_FILE} already exists -- leaving it untouched, F4 checks below use whatever real content it already has"
 fi
 
-code="$(request "$RESTRICTED_JAR" POST /index.php/default/logs/view "real_time=no&init_day=2026-01-01 00:00&end_day=2026-01-01 23:59&verbose=&others=task0026d-fixture-line")"
+code="$(request "$RESTRICTED_JAR" POST /index.php/default/logs/view "real_time=no&init_day=2026-01-01 00:00&end_day=2026-01-01 23:59&verbose=&others=task0026d-fixture-line&snep_csrf_token=${RESTRICTED_CSRF}")"
 if [ "$code" = 200 ] && ! grep -q "panel-red\|panel-orange" "$BODY"; then
     harness_ok "F4 valid: legitimate 'others' text filter works" "HTTP $code, log view rendered via the real viewAction() HTTP flow (literal substring match against the fixture log's own content, not an error panel)"
 else
     harness_bad "F4 valid: legitimate 'others' text filter works" "HTTP $code"
 fi
 
-code="$(request "$RESTRICTED_JAR" POST /index.php/default/logs/view "real_time=no&init_day=2026-01-01 00:00&end_day=2026-01-01 23:59&verbose=&others=nonexistent-marker; touch ${MARKER} #")"
+code="$(request "$RESTRICTED_JAR" POST /index.php/default/logs/view "real_time=no&init_day=2026-01-01 00:00&end_day=2026-01-01 23:59&verbose=&others=nonexistent-marker; touch ${MARKER} #&snep_csrf_token=${RESTRICTED_CSRF}")"
 if [ "$code" = 200 ] && marker_absent "$MARKER"; then
     harness_ok "F4: shell-shaped 'others' filter cannot execute" "HTTP $code, no marker file created, no PHP error -- treated as inert literal substring data"
 else
     harness_bad "F4: shell-shaped 'others' filter cannot execute" "HTTP $code, marker present=$(app_exec "test -e '$MARKER'" && echo yes || echo no)"
 fi
 
-code="$(request "$RESTRICTED_JAR" POST /index.php/default/logs/view "real_time=no&init_day=2026-01-01 00:00&end_day=2026-01-01 23:59&verbose=1] ; touch ${MARKER} #&others=")"
+code="$(request "$RESTRICTED_JAR" POST /index.php/default/logs/view "real_time=no&init_day=2026-01-01 00:00&end_day=2026-01-01 23:59&verbose=1] ; touch ${MARKER} #&others=&snep_csrf_token=${RESTRICTED_CSRF}")"
 if [ "$code" = 200 ] && marker_absent "$MARKER"; then
     harness_ok "F4: shell-shaped 'verbose' filter cannot execute" "HTTP $code, no marker file created -- treated as inert literal substring data"
 else
     harness_bad "F4: shell-shaped 'verbose' filter cannot execute" "HTTP $code, marker present=$(app_exec "test -e '$MARKER'" && echo yes || echo no)"
 fi
 
-code="$(request "$RESTRICTED_JAR" POST /index.php/default/logs/view "real_time=no&init_day=2026-01-01 00:00; touch ${MARKER} #&end_day=2026-01-01 23:59&verbose=&others=")"
+code="$(request "$RESTRICTED_JAR" POST /index.php/default/logs/view "real_time=no&init_day=2026-01-01 00:00; touch ${MARKER} #&end_day=2026-01-01 23:59&verbose=&others=&snep_csrf_token=${RESTRICTED_CSRF}")"
 if [ "$code" = 200 ] && marker_absent "$MARKER"; then
     harness_ok "F4: shell-shaped date/hour field cannot execute" "HTTP $code, no marker file created -- the sibling injection point (hora_ini, via the date field's time token) this task's own re-audit found beyond the two the original audit named"
 else
@@ -548,7 +557,7 @@ fi
 
 FATALS_BEFORE_F5_HTTP="$(fatal_count)"
 CNL_MALICIOUS_NAME='`touch '"$MARKER"'`.zip'
-code="$(multipart_upload "$RESTRICTED_JAR" /index.php/default/cnl cnl "$LOCAL_ZIP" "$CNL_MALICIOUS_NAME" country=76 type=M)"
+code="$(multipart_upload "$RESTRICTED_JAR" /index.php/default/cnl cnl "$LOCAL_ZIP" "$CNL_MALICIOUS_NAME" country=76 type=M "snep_csrf_token=${RESTRICTED_CSRF}")"
 if marker_absent "$MARKER"; then
     harness_ok "F5: shell-shaped upload filename cannot execute" "HTTP $code, no marker file created via the real HTTP endpoint (this request also hits the unrelated pre-existing Zend upload-validator fatal documented above before reaching any of this task's code -- consistent either way with no shell execution occurring)"
 else

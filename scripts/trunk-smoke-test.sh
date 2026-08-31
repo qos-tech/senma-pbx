@@ -158,6 +158,7 @@ create_extension() {
         --data-urlencode "codec=alaw" \
         --data-urlencode "codec1=ulaw" \
         --data-urlencode "codec2=gsm" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/extensions/add")"
     if [ "$httpcode" = "302" ]; then
         rm -f "$body"
@@ -173,6 +174,7 @@ delete_extension() {
     httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null -w '%{http_code}' \
         --data-urlencode "id=${ext}" \
         --data-urlencode "delete=Delete" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/extensions/remove")"
     [ "$httpcode" = "302" ]
 }
@@ -207,6 +209,7 @@ create_trunk() {
         --data-urlencode "codec2=gsm" \
         --data-urlencode "reverse_auth=reverse_auth" \
         --data-urlencode "telco=" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/trunks/add")"
     if [ "$httpcode" = "302" ]; then
         rm -f "$body"
@@ -227,6 +230,7 @@ delete_trunk() {
         --data-urlencode "id=${id}" \
         --data-urlencode "name=${name}" \
         --data-urlencode "delete=Delete" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
         "${BASE_URL}/index.php/default/trunks/remove")"
     [ "$httpcode" = "302" ]
 }
@@ -294,6 +298,15 @@ if [ -z "$TEST_HASH" ]; then
 fi
 db_query "UPDATE users SET password = '${TEST_HASH}' WHERE name = '${TEST_USER}';" >&2
 http_login
+# TASK-0026G: create_extension()/delete_extension()/create_trunk()/
+# delete_trunk() below now need a valid snep_csrf_token (Snep_CsrfPlugin)
+# on every POST -- fetched once, reused for the rest of this script's run
+# (stable per-session value, not one-shot/rotating). The route helpers
+# (remove_route_fixture and the create/create-inbound calls further down)
+# run entirely inside the app container via a direct PHP script, never
+# over HTTP, so they need no token.
+ADMIN_CSRF="$(harness_csrf_token "$COOKIEJAR" "$BASE_URL")"
+if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session's CSRF token"; fi
 
 # --- 4. Dependency-ordered stale-fixture recovery ---------------------------
 #
