@@ -120,7 +120,16 @@ class Snep_InterfaceConf {
 
                     if ($peer['peer_type'] === 'T') {
 
-                        $select = $db->select()->from('trunks')->where("name = {$peer['name']}")->limit(1);
+                        // TASK-0026J: name is mass-assignable via
+                        // TrunksController::preparePost() ($ip_fields
+                        // includes "name") and is never covered by that
+                        // controller's own validateConfigFields() -- this
+                        // read-back must therefore treat it as untrusted
+                        // data, never SQL syntax, matching the
+                        // quoteInto()/where('col = ?', ...) convention
+                        // TASK-0026C already established for every other
+                        // trunk-name read-back in this codebase.
+                        $select = $db->select()->from('trunks')->where('name = ?', $peer['name'])->limit(1);
                         $trunk = $db->query($select)->fetchObject();
 
 

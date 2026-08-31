@@ -138,8 +138,17 @@ class CallsReportController extends Zend_Controller_Action
             $clausulepeer = explode("_", $filter['clausulepeer']);
             $where_binds = '';
 
+            // TASK-0026J: clausulepeer/clausule are only meant to be
+            // server-derived from Snep_Binds_Manager::getBond() above,
+            // but $filter is the raw, unfiltered request (getParams()) --
+            // whenever a user has no Binds row (the common case), or is
+            // the superuser (who skips the Binds lookup entirely), any
+            // directly-submitted clausulepeer value reaches this IN-list
+            // unmodified. Quoting each token here protects both origins
+            // uniformly, at no cost to the legitimate (Binds-derived)
+            // path.
             foreach ($clausulepeer as $key => $value) {
-                $where_binds .= $value . ",";
+                $where_binds .= $db->quote($value) . ",";
             }
             $where_binds = substr($where_binds, 0, -1);
 
@@ -184,19 +193,24 @@ class CallsReportController extends Zend_Controller_Action
         }
 
         
+        // TASK-0026J: selectContact(Group)Src/Dst are always contacts_group.id
+        // or contacts_names.id -- real auto-increment primary keys, a
+        // genuinely numeric domain -- so a safe (int) cast is this
+        // codebase's own established convention for this shape (matching
+        // TASK-0026F1's identical fix in the API's CallsReportService.php).
         if (isset($filter['selectContactGroupSrc']) && $filter['selectContactGroupSrc'] != "0") {
             $where_contactGroupSrc = " AND src IN (";
             $where_contactGroupSrc .= " SELECT phone FROM contacts_names cn ";
             $where_contactGroupSrc .= " INNER JOIN contacts_phone cp ON cp.contact_id = cn.id ";
             $where_contactGroupSrc .= " INNER JOIN contacts_group cg on cg.id = cn.group ";
-            $where_contactGroupSrc .= " WHERE cn.group = " . $filter['selectContactGroupSrc'];
+            $where_contactGroupSrc .= " WHERE cn.group = " . (int) $filter['selectContactGroupSrc'];
             $where_contactGroupSrc .= ") ";
         }
         if (isset($filter['selectContactSrc']) && $filter['selectContactSrc'] != "0") {
             $where_contactSrc = " AND src IN ( ";
             $where_contactSrc .= " SELECT phone FROM contacts_names cn ";
             $where_contactSrc .= " INNER JOIN contacts_phone cp ON cp.contact_id = cn.id ";
-            $where_contactSrc .= " WHERE cn.id = " . $filter['selectContactSrc'];
+            $where_contactSrc .= " WHERE cn.id = " . (int) $filter['selectContactSrc'];
             $where_contactSrc .= ") ";
         }
         if (isset($filter['selectContactGroupDst']) && $filter['selectContactGroupDst'] != "0") {
@@ -204,14 +218,14 @@ class CallsReportController extends Zend_Controller_Action
             $where_contactGroupDst .= " SELECT phone FROM contacts_names cn ";
             $where_contactGroupDst .= " INNER JOIN contacts_phone cp ON cp.contact_id = cn.id ";
             $where_contactGroupDst .= " INNER JOIN contacts_group cg on cg.id = cn.group ";
-            $where_contactGroupDst .= " WHERE cn.group = " . $filter['selectContactGroupDst'];
+            $where_contactGroupDst .= " WHERE cn.group = " . (int) $filter['selectContactGroupDst'];
             $where_contactGroupDst .= ") ";
         }
         if (isset($filter['selectContactDst']) && $filter['selectContactDst'] != "0") {
             $where_contactDst = " AND dst IN ( ";
             $where_contactDst .= " SELECT phone FROM contacts_names cn ";
             $where_contactDst .= " INNER JOIN contacts_phone cp ON cp.contact_id = cn.id ";
-            $where_contactDst .= " WHERE cn.id = " . $filter['selectContactDst'];
+            $where_contactDst .= " WHERE cn.id = " . (int) $filter['selectContactDst'];
             $where_contactDst .= ") ";
         }
         
@@ -254,17 +268,22 @@ class CallsReportController extends Zend_Controller_Action
         }
 
         // Src or dst value
+        // TASK-0026J: src/dst are SIP peer identifiers/callerids, not a
+        // numeric-only domain (extension names can be alphanumeric), so
+        // this uses $db->quote()/quoteInto() rather than an (int) cast --
+        // the same treatment TASK-0026C already applied to comparable
+        // free-text identifier fields elsewhere in this codebase.
         if ($filter['groupSrc'] != "") {
             $src = $filter['groupSrc'];
             if (strpos($src, ",")) {
                 $where_src = '';
                 $arrSrc = explode(",", $src);
                 foreach ($arrSrc as $srcs) {
-                    ($filter['order_src'] == 'equal') ? $where_src .= " OR (src = $srcs)" : $where_src .= " OR (src LIKE '%$srcs%')";
+                    ($filter['order_src'] == 'equal') ? $where_src .= " OR (src = " . $db->quote($srcs) . ")" : $where_src .= " OR (src LIKE " . $db->quote('%' . $srcs . '%') . ")";
                 }
                 $where_src = " AND (" . substr($where_src, 3) . ")";
             } else {
-                ($filter['order_src'] == 'equal') ? $where_src = "AND (src = $src)" : $where_src = "AND (src LIKE '%$src%')";
+                ($filter['order_src'] == 'equal') ? $where_src = "AND (src = " . $db->quote($src) . ")" : $where_src = "AND (src LIKE " . $db->quote('%' . $src . '%') . ")";
             }
         }
 
@@ -274,17 +293,19 @@ class CallsReportController extends Zend_Controller_Action
                 $where_dst = '';
                 $arrdst = explode(",", $dst);
                 foreach ($arrdst as $dsts) {
-                    ($filter['order_dst'] == 'equal') ? $where_dst .= " OR (dst = $dsts)" : $where_dst .= " OR (dst LIKE '%$dsts%')";
+                    ($filter['order_dst'] == 'equal') ? $where_dst .= " OR (dst = " . $db->quote($dsts) . ")" : $where_dst .= " OR (dst LIKE " . $db->quote('%' . $dsts . '%') . ")";
                 }
                 $where_dst = " AND (" . substr($where_dst, 3) . ")";
             } else {
-                ($filter['order_dst'] == 'equal') ? $where_dst = "AND (dst = $dst)" : $where_dst = "AND (dst LIKE '%$dst%')";
+                ($filter['order_dst'] == 'equal') ? $where_dst = "AND (dst = " . $db->quote($dst) . ")" : $where_dst = "AND (dst LIKE " . $db->quote('%' . $dst . '%') . ")";
             }
         }
 
-        // Time call option
-        ($filter['duration_init'] != "") ? $where_options[] = ' duration >= ' . $filter['duration_init'] . ' ' : null;
-        ($filter['duration_end'] != "") ? $where_options[] = ' duration <= ' . $filter['duration_end'] . ' ' : null;
+        // Time call option -- duration is seconds, a genuinely numeric
+        // domain (TASK-0026J: (int) cast, matching TASK-0026F1's identical
+        // fix for the same field in the API's CallsReportService.php).
+        ($filter['duration_init'] != "") ? $where_options[] = ' duration >= ' . (int) $filter['duration_init'] . ' ' : null;
+        ($filter['duration_end'] != "") ? $where_options[] = ' duration <= ' . (int) $filter['duration_end'] . ' ' : null;
 
         // cost center
         if (!empty($filter['costs_center'])) {
@@ -292,7 +313,11 @@ class CallsReportController extends Zend_Controller_Action
             if (count($cost_centers) > 0) {
                 $tmp_cc = "";
                 foreach ($cost_centers as $valor) {
-                    $tmp_cc .= " cdr.accountcode like '" . $valor . "%'";
+                    // TASK-0026J: cost-center codes are free-text
+                    // accountcode prefixes, not numeric -- quote() with
+                    // the wildcard baked into the quoted literal preserves
+                    // the existing LIKE '<value>%' semantics exactly.
+                    $tmp_cc .= " cdr.accountcode like " . $db->quote($valor . '%');
                     $tmp_cc .= " OR ";
                 }
                 $cost_centers = implode(",", $cost_centers);
@@ -348,7 +373,15 @@ class CallsReportController extends Zend_Controller_Action
             $select .= " FROM cdr ";
         }
         $select .= " LEFT JOIN ccustos ON accountcode = ccustos.codigo ";
-        $select .= " WHERE ( calldate >= '$start_date' AND calldate <= '$end_date') ";
+        // TASK-0026J: Snep_Reports::fmt_date() only reformats the DATE
+        // half of each boundary (via Zend_Date); the TIME half
+        // ($date['start_hour']/['end_hour']) is the raw, unvalidated
+        // second token of the submitted "period" value and was
+        // previously interpolated directly inside this string's own
+        // quote boundary. quote() removes that as a live break-out point
+        // while leaving the resulting comparison value unchanged for any
+        // legitimate HH:MM input.
+        $select .= " WHERE ( calldate >= " . $db->quote($start_date) . " AND calldate <= " . $db->quote($end_date) . ") ";
         $select .= (isset($where_cost_center)) ? $where_cost_center : '';
         $select .= (isset($where)) ? $where : '';
         $select .= (isset($where_contactGroupSrc)) ? $where_contactGroupSrc : '';
