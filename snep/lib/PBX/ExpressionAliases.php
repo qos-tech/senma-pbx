@@ -93,7 +93,7 @@ class PBX_ExpressionAliases {
         }
 
         $db = Zend_Registry::get('db');
-        $select = "SELECT name FROM expr_alias WHERE aliasid='$id'";
+        $select = $db->quoteInto("SELECT name FROM expr_alias WHERE aliasid=?", $id);
 
         $stmt = $db->query($select);
         $raw_alias = $stmt->fetchObject();
@@ -104,7 +104,7 @@ class PBX_ExpressionAliases {
         );
 
         $db = Zend_Registry::get('db');
-        $select = "SELECT expression FROM expr_alias_expression WHERE aliasid='$id'";
+        $select = $db->quoteInto("SELECT expression FROM expr_alias_expression WHERE aliasid=?", $id);
 
         $stmt = $db->query($select);
         $raw_expression = $stmt->fetchAll();
@@ -172,8 +172,8 @@ class PBX_ExpressionAliases {
 
         $db = Zend_Registry::get('db');
         $db->beginTransaction();
-        $db->update("expr_alias", array("name" => $expression['name']), "aliasid='$id'");
-        $db->delete("expr_alias_expression", "aliasid='$id'");
+        $db->update("expr_alias", array("name" => $expression['name']), $db->quoteInto('aliasid = ?', $id));
+        $db->delete("expr_alias_expression", $db->quoteInto('aliasid = ?', $id));
 
         foreach ($expression['expressions'] as $key => $expr) {
             $data = array("aliasid" => $id, "expression" => $expr);
@@ -195,7 +195,7 @@ class PBX_ExpressionAliases {
     public function delete($id) {
         $db = Zend_Registry::get('db');
 
-        $db->delete("expr_alias", "aliasid='$id'");
+        $db->delete("expr_alias", $db->quoteInto('aliasid = ?', $id));
     }
 
     /**

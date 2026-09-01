@@ -103,7 +103,7 @@ class Snep_CostCenter_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('ccustos', "codigo = '$id'");
+        $db->delete('ccustos', $db->quoteInto('codigo = ?', $id));
 
         try {
             $db->commit();
@@ -125,7 +125,7 @@ class Snep_CostCenter_Manager {
             'nome' => $costcenter['name'],
             'descricao' => $costcenter['description']);
 
-        $db->update("ccustos", $update_data, "codigo = '{$costcenter['id']}'");
+        $db->update("ccustos", $update_data, $db->quoteInto('codigo = ?', $costcenter['id']));
     }
 
     /**

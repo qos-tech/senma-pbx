@@ -110,7 +110,10 @@ class Snep_SoundFiles_Manager {
         $update_data = array('descricao' => $file['description'],
             'tipo' => 'AST');
 
-        $db->update("sounds", $update_data, "arquivo = '{$file['arquivo']}' and language = '{$this->lang}'");
+        $db->update("sounds", $update_data, array(
+            'arquivo = ?' => $file['arquivo'],
+            'language = ?' => $this->lang,
+        ));
     }
 
     /**
@@ -125,9 +128,18 @@ class Snep_SoundFiles_Manager {
 
         $db->beginTransaction();
         if ($class) {
-            $db->delete('sounds', "arquivo = '$file' and secao = '$class' and tipo='MOH' and language = '$this->lang'");
+            $db->delete('sounds', array(
+                'arquivo = ?' => $file,
+                'secao = ?' => $class,
+                "tipo = 'MOH'",
+                'language = ?' => $this->lang,
+            ));
         } else {
-            $db->delete('sounds', "arquivo = '$file' and tipo='AST' and language = '$this->lang'");
+            $db->delete('sounds', array(
+                'arquivo = ?' => $file,
+                "tipo = 'AST'",
+                'language = ?' => $this->lang,
+            ));
         }
 
         try {
@@ -329,7 +341,12 @@ class Snep_SoundFiles_Manager {
             'secao' => $file['secao']);
 
         try {
-            $db->update('sounds', $insert_data, "arquivo='{$file['arquivo']}' and secao='{$file['secao']}' and language='{$this->lang}' and tipo='MOH'");
+            $db->update('sounds', $insert_data, array(
+                'arquivo = ?' => $file['arquivo'],
+                'secao = ?' => $file['secao'],
+                'language = ?' => $this->lang,
+                "tipo = 'MOH'",
+            ));
         } catch (Exception $e) {
             return false;
         }

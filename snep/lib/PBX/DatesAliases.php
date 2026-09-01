@@ -106,7 +106,7 @@ class PBX_DatesAliases {
         $select = $db->select()
                 ->from(array("n" => "date_alias"), array("id","name"))
                 ->join(array("p" => "date_alias_list"), 'n.id = p.dateid', array("date","timerange","list_id" => "id"))
-                ->where("n.id = $id");
+                ->where('n.id = ?', $id);
 
         $stmt = $db->query($select);
         $dates = $stmt->fetchAll();
@@ -150,8 +150,8 @@ class PBX_DatesAliases {
 
         $db = Zend_Registry::get('db');
         $db->beginTransaction();
-        $db->update("date_alias", array("name" => $dates['name']), "id='$id'");
-        $db->delete("date_alias_list", "dateid=$id");
+        $db->update("date_alias", array("name" => $dates['name']), $db->quoteInto('id = ?', $id));
+        $db->delete("date_alias_list", $db->quoteInto('dateid = ?', $id));
 
         foreach ($dates['date'] as $key => $value) {
           $data = array("date" => $value, "timerange" => $dates['timerange'][$key], "dateid" => $id);
@@ -173,8 +173,8 @@ class PBX_DatesAliases {
     public static function delete($id) {
         $db = Zend_Registry::get('db');
 
-        $db->delete("date_alias_list", "dateid=$id");
-        $db->delete("date_alias", "id='$id'");
+        $db->delete("date_alias_list", $db->quoteInto('dateid = ?', $id));
+        $db->delete("date_alias", $db->quoteInto('id = ?', $id));
 
     }
 
@@ -187,7 +187,7 @@ class PBX_DatesAliases {
       $db = Zend_Registry::get("db");
       $select = $db->select()
                   ->from('regras_negocio')
-                  ->where("FIND_IN_SET($id, regras_negocio.dates_alias)");
+                  ->where('FIND_IN_SET(?, regras_negocio.dates_alias)', $id);
       return $db->query($select)->fetchAll();
 
     }

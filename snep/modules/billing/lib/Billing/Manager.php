@@ -164,7 +164,7 @@ class Billing_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('billing', "id = '$id'");
+        $db->delete('billing', $db->quoteInto('id = ?', $id));
 
         try {
             $db->commit();
@@ -189,7 +189,7 @@ class Billing_Manager {
           "type" => $bill['billtype']
         );
         $db->beginTransaction();
-        $db->update("billing", $update_data, "id = '{$bill['id']}'");
+        $db->update("billing", $update_data, $db->quoteInto('id = ?', $bill['id']));
         try {
             $db->commit();
             return true;

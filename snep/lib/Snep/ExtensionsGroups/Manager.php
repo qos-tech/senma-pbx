@@ -63,7 +63,7 @@ class Snep_ExtensionsGroups_Manager {
         $db = Zend_Registry::get('db');
         $select = $db->select()
                 ->from('core_groups')
-                ->where("id = $id");
+                ->where('id = ?', $id);
 
         $stmt = $db->query($select);
         return $stmt->fetch();
@@ -303,7 +303,7 @@ class Snep_ExtensionsGroups_Manager {
 
             $value = array('name' => $group['name']);
 
-            $db->update("core_groups", $value, "id = " . $group['id'] );
+            $db->update("core_groups", $value, $db->quoteInto('id = ?', $group['id']));
             $db->commit();
 
             return true;
@@ -375,7 +375,7 @@ class Snep_ExtensionsGroups_Manager {
 
         try {
 
-            $db->delete("core_groups", "id= ".$id);
+            $db->delete("core_groups", $db->quoteInto('id = ?', $id));
             $db->commit();
 
             return true;
@@ -399,9 +399,9 @@ class Snep_ExtensionsGroups_Manager {
 
         try {
 
-            $db->delete("core_peer_groups", 
-                array('peer_id = '.$member['peer_id'],
-                      'group_id = '.$member['group_id']));
+            $db->delete("core_peer_groups",
+                array('peer_id = ?' => $member['peer_id'],
+                      'group_id = ?' => $member['group_id']));
             $db->commit();
             return true;
         } catch (Exception $e) {
@@ -424,8 +424,8 @@ class Snep_ExtensionsGroups_Manager {
 
         try {
 
-            $db->delete("core_peer_groups", 
-                array('peer_id = '.$extension));
+            $db->delete("core_peer_groups",
+                array('peer_id = ?' => $extension));
             $db->commit();
             return true;
         } catch (Exception $e) {

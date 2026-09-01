@@ -92,7 +92,7 @@ class Telcos_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('telcos', "id = '$id'");
+        $db->delete('telcos', $db->quoteInto('id = ?', $id));
 
         try {
             $db->commit();
@@ -118,7 +118,7 @@ class Telcos_Manager {
           "fract" => $telco['fract']
         );
         $db->beginTransaction();
-        $db->update("telcos", $update_data, "id = '{$telco['id']}'");
+        $db->update("telcos", $update_data, $db->quoteInto('id = ?', $telco['id']));
         try {
             $db->commit();
             return true;

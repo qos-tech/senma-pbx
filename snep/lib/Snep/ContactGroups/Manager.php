@@ -98,7 +98,7 @@ class Snep_ContactGroups_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('contacts_group', "id = '$id'");
+        $db->delete('contacts_group', $db->quoteInto('id = ?', $id));
 
         try {
             $db->commit();
@@ -116,7 +116,7 @@ class Snep_ContactGroups_Manager {
         $db = Zend_Registry::get('db');
 
         $update_data = array('name'     => $group['group']);
-        $db->update("contacts_group", $update_data, "id = '{$group['id']}'");
+        $db->update("contacts_group", $update_data, $db->quoteInto('id = ?', $group['id']));
         
     }
 
@@ -131,7 +131,7 @@ class Snep_ContactGroups_Manager {
         
         $update_data = array("group" => $groupId);
 
-        $db->update("contacts_names", $update_data, "id = '{$contactId}'");
+        $db->update("contacts_names", $update_data, $db->quoteInto('id = ?', $contactId));
         
     }
     
@@ -145,7 +145,7 @@ class Snep_ContactGroups_Manager {
         
         $update_data = array("group" => 1);
 
-        $db->update("contacts_names", $update_data, "id = '{$contactId}'");
+        $db->update("contacts_names", $update_data, $db->quoteInto('id = ?', $contactId));
         
     }
     

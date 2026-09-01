@@ -47,7 +47,7 @@ class Snep_ExpressionAliases_Manager {
     public static function delete($id) {
         $db = Zend_Registry::get('db');
 
-        $db->delete("expr_alias", "aliasid='$id'");
+        $db->delete("expr_alias", $db->quoteInto('aliasid = ?', $id));
     }
 
     /**
