@@ -163,8 +163,17 @@ class RankingReportController extends Zend_Controller_Action
             $clausulepeer = explode("_", $filter['clausulepeer']);
             $where_binds = '';
 
+            // TASK-0026K: clausulepeer/clausule are only meant to be
+            // server-derived from Snep_Binds_Manager::getBond() above,
+            // but $filter is the raw, unfiltered request (getParams()) --
+            // whenever a user has no Binds row (the common case), or is
+            // the superuser (who skips the Binds lookup entirely), any
+            // directly-submitted clausulepeer value reaches this IN-list
+            // unmodified. Quoting each token here protects both origins
+            // uniformly, at no cost to the legitimate (Binds-derived)
+            // path -- same pattern as CallsReportController (TASK-0026J).
             foreach ($clausulepeer as $key => $value) {
-                $where_binds .= $value . ",";
+                $where_binds .= $db->quote($value) . ",";
             }
             $where_binds = substr($where_binds, 0, -1);
 
@@ -209,7 +218,15 @@ class RankingReportController extends Zend_Controller_Action
 
         $select = "SELECT cdr.src, cdr.dst, cdr.disposition, cdr.duration, cdr.billsec, cdr.userfield, cdr.uniqueid ";
         $select .= " FROM cdr JOIN peers on cdr.src = peers.name WHERE";
-        $select .= " ( calldate >= '$start_date' AND calldate <= '$end_date')";
+        // TASK-0026K: Snep_Reports::fmt_date() only reformats the DATE
+        // half of each boundary (via Zend_Date); the TIME half is the
+        // raw, unvalidated second token of the submitted "period" value
+        // and was previously interpolated directly inside this string's
+        // own quote boundary. quote() removes that as a live break-out
+        // point while leaving the resulting comparison value unchanged
+        // for any legitimate HH:MM input (matching CallsReportController,
+        // TASK-0026J).
+        $select .= " ( calldate >= " . $db->quote($start_date) . " AND calldate <= " . $db->quote($end_date) . ")";
         $select .= isset($where_binds) ? $where_binds : '';
         $select .= isset($where_prefix) ? $where_prefix : '';
         $select .= isset($where_exceptions) ? $where_exceptions : '';

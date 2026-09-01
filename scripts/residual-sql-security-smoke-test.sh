@@ -17,6 +17,18 @@
 #     already-hardened API CallsReportService.php (TASK-0026F1), never
 #     itself in scope until now.
 #
+# TASK-0026K extends this same suite (per its own Phase 6 instruction:
+# "extend ... rather than creating another one-off SQL suite") to close
+# the two sibling report-controller findings TASK-0026J's own Phase 8
+# sweep discovered but explicitly left unfixed:
+#
+#   BLOCKER C -- RankingReportController::getData()'s report-filter SQL
+#     construction (date range, clausulepeer) -- the MVC twin of the
+#     already-hardened API RankingReportService.php (TASK-0026F1).
+#   BLOCKER D -- ServicesReportController::getData()'s report-filter SQL
+#     construction (date range, clausulepeer) -- the MVC twin of the
+#     already-hardened API ServicesReportService.php (TASK-0026F1).
+#
 # Every payload below is a harmless, non-destructive, syntax-shaped
 # string or boolean-oracle value applied only to fixtures this script
 # owns -- never a real exploit chain, never password/hash/schema
@@ -134,7 +146,7 @@ if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session'
 RESTRICTED_CSRF="$(harness_csrf_token "$RESTRICTED_JAR" "$BASE_URL")"
 if [ -z "$RESTRICTED_CSRF" ]; then harness_blocked "could not read the restricted session's CSRF token"; fi
 
-for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report"; do
+for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report"; do
     code="$(request "$RESTRICTED_JAR" GET "$boundary_path")"
     if [ "$code" = 302 ] && redirects_to_permission_error; then
         harness_ok "authorization intact: ${boundary_path}" "zero-permission user denied (HTTP 302, Location: permission/error)"
@@ -143,9 +155,9 @@ for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-r
     fi
 done
 
-code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&snep_csrf_token=${ADMIN_CSRF}")"
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&snep_csrf_token=${ADMIN_CSRF}")"
 if [ "$code" = 302 ]; then
-    harness_ok "admin grants exactly the two required permissions" "HTTP $code (trunks-write, calls-report-read)"
+    harness_ok "admin grants exactly the four required permissions" "HTTP $code (trunks-write, calls-report-read, ranking-report-read, services-report-read)"
 else
     harness_blocked "granting permissions to the restricted user failed (HTTP $code) -- cannot proceed"
 fi
@@ -386,5 +398,96 @@ if [ -n "$LATEST_CALLDATE" ] && harness_cdr_report_window "$LATEST_CALLDATE" 5; 
 else
     harness_ok "CallsReport: CDR timezone semantics (TASK-0027A) unchanged" "no existing CDR row available in this environment yet -- skipping the anchored proof, already covered by the other checks above"
 fi
+
+# report_check <label> <path> <field=value>... -- POSTs to <path> and
+# verifies no NEW PHP Fatal Error is introduced and no SQL/syntax error
+# ever appears in the log tail. Unlike calls_report_check above,
+# RankingReportController.php and ServicesReportController.php carry no
+# known pre-existing crash signature (confirmed: neither runs count() on
+# a Zend_Db_Statement_Pdo object) -- PASS here means a fully clean
+# response with zero fatal/syntax-error log entries, not merely "only
+# the known bug fired".
+report_check() {
+    local label="$1" path="$2"
+    shift 2
+    local before_total after_total tail_text total_delta
+    before_total="$(fatal_count)"
+    post_fields "$RESTRICTED_JAR" "$path" "$@" >/dev/null
+    after_total="$(fatal_count)"
+    tail_text="$(app_exec 'tail -c 4000 /var/log/apache2/mag-error.log 2>/dev/null')"
+    total_delta=$((after_total - before_total))
+    if [ "$total_delta" -eq 0 ] && ! echo "$tail_text" | grep -qi "SQLSTATE\|syntax error"; then
+        harness_ok "$label" "no PHP Fatal Error, no SQL/syntax error"
+    else
+        harness_bad "$label" "fatal_delta=${total_delta}; log tail: $(echo "$tail_text" | tr '\n' ' ' | tail -c 300)"
+    fi
+}
+
+# =============================================================================
+# BLOCKER C -- RankingReportController report-filter SQL construction
+# =============================================================================
+
+log "==> BLOCKER C: RankingReportController report-filter boundary"
+
+# 14. A legitimate report request reaches the DB layer cleanly.
+report_check "RankingReport: legitimate report request reaches the DB layer cleanly" \
+    /index.php/default/ranking-report \
+    "period=${WIDE_PERIOD}" "type=num" "showsource=10" "showdestiny=10" "out_type=list" \
+    "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# 15/16. Always-false / always-true SQL-shaped clausulepeer cannot alter
+# semantics -- quote() turns each IN-list token into inert literal data,
+# so neither payload's embedded boolean condition is ever evaluated as
+# SQL syntax (pre-fix, both produced a genuine SQLSTATE[42000] syntax
+# error -- confirmed live during this task's own A/B verification).
+report_check "RankingReport: always-false SQL-shaped clausulepeer cannot alter semantics" \
+    /index.php/default/ranking-report \
+    "period=${WIDE_PERIOD}" "type=num" "showsource=10" "showdestiny=10" "out_type=list" \
+    "clausule=somebound" "clausulepeer=0' AND '1'='2" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+report_check "RankingReport: always-true SQL-shaped clausulepeer cannot alter semantics" \
+    /index.php/default/ranking-report \
+    "period=${WIDE_PERIOD}" "type=num" "showsource=10" "showdestiny=10" "out_type=list" \
+    "clausule=somebound" "clausulepeer=1' OR '1'='1" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# 17. Apostrophe/quote input (embedded in the raw, unvalidated TIME half
+# of "period" -- Snep_Reports::fmt_date() only reformats the DATE half)
+# causes no SQL error.
+report_check "RankingReport: apostrophe-containing period value causes no SQL error" \
+    /index.php/default/ranking-report \
+    "period=01/01/2000 00:00' - 31/12/2030 23:59" "type=num" "showsource=10" "showdestiny=10" "out_type=list" \
+    "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# =============================================================================
+# BLOCKER D -- ServicesReportController report-filter SQL construction
+# =============================================================================
+
+log "==> BLOCKER D: ServicesReportController report-filter boundary"
+
+# 18. A legitimate report request reaches the DB layer cleanly.
+report_check "ServicesReport: legitimate report request reaches the DB layer cleanly" \
+    /index.php/default/services-report \
+    "period=${WIDE_PERIOD}" "serv_select[]=DND" "group_select=0" "exten_select=" \
+    "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# 19/20. Always-false / always-true SQL-shaped clausulepeer cannot alter
+# semantics -- same quote() containment as BLOCKER C, applied to the
+# "peer IN (...)"/"peer NOT IN (...)" boundary.
+report_check "ServicesReport: always-false SQL-shaped clausulepeer cannot alter semantics" \
+    /index.php/default/services-report \
+    "period=${WIDE_PERIOD}" "serv_select[]=DND" "group_select=0" "exten_select=" \
+    "clausule=somebound" "clausulepeer=0' AND '1'='2" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+report_check "ServicesReport: always-true SQL-shaped clausulepeer cannot alter semantics" \
+    /index.php/default/services-report \
+    "period=${WIDE_PERIOD}" "serv_select[]=DND" "group_select=0" "exten_select=" \
+    "clausule=somebound" "clausulepeer=1' OR '1'='1" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# 21. Apostrophe/quote input (embedded in the raw, unvalidated TIME half
+# of "period") causes no SQL error.
+report_check "ServicesReport: apostrophe-containing period value causes no SQL error" \
+    /index.php/default/services-report \
+    "period=01/01/2000 00:00' - 31/12/2030 23:59" "serv_select[]=DND" "group_select=0" "exten_select=" \
+    "snep_csrf_token=${RESTRICTED_CSRF}"
 
 harness_complete
