@@ -102,6 +102,15 @@
 # verified via direct Manager invocation only, matching that task's own
 # established precedent.
 #
+# TASK-0026N extends this suite again to close the four confirmed sinks
+# TASK-0026M's own Phase 9 final sweep discovered but explicitly left
+# unfixed (docs/tasks/0026m-manager-layer-residual-sql-closure.md,
+# "Security handoff"): PBX_Rule::checkExpr()'s 'CG'/'G' cases,
+# PBX_Usuarios::hasExtenGroup(), and PBX_Rules::delete() -- see
+# docs/tasks/0026n-pbx-rule-sql-closure.md for the full inventory,
+# including the sibling sites (PBX_Rule::getValidAliasDateById(),
+# PBX_Usuarios::get(), PBX_Rules::get()/update()) fixed alongside them.
+#
 # Every payload below is a harmless, non-destructive, syntax-shaped
 # string or boolean-oracle value applied only to fixtures this script
 # owns -- never a real exploit chain, never password/hash/schema
@@ -285,7 +294,7 @@ if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session'
 RESTRICTED_CSRF="$(harness_csrf_token "$RESTRICTED_JAR" "$BASE_URL")"
 if [ -z "$RESTRICTED_CSRF" ]; then harness_blocked "could not read the restricted session's CSRF token"; fi
 
-for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report" "/index.php/default/pickup-groups" "/index.php/default/queues" "/index.php/default/contacts" "/index.php/default/contact-groups" "/index.php/default/dates-alias" "/index.php/default/expression-alias" "/index.php/default/cost-center" "/index.php/default/extensions-groups" "/index.php/default/sound-files" "/index.php/billing/billing" "/index.php/billing/telcos"; do
+for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report" "/index.php/default/pickup-groups" "/index.php/default/queues" "/index.php/default/contacts" "/index.php/default/contact-groups" "/index.php/default/dates-alias" "/index.php/default/expression-alias" "/index.php/default/cost-center" "/index.php/default/extensions-groups" "/index.php/default/sound-files" "/index.php/billing/billing" "/index.php/billing/telcos" "/index.php/default/route"; do
     code="$(request "$RESTRICTED_JAR" GET "$boundary_path")"
     if [ "$code" = 302 ] && redirects_to_permission_error; then
         harness_ok "authorization intact: ${boundary_path}" "zero-permission user denied (HTTP 302, Location: permission/error)"
@@ -294,9 +303,21 @@ for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-r
     fi
 done
 
-code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&default_contacts_write=1&default_contact-groups_write=1&default_dates-alias_write=1&default_expression-alias_write=1&default_cost-center_write=1&default_extensions-groups_write=1&default_sound-files_write=1&billing_billing_write=1&billing_telcos_write=1&snep_csrf_token=${ADMIN_CSRF}")"
+# TASK-0026N: default_simulator is on the authenticated-open allowlist
+# (Snep_PermissionPlugin::$readActions -- see PermissionPlugin.php) --
+# unlike every resource above, a zero-permission session must be ALLOWED
+# in, not denied. This is exactly the property that makes the CG/G
+# findings severe: no specific grant is needed at all.
+code="$(request "$RESTRICTED_JAR" GET "/index.php/default/simulator")"
+if [ "$code" = 200 ]; then
+    harness_ok "authenticated-open confirmed: /index.php/default/simulator" "zero-permission user still allowed in (HTTP 200) -- default_simulator requires no specific grant"
+else
+    harness_bad "authenticated-open confirmed: /index.php/default/simulator" "expected HTTP 200 for a zero-permission session, got HTTP ${code}"
+fi
+
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&default_contacts_write=1&default_contact-groups_write=1&default_dates-alias_write=1&default_expression-alias_write=1&default_cost-center_write=1&default_extensions-groups_write=1&default_sound-files_write=1&billing_billing_write=1&billing_telcos_write=1&default_route_write=1&snep_csrf_token=${ADMIN_CSRF}")"
 if [ "$code" = 302 ]; then
-    harness_ok "admin grants the required TASK-0026M permissions" "HTTP $code (contacts/contact-groups/dates-alias/expression-alias/cost-center/extensions-groups/sound-files write, billing/telcos write, plus the six TASK-0026J-L permissions)"
+    harness_ok "admin grants the required TASK-0026M/N permissions" "HTTP $code (contacts/contact-groups/dates-alias/expression-alias/cost-center/extensions-groups/sound-files write, billing/telcos write, route write, plus the six TASK-0026J-L permissions)"
 else
     harness_blocked "granting permissions to the restricted user failed (HTTP $code) -- cannot proceed"
 fi
@@ -1528,6 +1549,350 @@ if [ "$FATALS_AFTER_M" = "$FATALS_BEFORE_M" ]; then
     harness_ok "TASK-0026M: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_BEFORE_M})"
 else
     harness_bad "TASK-0026M: application remained healthy" "PHP Fatal Error count changed: ${FATALS_BEFORE_M} -> ${FATALS_AFTER_M}"
+fi
+
+# =============================================================================
+# TASK-0026N -- PBX Rules and Simulator SQL boundary closure
+# =============================================================================
+#
+# Closes the four confirmed SQL-injection sinks TASK-0026M's own Phase 9
+# final sweep discovered but explicitly left unfixed
+# (docs/tasks/0026m-manager-layer-residual-sql-closure.md, "Security
+# handoff"), plus every sibling method in the same three classes sharing
+# the exact same raw-interpolation root cause:
+#
+#   N1/N2 -- PBX_Rule::checkExpr()'s 'CG'/'G' cases -- reachable via
+#     SimulatorController::indexAction() (default_simulator is on the
+#     authenticated-open allowlist -- ANY logged-in account, no specific
+#     permission grant needed).
+#   N3   -- PBX_Usuarios::hasExtenGroup() -- reached from the same 'G'
+#     case above.
+#   N4   -- PBX_Rules::delete() -- reachable via
+#     RouteController::removeAction() (default_route_write).
+#
+# Sibling audit additionally found and fixed:
+#   - PBX_Rule::getValidAliasDateById() (unquoted "n.id = $id") --
+#     second-order: RouteController's own datesValue POST field is
+#     persisted into regras_negocio.dates_alias with zero validation,
+#     then re-enters this unquoted numeric-context SQL whenever
+#     PBX_Dialplan_Verbose::parse() (the Simulator's own rule-matching
+#     engine) evaluates isValidAliasTime() on that rule.
+#   - PBX_Usuarios::get() -- was "protected" only by a fragile,
+#     CLAUDE.md-forbidden str_replace("'", "\'", ...) escape (confirmed
+#     currently effective under this project's actual MariaDB
+#     sql_mode/charset, per TASK-0026M's own live verification, but
+#     replaced here with proper parameterization for defense in depth).
+#   - PBX_Rules::get() (3 statements) / PBX_Rules::update() (2
+#     statements) -- reachable via RouteController::toogleAction()
+#     (route/toogle, POST, no equivalent unrelated-bug block) and
+#     RouteFormController::get_rule_actions() (the route editor's own
+#     AJAX action-list endpoint), both feeding a raw route/rule id
+#     straight into get()'s/update()'s WHERE clauses.
+#
+# Pre-existing, unrelated PHP 8.4/strict-SQL-mode bugs discovered while
+# reconstructing these boundaries (documented in
+# docs/tasks/0026n-pbx-rule-sql-closure.md, not fixed here per CLAUDE.md's
+# "do not fix unrelated legacy bugs opportunistically"):
+#   - RouteController::editAction()/duplicateAction() both call the
+#     PHP-7-removed mysql_escape_string() unconditionally before any
+#     Manager call -- every request to either action (GET or POST) fatals
+#     immediately, the same bug CLASS TASK-0026L documented for
+#     PickupGroupsController::removeAction(). PBX_Rules::get()'s own fix
+#     is still exercised and proven live via route/toogle instead (no
+#     equivalent block on that action).
+#   - PBX_Rules::update()'s own "record" field carries $rule->isRecording()
+#     (a PHP bool) uncast -- PDO binds `false` as '' which strict MariaDB
+#     rejects for this NOT NULL int column, the exact bug class TASK-0015
+#     already fixed for register() but never extended to update(). Every
+#     real toogleAction() call past get() hits this; update()'s own SQL
+#     fix is instead verified via direct invocation with $rule->record()
+#     called first (stringifies to '1', routes around the unrelated bug),
+#     matching this program's established precedent.
+#
+# Every payload below is a harmless, non-destructive, syntax-shaped
+# string or boolean-oracle value applied only to fixtures this script
+# owns -- never a real exploit chain, never password/hash/schema
+# extraction.
+
+log "==> TASK-0026N: PBX_Rule/PBX_Usuarios/PBX_Rules boundary"
+
+FATALS_BEFORE_N="$(fatal_count)"
+
+# --- Real-HTTP core proof -------------------------------------------------
+
+manager_check "PBX_Rules::delete(): apostrophe-shaped remove id causes no SQL error" \
+    /index.php/default/route/remove "id=foo'bar" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# route/toogle's apostrophe-shaped id throws PBX_Exception_NotFound cleanly
+# inside get() -- it never reaches update(), so this specific payload does
+# NOT hit the unrelated "record" bug documented above; a real SQLSTATE
+# 42000 syntax error is the only FAIL signature.
+code="$(post_fields "$RESTRICTED_JAR" /index.php/default/route/toogle "route=foo'bar" "snep_csrf_token=${RESTRICTED_CSRF}")"
+TAIL_N="$(app_exec 'tail -c 2000 /var/log/apache2/mag-error.log 2>/dev/null')"
+if ! echo "$TAIL_N" | grep -qi "SQLSTATE\[42000\]\|syntax error"; then
+    harness_ok "PBX_Rules::get(): apostrophe-shaped route/toogle id causes no SQL error" "HTTP $code, no SQL syntax error (clean NotFound)"
+else
+    harness_bad "PBX_Rules::get(): apostrophe-shaped route/toogle id causes no SQL error" "HTTP $code, log tail: $(echo "$TAIL_N" | tr '\n' ' ' | tail -c 300)"
+fi
+
+# Simulator: apostrophe-shaped caller against a real CG-type business rule
+# causes no SQL error -- the core checkExpr('CG') proof, driven through
+# the real, authenticated HTTP flow. Fixture created/removed via direct
+# PBX_Rules::register()/delete() (the real addAction() HTTP flow adds
+# unrelated form-validation complexity not needed here).
+SIM_FIXTURE_PHP="$(mktemp)"
+cat > "$SIM_FIXTURE_PHP" <<'PHPEOF'
+$r = new PBX_Rule();
+$r->setDesc('task0026n-http-cg-rule');
+$r->setPriority(999);
+$r->setTypeRule('others');
+$r->addSrc(['type' => 'CG', 'value' => '1']);
+$r->addDst(['type' => 'X', 'value' => '']);
+foreach (['sun','mon','tue','wed','thu','fri','sat'] as $d) { $r->addWeekDay($d); }
+$r->addValidTime('00:00-23:59');
+$r->record();
+PBX_Rules::register($r);
+echo 'SIM_FIXTURE_ID:' . $r->getId() . PHP_EOL;
+PHPEOF
+SIM_FIXTURE_OUT="$(run_manager_php_file "$SIM_FIXTURE_PHP")"
+rm -f "$SIM_FIXTURE_PHP"
+SIM_RULE_ID="$(echo "$SIM_FIXTURE_OUT" | grep '^SIM_FIXTURE_ID:' | sed 's/SIM_FIXTURE_ID://' | tr -d '\r')"
+if [ -n "$SIM_RULE_ID" ]; then
+    harness_ok "Simulator: CG-type business rule fixture created" "rule id=${SIM_RULE_ID}"
+else
+    harness_blocked "could not create the Simulator CG-type rule fixture -- output: $SIM_FIXTURE_OUT"
+fi
+cleanup_sim_rule_fixture() {
+    [ -n "$SIM_RULE_ID" ] || return 0
+    SIM_CLEAN_PHP="$(mktemp)"
+    printf 'PBX_Rules::delete(%s);\necho "cleaned";\n' "$SIM_RULE_ID" > "$SIM_CLEAN_PHP"
+    run_manager_php_file "$SIM_CLEAN_PHP" | grep -q cleaned
+    rm -f "$SIM_CLEAN_PHP"
+}
+harness_register_cleanup "Simulator CG-type rule fixture (id=${SIM_RULE_ID:-none})" "cleanup_sim_rule_fixture"
+
+manager_check "Simulator: apostrophe-shaped caller (CG case) causes no SQL error" \
+    /index.php/default/simulator "srcType=" "caller=foo'bar" "dst=100" "trunk=" "ruleDay=" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+manager_check "Simulator: boolean-shaped caller (CG case) cannot alter result" \
+    /index.php/default/simulator "srcType=" "caller=x' OR '1'='1" "dst=100" "trunk=" "ruleDay=" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+cleanup_sim_rule_fixture
+
+# --- Direct-invocation coverage (PBX_Rules::get()/update(), no equivalent
+# unrelated HTTP-blocking bug for get(); update()'s own unrelated "record"
+# bool-cast bug -- documented above -- is routed around by calling
+# $rule->record() on every fixture, matching this program's established
+# precedent for verifying a real fix behind an unrelated, pre-existing
+# crash). ---
+
+RULES_PHP="$(mktemp)"
+cat > "$RULES_PHP" <<'PHPEOF'
+$canary = new PBX_Rule();
+$canary->setDesc('task0026n-canary');
+$canary->setPriority(1);
+$canary->setTypeRule('others');
+$canary->addSrc(['type' => 'X', 'value' => '']);
+$canary->addDst(['type' => 'X', 'value' => '']);
+$canary->addWeekDay('mon');
+$canary->addValidTime('00:00-23:59');
+$canary->record();
+PBX_Rules::register($canary);
+$canaryId = $canary->getId();
+
+$canary2 = new PBX_Rule();
+$canary2->setDesc('task0026n-canary2');
+$canary2->setPriority(1);
+$canary2->setTypeRule('others');
+$canary2->addSrc(['type' => 'X', 'value' => '']);
+$canary2->addDst(['type' => 'X', 'value' => '']);
+$canary2->addWeekDay('mon');
+$canary2->addValidTime('00:00-23:59');
+$canary2->record();
+PBX_Rules::register($canary2);
+$canary2Id = $canary2->getId();
+
+echo 'RULES_FIXTURES:' . (($canaryId && $canary2Id) ? 'OK' : 'BAD') . PHP_EOL;
+
+$fetched = PBX_Rules::get($canaryId);
+echo 'RULES_GET_LEGIT:' . (($fetched->getDesc() === 'task0026n-canary') ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    PBX_Rules::get("foo'bar");
+    echo 'RULES_GET_APOSTROPHE:BAD (no exception)' . PHP_EOL;
+} catch (PBX_Exception_NotFound $e) {
+    echo 'RULES_GET_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'RULES_GET_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+$fetched->setDesc('task0026n-canary-renamed');
+PBX_Rules::update($fetched);
+$after = PBX_Rules::get($canaryId);
+echo 'RULES_UPDATE_LEGIT:' . (($after->getDesc() === 'task0026n-canary-renamed') ? 'OK' : 'BAD') . PHP_EOL;
+
+$before2 = PBX_Rules::get($canary2Id);
+try {
+    $r = new PBX_Rule();
+    $r->setId("foo'bar");
+    $r->setDesc('x');
+    $r->setPriority(1);
+    $r->setTypeRule('others');
+    $r->addSrc(['type' => 'X', 'value' => '']);
+    $r->addDst(['type' => 'X', 'value' => '']);
+    $r->addWeekDay('mon');
+    $r->addValidTime('00:00-23:59');
+    $r->record();
+    PBX_Rules::update($r);
+    echo 'RULES_UPDATE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'RULES_UPDATE_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+$r2 = new PBX_Rule();
+$r2->setId("0 OR id={$canary2Id}");
+$r2->setDesc('hijacked');
+$r2->setPriority(1);
+$r2->setTypeRule('others');
+$r2->addSrc(['type' => 'X', 'value' => '']);
+$r2->addDst(['type' => 'X', 'value' => '']);
+$r2->addWeekDay('mon');
+$r2->addValidTime('00:00-23:59');
+$r2->record();
+try {
+    PBX_Rules::update($r2);
+} catch (Exception $e) {
+}
+$after2 = PBX_Rules::get($canary2Id);
+echo 'RULES_UPDATE_BOOLEAN_ISOLATED:' . (($after2->getDesc() === $before2->getDesc()) ? 'OK' : 'BAD') . PHP_EOL;
+
+PBX_Rules::delete($canaryId);
+PBX_Rules::delete($canary2Id);
+$gone1 = false;
+try { PBX_Rules::get($canaryId); } catch (PBX_Exception_NotFound $e) { $gone1 = true; }
+$gone2 = false;
+try { PBX_Rules::get($canary2Id); } catch (PBX_Exception_NotFound $e) { $gone2 = true; }
+echo 'RULES_CLEANUP:' . (($gone1 && $gone2) ? 'OK' : 'BAD') . PHP_EOL;
+PHPEOF
+RULES_OUT="$(run_manager_php_file "$RULES_PHP")"
+rm -f "$RULES_PHP"
+for m in RULES_FIXTURES RULES_GET_LEGIT RULES_GET_APOSTROPHE RULES_UPDATE_LEGIT RULES_UPDATE_APOSTROPHE RULES_UPDATE_BOOLEAN_ISOLATED RULES_CLEANUP; do
+    assert_marker "PBX_Rules: ${m}" "$m" "$RULES_OUT"
+done
+
+# --- Direct-invocation coverage (checkExpr('CG')/('G'), hasExtenGroup(),
+# PBX_Usuarios::get()) ---
+
+CGRULE_PHP="$(mktemp)"
+cat > "$CGRULE_PHP" <<'PHPEOF'
+$cgRule = new PBX_Rule();
+$cgRule->setDesc('task0026n-cg-rule');
+$cgRule->setPriority(999);
+$cgRule->setTypeRule('others');
+$cgRule->addSrc(['type' => 'CG', 'value' => '1']);
+$cgRule->addDst(['type' => 'X', 'value' => '']);
+foreach (['sun','mon','tue','wed','thu','fri','sat'] as $d) { $cgRule->addWeekDay($d); }
+$cgRule->addValidTime('00:00-23:59');
+$cgRule->record();
+PBX_Rules::register($cgRule);
+$cgRuleId = $cgRule->getId();
+echo 'CG_RULE_FIXTURE:' . ($cgRuleId ? 'OK' : 'BAD') . PHP_EOL;
+
+$loaded = PBX_Rules::get($cgRuleId);
+
+$legit = $loaded->isValidSrc('5551234');
+echo 'CG_LEGIT_NO_MATCH:' . (($legit === false) ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    $loaded->isValidSrc("foo'bar");
+    echo 'CG_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'CG_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+try {
+    $r = $loaded->isValidSrc("x' OR '1'='1");
+    echo 'CG_BOOLEAN_ISOLATED:' . (($r === false) ? 'OK' : 'BAD') . PHP_EOL;
+} catch (Exception $e) {
+    echo 'CG_BOOLEAN_ISOLATED:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+PBX_Rules::delete($cgRuleId);
+
+$gRule = new PBX_Rule();
+$gRule->setDesc('task0026n-g-rule');
+$gRule->setPriority(999);
+$gRule->setTypeRule('others');
+$gRule->addSrc(['type' => 'G', 'value' => '1']);
+$gRule->addDst(['type' => 'X', 'value' => '']);
+foreach (['sun','mon','tue','wed','thu','fri','sat'] as $d) { $gRule->addWeekDay($d); }
+$gRule->addValidTime('00:00-23:59');
+$gRule->record();
+PBX_Rules::register($gRule);
+$gRuleId = $gRule->getId();
+echo 'G_RULE_FIXTURE:' . ($gRuleId ? 'OK' : 'BAD') . PHP_EOL;
+
+$legitG = PBX_Usuarios::hasExtenGroup('1', 'nonexistent-peer');
+echo 'G_LEGIT_NO_MATCH:' . ((is_array($legitG) && count($legitG) === 0) ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    PBX_Usuarios::hasExtenGroup("foo'bar", "baz'qux");
+    echo 'G_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'G_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+try {
+    $r = PBX_Usuarios::hasExtenGroup("0 OR 1=1", "0 OR 1=1");
+    echo 'G_BOOLEAN_ISOLATED:' . ((is_array($r) && count($r) === 0) ? 'OK' : 'BAD') . PHP_EOL;
+} catch (Exception $e) {
+    echo 'G_BOOLEAN_ISOLATED:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+PBX_Rules::delete($gRuleId);
+
+$dbFixture = Zend_Registry::get('db');
+$dbFixture->insert('peers', ['name' => 'task0026n-peer', 'password' => 'x', 'host' => 'dynamic', 'port' => '0', 'defaultuser' => 'task0026n-peer', 'ipaddr' => '', 'regexten' => '', 'setvar' => '', 'peer_type' => 'R', 'trunk' => 'no', 'lastms' => 0, 'canal' => 'MANUAL/x']);
+
+$legitUser = PBX_Usuarios::get('task0026n-peer');
+echo 'USUARIOS_GET_LEGIT:' . (($legitUser->getNumero() === 'task0026n-peer') ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    PBX_Usuarios::get("nonexistent' OR name='task0026n-peer");
+    echo 'USUARIOS_GET_BOOLEAN_ISOLATED:BAD (injection matched)' . PHP_EOL;
+} catch (PBX_Exception_NotFound $e) {
+    echo 'USUARIOS_GET_BOOLEAN_ISOLATED:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'USUARIOS_GET_BOOLEAN_ISOLATED:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+try {
+    PBX_Usuarios::get("foo'bar");
+    echo 'USUARIOS_GET_APOSTROPHE:BAD (no exception)' . PHP_EOL;
+} catch (PBX_Exception_NotFound $e) {
+    echo 'USUARIOS_GET_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'USUARIOS_GET_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+$dbFixture->delete('peers', $dbFixture->quoteInto('name = ?', 'task0026n-peer'));
+$goneCg = false;
+try { PBX_Rules::get($cgRuleId); } catch (PBX_Exception_NotFound $e) { $goneCg = true; }
+$goneG = false;
+try { PBX_Rules::get($gRuleId); } catch (PBX_Exception_NotFound $e) { $goneG = true; }
+echo 'CG_G_CLEANUP:' . (($goneCg && $goneG) ? 'OK' : 'BAD') . PHP_EOL;
+PHPEOF
+CGRULE_OUT="$(run_manager_php_file "$CGRULE_PHP")"
+rm -f "$CGRULE_PHP"
+for m in CG_RULE_FIXTURE CG_LEGIT_NO_MATCH CG_APOSTROPHE CG_BOOLEAN_ISOLATED G_RULE_FIXTURE G_LEGIT_NO_MATCH G_APOSTROPHE G_BOOLEAN_ISOLATED USUARIOS_GET_LEGIT USUARIOS_GET_BOOLEAN_ISOLATED USUARIOS_GET_APOSTROPHE CG_G_CLEANUP; do
+    assert_marker "PBX_Rule/PBX_Usuarios: ${m}" "$m" "$CGRULE_OUT"
+done
+
+FATALS_AFTER_N="$(fatal_count)"
+if [ "$FATALS_AFTER_N" = "$FATALS_BEFORE_N" ]; then
+    harness_ok "TASK-0026N: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_BEFORE_N})"
+else
+    harness_bad "TASK-0026N: application remained healthy" "PHP Fatal Error count changed: ${FATALS_BEFORE_N} -> ${FATALS_AFTER_N}"
 fi
 
 harness_complete
