@@ -209,7 +209,7 @@ log "==> systemstatus"
 # only passes when the full AMI round-trip genuinely works, matching the
 # exact Asterisk version pinned in docker/asterisk.Dockerfile. See
 # docs/tasks/0006-systemstatus-runtime.md.
-check "systemstatus" "GET" "/index.php/default/systemstatus" "-" "200" 'Asterisk - 22.10.1' "normal"
+check "systemstatus" "GET" "/index.php/default/systemstatus" "-" "200" 'Asterisk - 22.11.0' "normal"
 
 log "==> reports"
 check "reports" "GET" "/index.php/default/calls-report" "-" "200" 'var controller = "calls-report"' "normal"

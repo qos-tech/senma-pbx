@@ -3,11 +3,15 @@
 # Debian 13 (trixie) ships no `asterisk` package at all (verified via
 # `apt-cache madison asterisk` against the official trixie repos -- empty
 # result), so a from-source build is not a choice made for its own sake, it's
-# the only option. Version pinned to 22.10.1, the latest non-prerelease
-# Asterisk 22 LTS release as of this task (confirmed against the GitHub
-# releases API; 22.11.0 exists only as a release candidate). See
+# the only option. Version originally pinned to 22.10.1 (see
 # docs/tasks/0005-asterisk-container-bootstrap.md for the full version
-# rationale.
+# rationale at that time). TASK-0026O: downloads.asterisk.org no longer
+# serves the 22.10.1 tarball (confirmed 404; Asterisk keeps only the latest
+# published patch per LTS branch on that server) -- bumped to 22.11.0, the
+# current non-prerelease Asterisk 22 LTS release (confirmed via the GitHub
+# releases API: tag 22.11.0, prerelease=false, published 2026-08-27), purely
+# to keep the environment buildable. No compatibility work for this specific
+# point release was otherwise in scope.
 #
 # Deliberately minimal module set for hardware/legacy technologies this
 # project does not use: no chan_dahdi/Khomp/H323/OSS. Their build
@@ -26,7 +30,7 @@
 FROM debian:13-slim AS build
 
 ARG DEBIAN_FRONTEND=noninteractive
-ARG ASTERISK_VERSION=22.10.1
+ARG ASTERISK_VERSION=22.11.0
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
