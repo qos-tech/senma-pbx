@@ -86,6 +86,22 @@
 #     no equivalent bug and are exercised via real HTTP, once a fixture
 #     exists.
 #
+# TASK-0026M extends this suite again to close the 11 confirmed
+# supported-surface sinks TASK-0026L's own Phase 7 final sweep discovered
+# but explicitly left unfixed (docs/tasks/0026l-pickup-queues-sql-closure.md,
+# "Security handoff"), spanning the Contacts, ContactGroups, CostCenter,
+# DatesAliases, ExpressionAliases, ExtensionsGroups, SoundFiles, Billing
+# and Telcos Managers (plus every sibling method in the same files sharing
+# the identical raw-interpolation pattern, and PBX_ExpressionAliases -- a
+# closely-related twin class for the same expr_alias feature/table). See
+# docs/tasks/0026m-manager-layer-residual-sql-closure.md for the full
+# inventory. Billing_Manager/Telcos_Manager's every mutating action is
+# currently HTTP-unreachable (a pre-existing, unrelated PHP 8.4
+# "non-static method called statically" fatal, confirmed live -- the same
+# bug class TASK-0026L documented for PickupGroupsController) and is
+# verified via direct Manager invocation only, matching that task's own
+# established precedent.
+#
 # Every payload below is a harmless, non-destructive, syntax-shaped
 # string or boolean-oracle value applied only to fixtures this script
 # owns -- never a real exploit chain, never password/hash/schema
@@ -187,6 +203,8 @@ $application->setAutoloaderNamespaces(array('Asterisk_', 'PBX_', 'Snep_'));
 require_once 'Zend/Registry.php';
 Zend_Registry::set('config', $config);
 Zend_Registry::set('db', Snep_Db::getInstance());
+require_once 'Zend/Log.php';
+Zend_Registry::set('log', new Zend_Log());
 $application->bootstrap();
 error_reporting(0);
 ini_set('display_errors', '0');
@@ -267,7 +285,7 @@ if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session'
 RESTRICTED_CSRF="$(harness_csrf_token "$RESTRICTED_JAR" "$BASE_URL")"
 if [ -z "$RESTRICTED_CSRF" ]; then harness_blocked "could not read the restricted session's CSRF token"; fi
 
-for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report" "/index.php/default/pickup-groups" "/index.php/default/queues"; do
+for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report" "/index.php/default/pickup-groups" "/index.php/default/queues" "/index.php/default/contacts" "/index.php/default/contact-groups" "/index.php/default/dates-alias" "/index.php/default/expression-alias" "/index.php/default/cost-center" "/index.php/default/extensions-groups" "/index.php/default/sound-files" "/index.php/billing/billing" "/index.php/billing/telcos"; do
     code="$(request "$RESTRICTED_JAR" GET "$boundary_path")"
     if [ "$code" = 302 ] && redirects_to_permission_error; then
         harness_ok "authorization intact: ${boundary_path}" "zero-permission user denied (HTTP 302, Location: permission/error)"
@@ -276,9 +294,9 @@ for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-r
     fi
 done
 
-code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&snep_csrf_token=${ADMIN_CSRF}")"
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&default_contacts_write=1&default_contact-groups_write=1&default_dates-alias_write=1&default_expression-alias_write=1&default_cost-center_write=1&default_extensions-groups_write=1&default_sound-files_write=1&billing_billing_write=1&billing_telcos_write=1&snep_csrf_token=${ADMIN_CSRF}")"
 if [ "$code" = 302 ]; then
-    harness_ok "admin grants exactly the six required permissions" "HTTP $code (trunks-write, calls-report-read, ranking-report-read, services-report-read, pickup-groups-write, queues-write)"
+    harness_ok "admin grants the required TASK-0026M permissions" "HTTP $code (contacts/contact-groups/dates-alias/expression-alias/cost-center/extensions-groups/sound-files write, billing/telcos write, plus the six TASK-0026J-L permissions)"
 else
     harness_blocked "granting permissions to the restricted user failed (HTTP $code) -- cannot proceed"
 fi
@@ -890,6 +908,626 @@ if [ "$FATALS_AFTER_F" = "$FATALS_AFTER_E" ]; then
     harness_ok "BLOCKER F: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_AFTER_E})"
 else
     harness_bad "BLOCKER F: application remained healthy" "PHP Fatal Error count changed: ${FATALS_AFTER_E} -> ${FATALS_AFTER_F}"
+fi
+
+# =============================================================================
+# TASK-0026M -- Manager-layer residual SQL injection closure
+# =============================================================================
+#
+# Closes the 11 confirmed supported-surface SQL-injection sinks TASK-0026L's
+# own Phase 7 final sweep discovered but explicitly left unfixed
+# (docs/tasks/0026l-pickup-queues-sql-closure.md, "Security handoff"),
+# spanning the Contacts, ContactGroups, CostCenter, DatesAliases,
+# ExpressionAliases, ExtensionsGroups, SoundFiles, Billing and Telcos
+# Managers, plus every sibling method in those same files/classes sharing
+# the exact same raw-interpolation pattern (31 sites total across 10
+# files -- see docs/tasks/0026m-manager-layer-residual-sql-closure.md for
+# the full inventory).
+#
+# manager_check <label> <path> <field=value>... -- POSTs to <path> via the
+# restricted session and verifies no new PHP Fatal Error and no SQL/syntax
+# error appears in the log tail. Mirrors report_check() above.
+manager_check() {
+    local label="$1" path="$2"
+    shift 2
+    local before_total after_total tail_text total_delta
+    before_total="$(fatal_count)"
+    post_fields "$RESTRICTED_JAR" "$path" "$@" >/dev/null
+    after_total="$(fatal_count)"
+    tail_text="$(app_exec 'tail -c 4000 /var/log/apache2/mag-error.log 2>/dev/null')"
+    total_delta=$((after_total - before_total))
+    if [ "$total_delta" -eq 0 ] && ! echo "$tail_text" | grep -qi "SQLSTATE\|syntax error"; then
+        harness_ok "$label" "no PHP Fatal Error, no SQL/syntax error"
+    else
+        harness_bad "$label" "fatal_delta=${total_delta}; log tail: $(echo "$tail_text" | tr '\n' ' ' | tail -c 300)"
+    fi
+}
+
+# run_manager_php_file <local-php-file> -- like run_manager_php but takes an
+# already-written local PHP file (real $ signs, no bash \$ escaping needed)
+# instead of a bash string argument -- used for this section's larger
+# per-family fixture/verification blocks, where escaping every PHP $variable
+# as \$ inside a bash string would be error-prone at this scale.
+run_manager_php_file() {
+    local src="$1" f
+    f="$(mktemp)"
+    { printf '<?php\n'; printf "require '%s';\n" "$CLI_BOOTSTRAP_REMOTE"; cat "$src"; } > "$f"
+    $COMPOSE cp "$f" app:/tmp/task0026m_run.php >/dev/null 2>&1
+    rm -f "$f"
+    app_exec "php -d display_errors=0 /tmp/task0026m_run.php"
+}
+harness_register_best_effort_cleanup "run_manager_php_file scratch file in app container" "$COMPOSE exec -T app rm -f /tmp/task0026m_run.php"
+
+# sweep_task0026m_residue -- best-effort safety net in case any family block
+# below exits early (an uncaught exception mid-PHP-block, etc.) before its
+# own inline cleanup runs. Every fixture this section creates uses a
+# task0026m-prefixed name/value; nothing else in the schema does.
+sweep_task0026m_residue() {
+    db_query "
+DELETE FROM contacts_names WHERE name LIKE 'task0026m-%';
+DELETE FROM contacts_group WHERE name LIKE 'task0026m-%';
+DELETE FROM date_alias_list WHERE dateid IN (SELECT id FROM date_alias WHERE name LIKE 'task0026m-%');
+DELETE FROM date_alias WHERE name LIKE 'task0026m-%';
+DELETE FROM expr_alias_expression WHERE aliasid IN (SELECT aliasid FROM expr_alias WHERE name LIKE 'task0026m-%');
+DELETE FROM expr_alias WHERE name LIKE 'task0026m-%';
+DELETE FROM ccustos WHERE codigo LIKE 't0026m%';
+DELETE FROM core_peer_groups WHERE group_id IN (SELECT id FROM core_groups WHERE name LIKE 'task0026m-%');
+DELETE FROM core_groups WHERE name LIKE 'task0026m-%';
+DELETE FROM sounds WHERE arquivo LIKE 'task0026m-%';
+DELETE FROM telcos WHERE name LIKE 'task0026m-%';
+DELETE FROM billing WHERE telco IN (SELECT id FROM telcos WHERE name LIKE 'task0026m-%');
+" >/dev/null 2>&1
+}
+harness_register_cleanup "TASK-0026M residual fixture sweep (safety net)" "sweep_task0026m_residue"
+
+log "==> TASK-0026M: Contacts/ContactGroups/DatesAlias/ExpressionAlias/CostCenter/ExtensionsGroups/SoundFiles/Billing/Telcos boundary"
+
+FATALS_BEFORE_M="$(fatal_count)"
+
+# --- Real-HTTP core proof: apostrophe-shaped payload against the primary,
+# directly-reachable sink in each of the 7 web-reachable families causes no
+# SQL error (matches the exact BLOCKER A-F live-reproduction style). Billing
+# and Telcos have no real-HTTP path at all (see below) so are covered
+# entirely via direct Manager invocation.
+
+manager_check "Contacts: apostrophe-shaped remove id causes no SQL error" \
+    /index.php/default/contacts/remove "id=foo'bar" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+manager_check "ContactGroups: apostrophe-shaped remove id causes no SQL error" \
+    /index.php/default/contact-groups/remove/id/1 "id=foo'bar" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+manager_check "DatesAlias: apostrophe-shaped remove id (delete()) causes no SQL error" \
+    /index.php/default/dates-alias/remove/id/1 "id=foo'bar" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+code="$(request "$RESTRICTED_JAR" GET "/index.php/default/dates-alias/remove/id/foo%27bar")"
+TAIL_DA="$(app_exec 'tail -c 2000 /var/log/apache2/mag-error.log 2>/dev/null')"
+if [ "$code" = 200 ] && ! echo "$TAIL_DA" | grep -qi "SQLSTATE\|syntax error"; then
+    harness_ok "DatesAlias: apostrophe-shaped route id (GET getValidation()) causes no SQL error" "HTTP $code, no SQL/syntax error"
+else
+    harness_bad "DatesAlias: apostrophe-shaped route id (GET getValidation()) causes no SQL error" "HTTP $code, log tail: $(echo "$TAIL_DA" | tr '\n' ' ' | tail -c 300)"
+fi
+
+manager_check "ExpressionAlias: apostrophe-shaped remove id causes no SQL error" \
+    /index.php/default/expression-alias/remove/id/1 "id=foo'bar" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+manager_check "CostCenter: apostrophe-shaped remove id causes no SQL error" \
+    /index.php/default/cost-center/remove/id/1 "id=foo'bar" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+manager_check "ExtensionsGroups: apostrophe-shaped remove id causes no SQL error" \
+    /index.php/default/extensions-groups/remove/id/1 "id=foo'bar" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+manager_check "SoundFiles: apostrophe-shaped remove id causes no SQL error" \
+    /index.php/default/sound-files/remove/arquivo/a-m.wav "id=foo'bar" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# --- Sibling/second-order coverage via direct Manager invocation (the same
+# real PHP code path, same Zend_Db adapter, that the fixtures above exercise
+# through HTTP) -- one self-contained, self-cleaning block per family.
+
+CONTACTS_PHP="$(mktemp)"
+cat > "$CONTACTS_PHP" <<'PHPEOF'
+$cid1 = Snep_Contacts_Manager::getLastId();
+Snep_Contacts_Manager::add(['id' => $cid1, 'name' => 'task0026m-contact-canary', 'address' => '', 'email' => '', 'city' => null, 'state' => null, 'zipcode' => '', 'group' => 1]);
+$cid2 = $cid1 + 1;
+Snep_Contacts_Manager::add(['id' => $cid2, 'name' => 'task0026m-contact-canary2', 'address' => '', 'email' => '', 'city' => null, 'state' => null, 'zipcode' => '', 'group' => 1]);
+$c1 = Snep_Contacts_Manager::get($cid1);
+echo 'CONTACTS_FIXTURES:' . (($c1 && $c1['name'] === 'task0026m-contact-canary') ? 'OK' : 'BAD') . PHP_EOL;
+
+Snep_Contacts_Manager::edit(['id' => $cid1, 'name' => 'task0026m-contact-canary-renamed', 'address' => '', 'email' => '', 'city' => null, 'state' => null, 'zipcode' => '', 'group' => 1]);
+$after = Snep_Contacts_Manager::get($cid1);
+echo 'CONTACTS_EDIT_LEGIT:' . (($after && $after['name'] === 'task0026m-contact-canary-renamed') ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    Snep_Contacts_Manager::edit(['id' => "foo'bar", 'name' => 'x', 'address' => '', 'email' => '', 'city' => null, 'state' => null, 'zipcode' => '', 'group' => 1]);
+    echo 'CONTACTS_EDIT_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'CONTACTS_EDIT_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+$before2 = Snep_Contacts_Manager::get($cid2);
+try {
+    Snep_Contacts_Manager::remove("0 OR id=" . $cid2);
+} catch (Exception $e) {
+}
+$after2 = Snep_Contacts_Manager::get($cid2);
+echo 'CONTACTS_REMOVE_BOOLEAN_ISOLATED:' . (($after2 && $after2['name'] === $before2['name']) ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    Snep_Contacts_Manager::removePhone("foo'bar");
+    echo 'CONTACTS_REMOVEPHONE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'CONTACTS_REMOVEPHONE_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+try {
+    Snep_Contacts_Manager::removeGroup("foo'bar");
+    echo 'CONTACTS_REMOVEGROUP_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'CONTACTS_REMOVEGROUP_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+try {
+    Snep_Contacts_Manager::removeByGroupId("foo'bar");
+    echo 'CONTACTS_REMOVEBYGROUP_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'CONTACTS_REMOVEBYGROUP_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+$still2 = Snep_Contacts_Manager::get($cid2);
+echo 'CONTACTS2_STILL_PRESENT:' . ($still2 ? 'OK' : 'BAD') . PHP_EOL;
+
+Snep_Contacts_Manager::remove($cid1);
+$gone1 = Snep_Contacts_Manager::get($cid1);
+echo 'CONTACTS_REMOVE_LEGIT:' . (!$gone1 ? 'OK' : 'BAD') . PHP_EOL;
+Snep_Contacts_Manager::remove($cid2);
+$gone2 = Snep_Contacts_Manager::get($cid2);
+echo 'CONTACTS_CLEANUP:' . (!$gone2 ? 'OK' : 'BAD') . PHP_EOL;
+PHPEOF
+CONTACTS_OUT="$(run_manager_php_file "$CONTACTS_PHP")"
+rm -f "$CONTACTS_PHP"
+for m in CONTACTS_FIXTURES CONTACTS_EDIT_LEGIT CONTACTS_EDIT_APOSTROPHE CONTACTS_REMOVE_BOOLEAN_ISOLATED CONTACTS_REMOVEPHONE_APOSTROPHE CONTACTS_REMOVEGROUP_APOSTROPHE CONTACTS_REMOVEBYGROUP_APOSTROPHE CONTACTS2_STILL_PRESENT CONTACTS_REMOVE_LEGIT CONTACTS_CLEANUP; do
+    assert_marker "Contacts: ${m}" "$m" "$CONTACTS_OUT"
+done
+
+CONTACTGROUPS_PHP="$(mktemp)"
+cat > "$CONTACTGROUPS_PHP" <<'PHPEOF'
+$gid1 = Snep_ContactGroups_Manager::add(['group' => 'task0026m-cg-canary']);
+$gid2 = Snep_ContactGroups_Manager::add(['group' => 'task0026m-cg-canary2']);
+echo 'CONTACTGROUPS_FIXTURES:' . (($gid1 && $gid2) ? 'OK' : 'BAD') . PHP_EOL;
+
+Snep_ContactGroups_Manager::edit(['group' => 'task0026m-cg-canary-renamed', 'id' => $gid1]);
+$after = Snep_ContactGroups_Manager::get($gid1);
+echo 'CONTACTGROUPS_EDIT_LEGIT:' . (($after && $after['name'] === 'task0026m-cg-canary-renamed') ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    Snep_ContactGroups_Manager::edit(['group' => 'x', 'id' => "foo'bar"]);
+    echo 'CONTACTGROUPS_EDIT_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'CONTACTGROUPS_EDIT_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+$before2 = Snep_ContactGroups_Manager::get($gid2);
+try {
+    Snep_ContactGroups_Manager::edit(['group' => 'hijacked', 'id' => "0 OR id=" . $gid2]);
+} catch (Exception $e) {
+}
+$after2 = Snep_ContactGroups_Manager::get($gid2);
+echo 'CONTACTGROUPS_EDIT_BOOLEAN_ISOLATED:' . (($after2 && $after2['name'] === $before2['name']) ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    Snep_ContactGroups_Manager::insertContactOnGroup($gid1, "foo'bar");
+    echo 'CONTACTGROUPS_INSERTCONTACT_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'CONTACTGROUPS_INSERTCONTACT_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+try {
+    Snep_ContactGroups_Manager::removeContactOnGroup("foo'bar");
+    echo 'CONTACTGROUPS_REMOVECONTACT_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'CONTACTGROUPS_REMOVECONTACT_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+Snep_ContactGroups_Manager::remove($gid1);
+$gone1 = Snep_ContactGroups_Manager::get($gid1);
+echo 'CONTACTGROUPS_REMOVE_LEGIT:' . (!$gone1 ? 'OK' : 'BAD') . PHP_EOL;
+Snep_ContactGroups_Manager::remove($gid2);
+$gone2 = Snep_ContactGroups_Manager::get($gid2);
+echo 'CONTACTGROUPS_CLEANUP:' . (!$gone2 ? 'OK' : 'BAD') . PHP_EOL;
+PHPEOF
+CONTACTGROUPS_OUT="$(run_manager_php_file "$CONTACTGROUPS_PHP")"
+rm -f "$CONTACTGROUPS_PHP"
+for m in CONTACTGROUPS_FIXTURES CONTACTGROUPS_EDIT_LEGIT CONTACTGROUPS_EDIT_APOSTROPHE CONTACTGROUPS_EDIT_BOOLEAN_ISOLATED CONTACTGROUPS_INSERTCONTACT_APOSTROPHE CONTACTGROUPS_REMOVECONTACT_APOSTROPHE CONTACTGROUPS_REMOVE_LEGIT CONTACTGROUPS_CLEANUP; do
+    assert_marker "ContactGroups: ${m}" "$m" "$CONTACTGROUPS_OUT"
+done
+
+DATESALIAS_PHP="$(mktemp)"
+cat > "$DATESALIAS_PHP" <<'PHPEOF'
+$db = Zend_Registry::get('db');
+$daId = PBX_DatesAliases::add(['name' => 'task0026m-da-canary', 'date' => ['2030-01-01'], 'timerange' => ['00:00-23:59']]);
+echo 'DATESALIAS_FIXTURE:' . ($daId ? 'OK' : 'BAD') . PHP_EOL;
+
+$after = PBX_DatesAliases::get($daId);
+echo 'DATESALIAS_GET_LEGIT:' . ((is_array($after) && count($after) > 0) ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    PBX_DatesAliases::get("foo'bar");
+    echo 'DATESALIAS_GET_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'DATESALIAS_GET_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+PBX_DatesAliases::update(['id' => $daId, 'name' => 'task0026m-da-canary-renamed', 'date' => ['2030-02-02'], 'timerange' => ['00:00-23:59']]);
+$after2 = PBX_DatesAliases::get($daId);
+echo 'DATESALIAS_UPDATE_LEGIT:' . (($after2 && $after2[0]['name'] === 'task0026m-da-canary-renamed') ? 'OK' : 'BAD') . PHP_EOL;
+
+// update()'s own try/catch wraps only commit(), not the insert() that
+// throws here on the unrelated int-typed dateid column (pre-existing,
+// unrelated transaction-handling gap, not fixed by this task). SQLSTATE
+// 22007 (a data-type rejection) is the OK outcome; SQLSTATE 42000 (a
+// syntax error, what pre-fix raw interpolation would have produced) is
+// the only FAIL signature.
+try {
+    PBX_DatesAliases::update(['id' => "foo'bar", 'name' => 'x', 'date' => ['2030-01-01'], 'timerange' => ['00:00-23:59']]);
+    echo 'DATESALIAS_UPDATE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    if ($db->getConnection()->inTransaction()) {
+        $db->rollBack();
+    }
+    $msg = $e->getMessage();
+    echo 'DATESALIAS_UPDATE_APOSTROPHE:' . ((stripos($msg, 'syntax') === false && stripos($msg, '42000') === false) ? 'OK' : ('EXCEPTION:' . $msg)) . PHP_EOL;
+}
+
+try {
+    PBX_DatesAliases::getValidation("foo'bar");
+    echo 'DATESALIAS_GETVALIDATION_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'DATESALIAS_GETVALIDATION_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+try {
+    PBX_DatesAliases::delete("foo'bar");
+    echo 'DATESALIAS_DELETE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'DATESALIAS_DELETE_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+$still = PBX_DatesAliases::get($daId);
+echo 'DATESALIAS_STILL_PRESENT:' . ((is_array($still) && count($still) > 0) ? 'OK' : 'BAD') . PHP_EOL;
+
+PBX_DatesAliases::delete($daId);
+$gone = PBX_DatesAliases::get($daId);
+echo 'DATESALIAS_CLEANUP:' . ((is_array($gone) && count($gone) === 0) ? 'OK' : 'BAD') . PHP_EOL;
+PHPEOF
+DATESALIAS_OUT="$(run_manager_php_file "$DATESALIAS_PHP")"
+rm -f "$DATESALIAS_PHP"
+for m in DATESALIAS_FIXTURE DATESALIAS_GET_LEGIT DATESALIAS_GET_APOSTROPHE DATESALIAS_UPDATE_LEGIT DATESALIAS_UPDATE_APOSTROPHE DATESALIAS_GETVALIDATION_APOSTROPHE DATESALIAS_DELETE_APOSTROPHE DATESALIAS_STILL_PRESENT DATESALIAS_CLEANUP; do
+    assert_marker "DatesAlias: ${m}" "$m" "$DATESALIAS_OUT"
+done
+
+EXPRESSIONALIAS_PHP="$(mktemp)"
+cat > "$EXPRESSIONALIAS_PHP" <<'PHPEOF'
+$db = Zend_Registry::get('db');
+$eaId = PBX_ExpressionAliases::getInstance()->register(['name' => 'task0026m-ea-canary', 'expressions' => ['_X.']]);
+echo 'EXPRESSIONALIAS_FIXTURE:' . ($eaId ? 'OK' : 'BAD') . PHP_EOL;
+
+$after = PBX_ExpressionAliases::getInstance()->get((int) $eaId);
+echo 'EXPRESSIONALIAS_GET_LEGIT:' . (($after && $after['name'] === 'task0026m-ea-canary') ? 'OK' : 'BAD') . PHP_EOL;
+
+// Same pre-existing, unrelated update()-transaction gap as PBX_DatesAliases
+// above (this class's own closely-related twin), same OK/FAIL split.
+try {
+    PBX_ExpressionAliases::getInstance()->update(['id' => "foo'bar", 'name' => 'x', 'expressions' => ['_X.']]);
+    echo 'EXPRESSIONALIAS_UPDATE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    if ($db->getConnection()->inTransaction()) {
+        $db->rollBack();
+    }
+    $msg = $e->getMessage();
+    echo 'EXPRESSIONALIAS_UPDATE_APOSTROPHE:' . ((stripos($msg, 'syntax') === false && stripos($msg, '42000') === false) ? 'OK' : ('EXCEPTION:' . $msg)) . PHP_EOL;
+}
+
+PBX_ExpressionAliases::getInstance()->update(['id' => $eaId, 'name' => 'task0026m-ea-canary-renamed', 'expressions' => ['_X.']]);
+$after2 = PBX_ExpressionAliases::getInstance()->get((int) $eaId);
+echo 'EXPRESSIONALIAS_UPDATE_LEGIT:' . (($after2 && $after2['name'] === 'task0026m-ea-canary-renamed') ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    Snep_ExpressionAliases_Manager::delete("foo'bar");
+    echo 'EXPRESSIONALIAS_MGRDELETE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'EXPRESSIONALIAS_MGRDELETE_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+try {
+    PBX_ExpressionAliases::getInstance()->delete("foo'bar");
+    echo 'EXPRESSIONALIAS_PBXDELETE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'EXPRESSIONALIAS_PBXDELETE_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+try {
+    Snep_ExpressionAliases_Manager::getValidation("foo'bar");
+    echo 'EXPRESSIONALIAS_MGRGETVALIDATION_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'EXPRESSIONALIAS_MGRGETVALIDATION_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+$stillThere = PBX_ExpressionAliases::getInstance()->get((int) $eaId);
+echo 'EXPRESSIONALIAS_STILL_PRESENT:' . (($stillThere && $stillThere['name'] === 'task0026m-ea-canary-renamed') ? 'OK' : 'BAD') . PHP_EOL;
+
+Snep_ExpressionAliases_Manager::delete($eaId);
+$all = PBX_ExpressionAliases::getInstance()->getAll();
+echo 'EXPRESSIONALIAS_CLEANUP:' . (!isset($all[$eaId]) ? 'OK' : 'BAD') . PHP_EOL;
+PHPEOF
+EXPRESSIONALIAS_OUT="$(run_manager_php_file "$EXPRESSIONALIAS_PHP")"
+rm -f "$EXPRESSIONALIAS_PHP"
+for m in EXPRESSIONALIAS_FIXTURE EXPRESSIONALIAS_GET_LEGIT EXPRESSIONALIAS_UPDATE_APOSTROPHE EXPRESSIONALIAS_UPDATE_LEGIT EXPRESSIONALIAS_MGRDELETE_APOSTROPHE EXPRESSIONALIAS_PBXDELETE_APOSTROPHE EXPRESSIONALIAS_MGRGETVALIDATION_APOSTROPHE EXPRESSIONALIAS_STILL_PRESENT EXPRESSIONALIAS_CLEANUP; do
+    assert_marker "ExpressionAlias: ${m}" "$m" "$EXPRESSIONALIAS_OUT"
+done
+
+COSTCENTER_PHP="$(mktemp)"
+cat > "$COSTCENTER_PHP" <<'PHPEOF'
+$ccId1 = 't0026m1';
+$ccId2 = 't0026m2';
+Snep_CostCenter_Manager::add(['id' => $ccId1, 'type' => 'O', 'name' => 'CC Canary', 'description' => '']);
+Snep_CostCenter_Manager::add(['id' => $ccId2, 'type' => 'O', 'name' => 'CC Canary2', 'description' => '']);
+$c1 = Snep_CostCenter_Manager::get($ccId1);
+echo 'COSTCENTER_FIXTURES:' . (($c1 && $c1['nome'] === 'CC Canary') ? 'OK' : 'BAD') . PHP_EOL;
+
+Snep_CostCenter_Manager::edit(['id' => $ccId1, 'type' => 'O', 'name' => 'CC Canary Renamed', 'description' => '']);
+$after = Snep_CostCenter_Manager::get($ccId1);
+echo 'COSTCENTER_EDIT_LEGIT:' . (($after && $after['nome'] === 'CC Canary Renamed') ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    Snep_CostCenter_Manager::edit(['id' => "foo'bar", 'type' => 'O', 'name' => 'x', 'description' => '']);
+    echo 'COSTCENTER_EDIT_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'COSTCENTER_EDIT_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+$before2 = Snep_CostCenter_Manager::get($ccId2);
+try {
+    Snep_CostCenter_Manager::remove("x' OR codigo='" . $ccId2);
+} catch (Exception $e) {
+}
+$after2 = Snep_CostCenter_Manager::get($ccId2);
+echo 'COSTCENTER_REMOVE_BOOLEAN_ISOLATED:' . (($after2 && $after2['nome'] === $before2['nome']) ? 'OK' : 'BAD') . PHP_EOL;
+
+Snep_CostCenter_Manager::remove($ccId1);
+$gone1 = Snep_CostCenter_Manager::get($ccId1);
+echo 'COSTCENTER_REMOVE_LEGIT:' . (!$gone1 ? 'OK' : 'BAD') . PHP_EOL;
+Snep_CostCenter_Manager::remove($ccId2);
+$gone2 = Snep_CostCenter_Manager::get($ccId2);
+echo 'COSTCENTER_CLEANUP:' . (!$gone2 ? 'OK' : 'BAD') . PHP_EOL;
+PHPEOF
+COSTCENTER_OUT="$(run_manager_php_file "$COSTCENTER_PHP")"
+rm -f "$COSTCENTER_PHP"
+for m in COSTCENTER_FIXTURES COSTCENTER_EDIT_LEGIT COSTCENTER_EDIT_APOSTROPHE COSTCENTER_REMOVE_BOOLEAN_ISOLATED COSTCENTER_REMOVE_LEGIT COSTCENTER_CLEANUP; do
+    assert_marker "CostCenter: ${m}" "$m" "$COSTCENTER_OUT"
+done
+
+EXTGROUPS_PHP="$(mktemp)"
+cat > "$EXTGROUPS_PHP" <<'PHPEOF'
+$egId1 = Snep_ExtensionsGroups_Manager::addGroup(['name' => 'task0026m-eg-canary']);
+$egId2 = Snep_ExtensionsGroups_Manager::addGroup(['name' => 'task0026m-eg-canary2']);
+echo 'EXTGROUPS_FIXTURES:' . (($egId1 && $egId2) ? 'OK' : 'BAD') . PHP_EOL;
+
+$g1 = Snep_ExtensionsGroups_Manager::get($egId1);
+echo 'EXTGROUPS_GET_LEGIT:' . (($g1 && $g1['name'] === 'task0026m-eg-canary') ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    Snep_ExtensionsGroups_Manager::get("foo'bar");
+    echo 'EXTGROUPS_GET_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'EXTGROUPS_GET_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+Snep_ExtensionsGroups_Manager::editGroup(['id' => $egId1, 'name' => 'task0026m-eg-canary-renamed']);
+$after = Snep_ExtensionsGroups_Manager::get($egId1);
+echo 'EXTGROUPS_EDITGROUP_LEGIT:' . (($after && $after['name'] === 'task0026m-eg-canary-renamed') ? 'OK' : 'BAD') . PHP_EOL;
+
+$before2 = Snep_ExtensionsGroups_Manager::get($egId2);
+try {
+    Snep_ExtensionsGroups_Manager::editGroup(['id' => "0 OR id=" . $egId2, 'name' => 'hijacked']);
+} catch (Exception $e) {
+}
+$after2 = Snep_ExtensionsGroups_Manager::get($egId2);
+echo 'EXTGROUPS_EDITGROUP_BOOLEAN_ISOLATED:' . (($after2 && $after2['name'] === $before2['name']) ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    Snep_ExtensionsGroups_Manager::deleteGroupExtensions(['peer_id' => "foo'bar", 'group_id' => $egId1]);
+    echo 'EXTGROUPS_DELETEGROUPEXT_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'EXTGROUPS_DELETEGROUPEXT_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+try {
+    Snep_ExtensionsGroups_Manager::deleteExtensionGroups("foo'bar");
+    echo 'EXTGROUPS_DELETEEXTGROUPS_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'EXTGROUPS_DELETEEXTGROUPS_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+Snep_ExtensionsGroups_Manager::delete($egId1);
+$gone1 = Snep_ExtensionsGroups_Manager::get($egId1);
+echo 'EXTGROUPS_DELETE_LEGIT:' . (!$gone1 ? 'OK' : 'BAD') . PHP_EOL;
+Snep_ExtensionsGroups_Manager::delete($egId2);
+$gone2 = Snep_ExtensionsGroups_Manager::get($egId2);
+echo 'EXTGROUPS_CLEANUP:' . (!$gone2 ? 'OK' : 'BAD') . PHP_EOL;
+PHPEOF
+EXTGROUPS_OUT="$(run_manager_php_file "$EXTGROUPS_PHP")"
+rm -f "$EXTGROUPS_PHP"
+for m in EXTGROUPS_FIXTURES EXTGROUPS_GET_LEGIT EXTGROUPS_GET_APOSTROPHE EXTGROUPS_EDITGROUP_LEGIT EXTGROUPS_EDITGROUP_BOOLEAN_ISOLATED EXTGROUPS_DELETEGROUPEXT_APOSTROPHE EXTGROUPS_DELETEEXTGROUPS_APOSTROPHE EXTGROUPS_DELETE_LEGIT EXTGROUPS_CLEANUP; do
+    assert_marker "ExtensionsGroups: ${m}" "$m" "$EXTGROUPS_OUT"
+done
+
+SOUNDFILES_PHP="$(mktemp)"
+cat > "$SOUNDFILES_PHP" <<'PHPEOF'
+$sf1 = 'task0026m-sf1.wav';
+$sf2 = 'task0026m-sf2.wav';
+// Snep_SoundFiles_Manager::add()'s own $insert_data omits 'secao' (a
+// NOT-NULL, no-default, primary-key column) -- a pre-existing, unrelated
+// strict-SQL-mode compatibility gap affecting the real addAction() flow
+// identically, not fixed by this task. Insert the fixture rows directly
+// to route around it.
+$dbFixture = Zend_Registry::get('db');
+$dbFixture->insert('sounds', ['arquivo' => $sf1, 'descricao' => 'canary', 'data' => new Zend_Db_Expr('NOW()'), 'language' => 'pt_BR', 'tipo' => 'AST', 'secao' => '']);
+$dbFixture->insert('sounds', ['arquivo' => $sf2, 'descricao' => 'canary2', 'data' => new Zend_Db_Expr('NOW()'), 'language' => 'pt_BR', 'tipo' => 'AST', 'secao' => '']);
+$soundMgr = new Snep_SoundFiles_Manager();
+$s1 = $soundMgr->get($sf1);
+echo 'SOUNDFILES_FIXTURES:' . (($s1) ? 'OK' : 'BAD') . PHP_EOL;
+
+$soundMgr->edit(['arquivo' => $sf1, 'description' => 'canary-renamed']);
+$after = $soundMgr->get($sf1);
+echo 'SOUNDFILES_EDIT_LEGIT:' . (($after && $after['descricao'] === 'canary-renamed') ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    $soundMgr->edit(['arquivo' => "foo'bar", 'description' => 'x']);
+    echo 'SOUNDFILES_EDIT_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'SOUNDFILES_EDIT_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+$before2 = $soundMgr->get($sf2);
+try {
+    $soundMgr->edit(['arquivo' => $sf2 . "' OR '1'='1", 'description' => 'hijacked']);
+} catch (Exception $e) {
+}
+$after2 = $soundMgr->get($sf2);
+echo 'SOUNDFILES_EDIT_BOOLEAN_ISOLATED:' . (($after2 && $after2['descricao'] === $before2['descricao']) ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    $soundMgr->remove("foo'bar");
+    echo 'SOUNDFILES_REMOVE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'SOUNDFILES_REMOVE_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+$still2 = $soundMgr->get($sf2);
+echo 'SOUNDFILES2_STILL_PRESENT:' . ($still2 ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    $soundMgr->editClassFile(['arquivo' => "foo'bar", 'descricao' => 'x', 'secao' => "baz'qux"]);
+    echo 'SOUNDFILES_EDITCLASSFILE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'SOUNDFILES_EDITCLASSFILE_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+$soundMgr->remove($sf1);
+$gone1 = $soundMgr->get($sf1);
+echo 'SOUNDFILES_REMOVE_LEGIT:' . (!$gone1 ? 'OK' : 'BAD') . PHP_EOL;
+$soundMgr->remove($sf2);
+$gone2 = $soundMgr->get($sf2);
+echo 'SOUNDFILES_CLEANUP:' . (!$gone2 ? 'OK' : 'BAD') . PHP_EOL;
+PHPEOF
+SOUNDFILES_OUT="$(run_manager_php_file "$SOUNDFILES_PHP")"
+rm -f "$SOUNDFILES_PHP"
+for m in SOUNDFILES_FIXTURES SOUNDFILES_EDIT_LEGIT SOUNDFILES_EDIT_APOSTROPHE SOUNDFILES_EDIT_BOOLEAN_ISOLATED SOUNDFILES_REMOVE_APOSTROPHE SOUNDFILES2_STILL_PRESENT SOUNDFILES_EDITCLASSFILE_APOSTROPHE SOUNDFILES_REMOVE_LEGIT SOUNDFILES_CLEANUP; do
+    assert_marker "SoundFiles: ${m}" "$m" "$SOUNDFILES_OUT"
+done
+
+BILLING_PHP="$(mktemp)"
+cat > "$BILLING_PHP" <<'PHPEOF'
+// Billing_BillingController/Billing_TelcosController's every mutating
+// action is currently HTTP-unreachable (a pre-existing, unrelated PHP 8.4
+// "non-static method called statically" fatal in Billing_Manager/
+// Telcos_Manager, confirmed live -- not fixed here, matching the exact
+// class of bug TASK-0026L documented for PickupGroupsController). Both
+// Managers' real vulnerable code is still fixed and verified here via
+// direct invocation, matching that same task's own established precedent.
+$dbFixture = Zend_Registry::get('db');
+$tm = new Telcos_Manager();
+$m = new Billing_Manager();
+
+$telcoId = $tm->add(['name' => 'task0026m-telco', 'mobile_price' => 1, 'landline_price' => 1, 'start_time' => 0, 'fract' => 0]);
+$telco2Id = $tm->add(['name' => 'task0026m-telco2', 'mobile_price' => 1, 'landline_price' => 1, 'start_time' => 0, 'fract' => 0]);
+echo 'TELCOS_FIXTURES:' . ((is_int($telcoId) && is_int($telco2Id)) ? 'OK' : 'BAD') . PHP_EOL;
+
+$ok = $tm->update(['id' => $telcoId, 'name' => 'task0026m-telco-renamed', 'mobile_price' => 2, 'landline_price' => 2, 'start_time' => 1, 'fract' => 1]);
+$row = $tm->get($telcoId);
+echo 'TELCOS_UPDATE_LEGIT:' . (($ok && $row['name'] === 'task0026m-telco-renamed') ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    $tm->update(['id' => "foo'bar", 'name' => 'x', 'mobile_price' => 1, 'landline_price' => 1, 'start_time' => 1, 'fract' => 1]);
+    echo 'TELCOS_UPDATE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'TELCOS_UPDATE_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+$before2 = $tm->get($telco2Id);
+try {
+    $tm->update(['id' => "0 OR id={$telco2Id}", 'name' => 'hijacked', 'mobile_price' => 9, 'landline_price' => 9, 'start_time' => 9, 'fract' => 9]);
+} catch (Exception $e) {
+}
+$after2 = $tm->get($telco2Id);
+echo 'TELCOS_UPDATE_BOOLEAN_ISOLATED:' . (($after2['name'] === $before2['name']) ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    $tm->remove("foo'bar");
+    echo 'TELCOS_REMOVE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'TELCOS_REMOVE_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+$still2 = $tm->get($telco2Id);
+echo 'TELCOS2_STILL_PRESENT:' . ($still2 ? 'OK' : 'BAD') . PHP_EOL;
+
+$tm->remove($telcoId);
+$gone = $tm->get($telcoId);
+echo 'TELCOS_REMOVE_LEGIT:' . (!$gone ? 'OK' : 'BAD') . PHP_EOL;
+$tm->remove($telco2Id);
+$gone2 = $tm->get($telco2Id);
+echo 'TELCOS_CLEANUP:' . (!$gone2 ? 'OK' : 'BAD') . PHP_EOL;
+
+$btype = $dbFixture->fetchOne("SELECT id FROM billing_types LIMIT 1");
+$telco3 = $tm->add(['name' => 'task0026m-telco3', 'mobile_price' => 1, 'landline_price' => 1, 'start_time' => 0, 'fract' => 0]);
+$billId = $m->add(['area' => 11, 'price' => 1, 'telco' => $telco3, 'billtype' => $btype]);
+$bill2Id = $m->add(['area' => 22, 'price' => 2, 'telco' => $telco3, 'billtype' => $btype]);
+echo 'BILLING_FIXTURES:' . ((is_int($billId) && is_int($bill2Id)) ? 'OK' : 'BAD') . PHP_EOL;
+
+$ok = $m->update(['id' => $billId, 'area' => 33, 'price' => 3, 'telco' => $telco3, 'billtype' => $btype]);
+$row = $m->get($billId);
+echo 'BILLING_UPDATE_LEGIT:' . (($ok && $row['area'] == 33) ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    $m->update(['id' => "foo'bar", 'area' => 1, 'price' => 1, 'telco' => $telco3, 'billtype' => $btype]);
+    echo 'BILLING_UPDATE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'BILLING_UPDATE_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+$before2b = $m->get($bill2Id);
+try {
+    $m->update(['id' => "0 OR id={$bill2Id}", 'area' => 99, 'price' => 99, 'telco' => $telco3, 'billtype' => $btype]);
+} catch (Exception $e) {
+}
+$after2b = $m->get($bill2Id);
+echo 'BILLING_UPDATE_BOOLEAN_ISOLATED:' . (($after2b['area'] == $before2b['area']) ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    $m->remove("foo'bar");
+    echo 'BILLING_REMOVE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'BILLING_REMOVE_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+$still2b = $m->get($bill2Id);
+echo 'BILLING2_STILL_PRESENT:' . ($still2b ? 'OK' : 'BAD') . PHP_EOL;
+
+$m->remove($billId);
+$goneb = $m->get($billId);
+echo 'BILLING_REMOVE_LEGIT:' . (!$goneb ? 'OK' : 'BAD') . PHP_EOL;
+$m->remove($bill2Id);
+$goneb2 = $m->get($bill2Id);
+$tm->remove($telco3);
+$goneT3 = $tm->get($telco3);
+echo 'BILLING_CLEANUP:' . ((!$goneb2 && !$goneT3) ? 'OK' : 'BAD') . PHP_EOL;
+PHPEOF
+BILLING_OUT="$(run_manager_php_file "$BILLING_PHP")"
+rm -f "$BILLING_PHP"
+for m in TELCOS_FIXTURES TELCOS_UPDATE_LEGIT TELCOS_UPDATE_APOSTROPHE TELCOS_UPDATE_BOOLEAN_ISOLATED TELCOS_REMOVE_APOSTROPHE TELCOS2_STILL_PRESENT TELCOS_REMOVE_LEGIT TELCOS_CLEANUP BILLING_FIXTURES BILLING_UPDATE_LEGIT BILLING_UPDATE_APOSTROPHE BILLING_UPDATE_BOOLEAN_ISOLATED BILLING_REMOVE_APOSTROPHE BILLING2_STILL_PRESENT BILLING_REMOVE_LEGIT BILLING_CLEANUP; do
+    assert_marker "Billing/Telcos: ${m}" "$m" "$BILLING_OUT"
+done
+
+FATALS_AFTER_M="$(fatal_count)"
+if [ "$FATALS_AFTER_M" = "$FATALS_BEFORE_M" ]; then
+    harness_ok "TASK-0026M: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_BEFORE_M})"
+else
+    harness_bad "TASK-0026M: application remained healthy" "PHP Fatal Error count changed: ${FATALS_BEFORE_M} -> ${FATALS_AFTER_M}"
 fi
 
 harness_complete
