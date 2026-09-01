@@ -29,6 +29,63 @@
 #     construction (date range, clausulepeer) -- the MVC twin of the
 #     already-hardened API ServicesReportService.php (TASK-0026F1).
 #
+# TASK-0026L extends this suite again to close the two sibling findings
+# TASK-0026K's own Phase 9 final static closure sweep discovered but
+# explicitly left unfixed (docs/tasks/0026k-report-controller-sql-closure.md,
+# "Security handoff"):
+#
+#   BLOCKER E -- Snep_PickupGroups_Manager::get($id) (and 7 sibling
+#     methods sharing the exact same raw-interpolation pattern:
+#     delete(), getValidation(), edit()/editGroup(), addExtensionsGroup(),
+#     getFilter(), getGroup()) -- reachable via
+#     PickupGroupsController::editAction()/removeAction().
+#   BLOCKER F -- Snep_Queues_Manager::getValidation($id) (and 7 sibling
+#     methods: edit() [second-order, mass-assignable name], remove(),
+#     removeQueues(), removeUserPermission(), removeQueuePeers(),
+#     removeAllMembers(), removeMember()) -- reachable via
+#     QueuesController::removeAction()/editAction()/membersAction().
+#
+# BLOCKER E/F coverage uses two verification paths:
+#   - Where the real controller action is reachable via HTTP, the suite
+#     drives it exactly like BLOCKER A-D (real authenticated request).
+#   - Where it is NOT (see below), the suite invokes the now-fixed
+#     Manager method directly inside the app container, through a small
+#     CLI bootstrap that replicates snep/index.php's registry setup
+#     without dispatching a controller -- the same real PHP code path,
+#     same Zend_Db adapter, just without the broken HTTP entry point in
+#     front of it. This mirrors TASK-0026C's own established precedent
+#     for ProfilesController::addAction() (F8): "routes around [a
+#     pre-existing, unrelated PHP 8.4 bug] by creating its fixture
+#     profile directly via Snep_Profiles_Manager::add() and exercising
+#     the real vulnerable sink through editAction() instead."
+#
+# Three pre-existing, unrelated PHP 8.4 compatibility bugs were
+# discovered while reconstructing these two boundaries (documented in
+# docs/tasks/0026l-pickup-queues-sql-closure.md, not fixed here per
+# CLAUDE.md's "do not fix unrelated legacy bugs opportunistically"):
+#   - PickupGroupsController::removeAction() calls the PHP-7-removed
+#     mysql_escape_string() unconditionally on line 216, before any
+#     Manager call -- every request to this action (GET or POST, any
+#     id) fatals immediately. delete()/getValidation() are therefore
+#     verified via direct Manager invocation, not HTTP.
+#   - PickupGroupsController::addAction()/editAction()'s POST branch
+#     both run `count(Snep_PickupGroups_Manager::getName($name))`, which
+#     is a TypeError under PHP 8 whenever getName() returns false (i.e.
+#     whenever the submitted name does not already exist) -- the same
+#     bug class TASK-0026C already documented for
+#     ProfilesController::addAction() (F8), never extended here. Brand
+#     new pickup groups therefore cannot be created via the real
+#     addAction() HTTP flow; fixtures are created via
+#     Snep_PickupGroups_Manager::addGroup() directly. editGroup()/
+#     addExtensionsGroup() are likewise verified via direct invocation.
+#   - QueuesController::addAction() has the identical
+#     count(Snep_Queues_Manager::getName($name)) bug -- brand new queues
+#     cannot be created via the real addAction() HTTP flow either;
+#     fixtures are created via Snep_Queues_Manager::add() directly.
+#     QueuesController::removeAction()/editAction()/membersAction() have
+#     no equivalent bug and are exercised via real HTTP, once a fixture
+#     exists.
+#
 # Every payload below is a harmless, non-destructive, syntax-shaped
 # string or boolean-oracle value applied only to fixtures this script
 # owns -- never a real exploit chain, never password/hash/schema
@@ -98,6 +155,70 @@ post_fields() {
         "${curl_args[@]}" "${BASE_URL}${path}"
 }
 
+# run_manager_php <php-code> -- BLOCKER E/F. Writes <php-code> to a local
+# temp file (prefixed with a CLI bootstrap that replicates
+# snep/index.php's registry setup -- Snep_Config, Zend_Application,
+# Zend_Registry 'config'/'db' -- without dispatching a controller),
+# copies it into the app container, and executes it with
+# warnings/deprecations suppressed. Used only for the sub-boundaries
+# whose real HTTP entry point is blocked by one of the three pre-existing,
+# unrelated PHP 8.4 bugs documented in this script's header comment --
+# every other check below drives the real controller over HTTP.
+CLI_BOOTSTRAP_REMOTE="/tmp/task0026l_cli_bootstrap.php"
+CLI_BOOTSTRAP_LOCAL="$(mktemp)"
+cat > "$CLI_BOOTSTRAP_LOCAL" <<'BOOTSTRAP_EOF'
+<?php
+error_reporting(0);
+ini_set('display_errors', '0');
+defined('APPLICATION_PATH') || define('APPLICATION_PATH', '/var/www/html/snep');
+set_include_path(implode(PATH_SEPARATOR, array(APPLICATION_PATH . '/lib', get_include_path())));
+require_once 'Snep/Config.php';
+Snep_Config::setConfigFile(APPLICATION_PATH . '/includes/setup.conf');
+$config = Snep_Config::getConfig();
+defined('SNEP_VENDOR') || define('SNEP_VENDOR', $config->ambiente->emp_nome);
+defined('SNEP_VERSION') || define('SNEP_VERSION', trim(file_get_contents(APPLICATION_PATH . '/configs/snep_version')));
+defined('APPLICATION_ENV') || define('APPLICATION_ENV', 'production');
+require_once 'Snep/Modules.php';
+Snep_Modules::getInstance()->addPath(APPLICATION_PATH . '/modules');
+require_once 'Zend/Application.php';
+require_once 'Zend/Config/Ini.php';
+$application = new Zend_Application(APPLICATION_ENV, APPLICATION_PATH . '/application.ini');
+$application->setAutoloaderNamespaces(array('Asterisk_', 'PBX_', 'Snep_'));
+require_once 'Zend/Registry.php';
+Zend_Registry::set('config', $config);
+Zend_Registry::set('db', Snep_Db::getInstance());
+$application->bootstrap();
+error_reporting(0);
+ini_set('display_errors', '0');
+BOOTSTRAP_EOF
+$COMPOSE cp "$CLI_BOOTSTRAP_LOCAL" app:"$CLI_BOOTSTRAP_REMOTE" >/dev/null 2>&1
+harness_register_best_effort_cleanup "local CLI bootstrap temp file" "rm -f '$CLI_BOOTSTRAP_LOCAL'"
+harness_register_best_effort_cleanup "CLI bootstrap file in app container" "$COMPOSE exec -T app rm -f '$CLI_BOOTSTRAP_REMOTE'"
+harness_register_best_effort_cleanup "run_manager_php scratch file in app container" "$COMPOSE exec -T app rm -f /tmp/task0026l_run.php"
+
+run_manager_php() {
+    local code="$1" f
+    f="$(mktemp)"
+    { printf '<?php\n'; printf "require '%s';\n" "$CLI_BOOTSTRAP_REMOTE"; printf '%s\n' "$code"; } > "$f"
+    $COMPOSE cp "$f" app:/tmp/task0026l_run.php >/dev/null 2>&1
+    rm -f "$f"
+    app_exec "php -d display_errors=0 /tmp/task0026l_run.php"
+}
+
+# assert_marker <label> <marker> <output> -- looks for a line
+# "<marker>:OK" in <output> (produced by a run_manager_php call); anything
+# else (BAD, EXCEPTION:..., or a missing marker) is a FAIL with the
+# actual line as detail.
+assert_marker() {
+    local label="$1" marker="$2" output="$3" line
+    line="$(echo "$output" | grep "^${marker}:" | head -1)"
+    if [ "$line" = "${marker}:OK" ]; then
+        harness_ok "$label" "$line"
+    else
+        harness_bad "$label" "expected ${marker}:OK, got: ${line:-<no marker found>}"
+    fi
+}
+
 # --- 0. Preflight --------------------------------------------------------
 
 harness_require_containers app asterisk db
@@ -146,7 +267,7 @@ if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session'
 RESTRICTED_CSRF="$(harness_csrf_token "$RESTRICTED_JAR" "$BASE_URL")"
 if [ -z "$RESTRICTED_CSRF" ]; then harness_blocked "could not read the restricted session's CSRF token"; fi
 
-for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report"; do
+for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report" "/index.php/default/pickup-groups" "/index.php/default/queues"; do
     code="$(request "$RESTRICTED_JAR" GET "$boundary_path")"
     if [ "$code" = 302 ] && redirects_to_permission_error; then
         harness_ok "authorization intact: ${boundary_path}" "zero-permission user denied (HTTP 302, Location: permission/error)"
@@ -155,9 +276,9 @@ for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-r
     fi
 done
 
-code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&snep_csrf_token=${ADMIN_CSRF}")"
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&snep_csrf_token=${ADMIN_CSRF}")"
 if [ "$code" = 302 ]; then
-    harness_ok "admin grants exactly the four required permissions" "HTTP $code (trunks-write, calls-report-read, ranking-report-read, services-report-read)"
+    harness_ok "admin grants exactly the six required permissions" "HTTP $code (trunks-write, calls-report-read, ranking-report-read, services-report-read, pickup-groups-write, queues-write)"
 else
     harness_blocked "granting permissions to the restricted user failed (HTTP $code) -- cannot proceed"
 fi
@@ -489,5 +610,286 @@ report_check "ServicesReport: apostrophe-containing period value causes no SQL e
     /index.php/default/services-report \
     "period=01/01/2000 00:00' - 31/12/2030 23:59" "serv_select[]=DND" "group_select=0" "exten_select=" \
     "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# =============================================================================
+# BLOCKER E -- Snep_PickupGroups_Manager::get() and siblings
+# =============================================================================
+
+log "==> BLOCKER E: Snep_PickupGroups_Manager boundary"
+
+# Fresh snapshot for this section's own health check -- BLOCKER B's own
+# already-accounted-for CallsReportController.php:402 count() fatals
+# (one per calls-report request, expected and asserted PASS above) would
+# otherwise be misattributed to BLOCKER E if compared against the
+# script-start $FATALS_BEFORE.
+FATALS_BEFORE_E="$(fatal_count)"
+
+# 22. Legitimate lookup: the pre-existing "GERAL" seed group renders via
+# the real editAction() GET flow (get()'s legitimate path).
+code="$(request "$RESTRICTED_JAR" GET "/index.php/default/pickup-groups/edit/id/1")"
+if [ "$code" = 200 ] && grep -qF "GERAL" "$BODY"; then
+    harness_ok "PickupGroups: legitimate lookup (id=1, GERAL) renders correctly" "HTTP $code, GERAL found in body"
+else
+    harness_bad "PickupGroups: legitimate lookup (id=1, GERAL) renders correctly" "HTTP $code, GERAL not found in body"
+fi
+
+# 23. Apostrophe-shaped id causes no SQL error -- the core BLOCKER E
+# proof. Pre-fix this produced a genuine SQLSTATE[42000] syntax error
+# (confirmed live during this task's own A/B verification).
+code="$(request "$RESTRICTED_JAR" GET "/index.php/default/pickup-groups/edit/id/foo%27bar")"
+TAIL_E="$(app_exec 'tail -c 2000 /var/log/apache2/mag-error.log 2>/dev/null')"
+if [ "$code" = 200 ] && ! echo "$TAIL_E" | grep -qi "SQLSTATE\|syntax error"; then
+    harness_ok "PickupGroups: apostrophe-shaped id causes no SQL error" "HTTP $code, no SQL/syntax error"
+else
+    harness_bad "PickupGroups: apostrophe-shaped id causes no SQL error" "HTTP $code, log tail: $(echo "$TAIL_E" | tr '\n' ' ' | tail -c 300)"
+fi
+
+# 24. Fixtures: CANARY/MALICIOUS pickup groups, created via direct
+# Snep_PickupGroups_Manager::addGroup() invocation --
+# PickupGroupsController::addAction() cannot be used here (see this
+# script's header comment: count(false) TypeError on any brand-new name).
+FIXTURE_OUT="$(run_manager_php "
+echo 'FIXTURES:' . Snep_PickupGroups_Manager::addGroup(['nome' => 'task0026l-canary']) . ',' . Snep_PickupGroups_Manager::addGroup(['nome' => 'task0026l-malicious']) . PHP_EOL;
+")"
+FIXTURE_LINE="$(echo "$FIXTURE_OUT" | grep '^FIXTURES:' | head -1)"
+CANARY_ID="$(echo "$FIXTURE_LINE" | sed 's/FIXTURES://' | cut -d, -f1 | tr -d '\r')"
+MAL_ID="$(echo "$FIXTURE_LINE" | sed 's/FIXTURES://' | cut -d, -f2 | tr -d '\r')"
+if [ -n "$CANARY_ID" ] && [ -n "$MAL_ID" ] && [ "$CANARY_ID" != "$MAL_ID" ]; then
+    harness_ok "PickupGroups: CANARY/MALICIOUS fixtures created" "CANARY id=${CANARY_ID}, MALICIOUS id=${MAL_ID}"
+else
+    harness_blocked "could not create PickupGroups CANARY/MALICIOUS fixtures -- output: $FIXTURE_OUT"
+fi
+cleanup_pickupgroups_fixtures() {
+    run_manager_php "Snep_PickupGroups_Manager::delete(${CANARY_ID}); Snep_PickupGroups_Manager::delete(${MAL_ID}); echo 'cleaned';" | grep -q cleaned
+}
+harness_register_cleanup "pickup groups CANARY/MALICIOUS fixtures (id=${CANARY_ID}/${MAL_ID})" "cleanup_pickupgroups_fixtures"
+
+# 25. Boolean-shaped id cannot cross-leak another group's data: a
+# "0 OR cod_grupo=<CANARY_ID>" id (leading "0" collapses to numeric 0 on
+# implicit string->int coercion once bound as literal data, matching no
+# real row -- the exact TASK-0026J BLOCKER A payload shape) must not
+# render CANARY's own name anywhere in the response.
+INJECTED_ID="0 OR cod_grupo=${CANARY_ID}"
+INJECTED_ID_ENC="$(printf '%s' "$INJECTED_ID" | sed 's/ /%20/g; s/=/%3D/g')"
+code="$(request "$RESTRICTED_JAR" GET "/index.php/default/pickup-groups/edit/id/${INJECTED_ID_ENC}")"
+if [ "$code" = 200 ] && ! grep -qF "task0026l-canary" "$BODY"; then
+    harness_ok "PickupGroups: boolean-shaped id cannot cross-leak another group" "HTTP $code, CANARY's own name not rendered"
+else
+    harness_bad "PickupGroups: boolean-shaped id cannot cross-leak another group" "HTTP $code, unexpected CANARY leak in body"
+fi
+
+# 26-33. Sibling methods verified via direct invocation of the now-fixed
+# Manager code (see this script's header comment for why
+# removeAction()/addAction()/editAction()'s POST branch are unreachable
+# via HTTP in this environment -- three separate, pre-existing, unrelated
+# PHP 8.4 bugs, none fixed by this task).
+SIBLING_OUT="$(run_manager_php "
+\$db = Zend_Registry::get('db');
+\$canaryId = ${CANARY_ID}; \$malId = ${MAL_ID};
+\$injected = '0 OR cod_grupo=' . \$canaryId;
+
+\$r = Snep_PickupGroups_Manager::getValidation(\$canaryId);
+echo 'GETVALIDATION_LEGIT:' . ((is_array(\$r) && count(\$r) === 0) ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    \$r = Snep_PickupGroups_Manager::getValidation(\"foo'bar\");
+    echo 'GETVALIDATION_APOSTROPHE:' . (is_array(\$r) ? 'OK' : 'BAD') . PHP_EOL;
+} catch (Exception \$e) {
+    echo 'GETVALIDATION_APOSTROPHE:EXCEPTION:' . \$e->getMessage() . PHP_EOL;
+}
+
+try {
+    \$r = Snep_PickupGroups_Manager::getValidation(\$injected);
+    echo 'GETVALIDATION_BOOLEAN:' . ((is_array(\$r) && count(\$r) === 0) ? 'OK' : 'BAD') . PHP_EOL;
+} catch (Exception \$e) {
+    echo 'GETVALIDATION_BOOLEAN:EXCEPTION:' . \$e->getMessage() . PHP_EOL;
+}
+
+try {
+    Snep_PickupGroups_Manager::editGroup(['name' => 'task0026l-hijacked', 'id' => \$injected]);
+    \$after = Snep_PickupGroups_Manager::get(\$canaryId);
+    echo 'EDITGROUP_BOOLEAN:' . ((\$after && \$after['nome'] === 'task0026l-canary') ? 'OK' : 'BAD') . PHP_EOL;
+} catch (Exception \$e) {
+    echo 'EDITGROUP_BOOLEAN:EXCEPTION:' . \$e->getMessage() . PHP_EOL;
+}
+
+try {
+    Snep_PickupGroups_Manager::editGroup(['name' => 'task0026l-canary-renamed', 'id' => \$canaryId]);
+    \$after = Snep_PickupGroups_Manager::get(\$canaryId);
+    echo 'EDITGROUP_LEGIT:' . ((\$after && \$after['nome'] === 'task0026l-canary-renamed') ? 'OK' : 'BAD') . PHP_EOL;
+} catch (Exception \$e) {
+    echo 'EDITGROUP_LEGIT:EXCEPTION:' . \$e->getMessage() . PHP_EOL;
+}
+
+try {
+    Snep_PickupGroups_Manager::addExtensionsGroup(['extensions' => \"1' OR '1'='1\", 'pickupgroup' => \$malId]);
+    echo 'ADDEXTGROUP_SHAPED:OK' . PHP_EOL;
+} catch (Exception \$e) {
+    echo 'ADDEXTGROUP_SHAPED:EXCEPTION:' . \$e->getMessage() . PHP_EOL;
+}
+
+try {
+    \$select = Snep_PickupGroups_Manager::getFilter('nome', \"foo' OR '1'='1\");
+    \$stmt = \$db->query(\$select);
+    \$stmt->fetchAll();
+    echo 'GETFILTER_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception \$e) {
+    echo 'GETFILTER_APOSTROPHE:EXCEPTION:' . \$e->getMessage() . PHP_EOL;
+}
+
+try {
+    Snep_PickupGroups_Manager::delete(\"foo'bar\");
+    \$after = Snep_PickupGroups_Manager::get(\$canaryId);
+    echo 'DELETE_APOSTROPHE:' . (\$after ? 'OK' : 'BAD') . PHP_EOL;
+} catch (Exception \$e) {
+    echo 'DELETE_APOSTROPHE:EXCEPTION:' . \$e->getMessage() . PHP_EOL;
+}
+")"
+
+assert_marker "PickupGroups: getValidation() legitimate lookup returns cleanly" "GETVALIDATION_LEGIT" "$SIBLING_OUT"
+assert_marker "PickupGroups: getValidation() apostrophe-shaped id causes no exception" "GETVALIDATION_APOSTROPHE" "$SIBLING_OUT"
+assert_marker "PickupGroups: getValidation() boolean-shaped id matches nothing" "GETVALIDATION_BOOLEAN" "$SIBLING_OUT"
+assert_marker "PickupGroups: editGroup() boolean-shaped id cannot alter CANARY" "EDITGROUP_BOOLEAN" "$SIBLING_OUT"
+assert_marker "PickupGroups: editGroup() legitimate rename works" "EDITGROUP_LEGIT" "$SIBLING_OUT"
+assert_marker "PickupGroups: addExtensionsGroup() SQL-shaped value causes no exception" "ADDEXTGROUP_SHAPED" "$SIBLING_OUT"
+assert_marker "PickupGroups: getFilter() apostrophe-shaped query causes no exception" "GETFILTER_APOSTROPHE" "$SIBLING_OUT"
+assert_marker "PickupGroups: delete() apostrophe-shaped id causes no exception, CANARY untouched" "DELETE_APOSTROPHE" "$SIBLING_OUT"
+
+FATALS_AFTER_E="$(fatal_count)"
+if [ "$FATALS_AFTER_E" = "$FATALS_BEFORE_E" ]; then
+    harness_ok "BLOCKER E: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_BEFORE_E})"
+else
+    harness_bad "BLOCKER E: application remained healthy" "PHP Fatal Error count changed: ${FATALS_BEFORE_E} -> ${FATALS_AFTER_E}"
+fi
+
+# =============================================================================
+# BLOCKER F -- Snep_Queues_Manager::getValidation() and siblings
+# =============================================================================
+
+log "==> BLOCKER F: Snep_Queues_Manager boundary"
+
+# 34. Fixtures: CANARY/CANARY2/MALICIOUS queues, created via direct
+# Snep_Queues_Manager::add() invocation -- QueuesController::addAction()
+# cannot be used here (identical count(false) TypeError as PickupGroups').
+# SNEP's own field convention throughout QueuesController -- confirmed
+# live, preserved exactly as-is, not a bug this task fixes: the
+# route/POST "id" field carries the queue's NAME (every Manager lookup
+# here keys on name), the POST "name" field carries the queue's real
+# numeric database id (used only by removeUserPermission()'s queue_id
+# FK lookup).
+FIXTURE_OUT_Q="$(run_manager_php "
+\$base = ['musiconhold'=>'default','announce'=>'','context'=>'from-queue','timeout'=>15,'queue_youarenext'=>'','queue_thereare'=>'','queue_callswaiting'=>'','queue_thankyou'=>'','announce_frequency'=>0,'retry'=>5,'wrapuptime'=>0,'maxlen'=>0,'servicelevel'=>60,'strategy'=>'ringall','joinempty'=>'yes','leavewhenempty'=>0,'reportholdtime'=>0,'memberdelay'=>0,'weight'=>0,'ringinuse'=>0];
+\$c = \$base; \$c['name'] = 'task0026lqcanary';
+\$c2 = \$base; \$c2['name'] = 'task0026lqcanary2';
+\$m = \$base; \$m['name'] = \"task0026lq-mal's\";
+echo 'FIXTURES:' . Snep_Queues_Manager::add(\$c) . ',' . Snep_Queues_Manager::add(\$c2) . ',' . Snep_Queues_Manager::add(\$m) . PHP_EOL;
+")"
+FIXTURE_LINE_Q="$(echo "$FIXTURE_OUT_Q" | grep '^FIXTURES:' | head -1)"
+QCANARY_ID="$(echo "$FIXTURE_LINE_Q" | sed 's/FIXTURES://' | cut -d, -f1 | tr -d '\r')"
+QCANARY2_ID="$(echo "$FIXTURE_LINE_Q" | sed 's/FIXTURES://' | cut -d, -f2 | tr -d '\r')"
+QMAL_ID="$(echo "$FIXTURE_LINE_Q" | sed 's/FIXTURES://' | cut -d, -f3 | tr -d '\r')"
+if [ -n "$QCANARY_ID" ] && [ -n "$QCANARY2_ID" ] && [ -n "$QMAL_ID" ]; then
+    harness_ok "Queues: CANARY/CANARY2/MALICIOUS fixtures created" "ids=${QCANARY_ID}/${QCANARY2_ID}/${QMAL_ID}"
+else
+    harness_blocked "could not create Queues CANARY/CANARY2/MALICIOUS fixtures -- output: $FIXTURE_OUT_Q"
+fi
+cleanup_queues_fixtures() {
+    run_manager_php "
+foreach (['task0026lqcanary','task0026lqcanary2',\"task0026lq-mal's\"] as \$n) {
+    Snep_Queues_Manager::remove(\$n);
+    Snep_Queues_Manager::removeQueues(\$n);
+    Snep_Queues_Manager::removeQueuePeers(\$n);
+}
+foreach ([${QCANARY_ID}, ${QCANARY2_ID}, ${QMAL_ID}] as \$i) {
+    Snep_Queues_Manager::removeUserPermission(\$i);
+}
+echo 'cleaned';
+" | grep -q cleaned
+}
+harness_register_cleanup "queues CANARY/CANARY2/MALICIOUS fixtures (ids=${QCANARY_ID}/${QCANARY2_ID}/${QMAL_ID})" "cleanup_queues_fixtures"
+
+# 35. Legitimate GET removeAction (real name) reaches the DB layer
+# cleanly and renders the delete-confirmation page (getValidation()'s
+# legitimate path, plus getValidationPeers()/getValidationAgent()/get()).
+code="$(request "$RESTRICTED_JAR" GET "/index.php/default/queues/remove/id/task0026lqcanary")"
+if [ "$code" = 200 ]; then
+    harness_ok "Queues: legitimate removeAction lookup (CANARY) reaches the DB layer cleanly" "HTTP $code"
+else
+    harness_bad "Queues: legitimate removeAction lookup (CANARY) reaches the DB layer cleanly" "HTTP $code"
+fi
+
+# 36. Apostrophe-shaped id causes no SQL error -- the core BLOCKER F
+# proof (getValidation()). Pre-fix this produced a genuine
+# SQLSTATE[42000] syntax error (confirmed live during this task's own
+# A/B verification).
+code="$(request "$RESTRICTED_JAR" GET "/index.php/default/queues/remove/id/foo%27bar")"
+TAIL_F="$(app_exec 'tail -c 2000 /var/log/apache2/mag-error.log 2>/dev/null')"
+if [ "$code" = 200 ] && ! echo "$TAIL_F" | grep -qi "SQLSTATE\|syntax error"; then
+    harness_ok "Queues: apostrophe-shaped id causes no SQL error" "HTTP $code, no SQL/syntax error"
+else
+    harness_bad "Queues: apostrophe-shaped id causes no SQL error" "HTTP $code, log tail: $(echo "$TAIL_F" | tr '\n' ' ' | tail -c 300)"
+fi
+
+# 37. Boolean/apostrophe-shaped POST removeAction cannot delete CANARY2 --
+# remove()/removeQueues()/removeUserPermission()/removeQueuePeers() are
+# all reached with the same neutralized payload; all now bind as literal
+# data, matching no real row.
+code="$(post_fields "$RESTRICTED_JAR" "/index.php/default/queues/remove/id/x%27%20OR%20%271%27%3D%271" \
+    "id=x' OR '1'='1" "name=0 OR queue_id=${QCANARY2_ID}" "snep_csrf_token=${RESTRICTED_CSRF}")"
+STILL_THERE="$(db_query "SELECT COUNT(*) FROM queues WHERE name='task0026lqcanary2';")"
+if [ "$code" = 302 ] && [ "$STILL_THERE" = "1" ]; then
+    harness_ok "Queues: boolean-shaped POST removeAction cannot delete CANARY2" "HTTP $code, CANARY2 still present"
+else
+    harness_bad "Queues: boolean-shaped POST removeAction cannot delete CANARY2" "HTTP $code, CANARY2 count=${STILL_THERE}"
+fi
+
+# 38. Legitimate remove still works end to end: deleting CANARY (real
+# name + real numeric id) actually removes it (remove()/removeQueues()/
+# removeUserPermission()/removeQueuePeers() all still function correctly
+# for legitimate values).
+code="$(post_fields "$RESTRICTED_JAR" "/index.php/default/queues/remove/id/task0026lqcanary" \
+    "id=task0026lqcanary" "name=${QCANARY_ID}" "snep_csrf_token=${RESTRICTED_CSRF}")"
+GONE="$(db_query "SELECT COUNT(*) FROM queues WHERE name='task0026lqcanary';")"
+if [ "$code" = 302 ] && [ "$GONE" = "0" ]; then
+    harness_ok "Queues: legitimate remove (CANARY) still works end to end" "HTTP $code, CANARY row removed"
+else
+    harness_bad "Queues: legitimate remove (CANARY) still works end to end" "HTTP $code, CANARY count=${GONE}"
+fi
+
+# 39. edit()'s second-order boundary: MALICIOUS's own mass-assignable
+# name (containing an apostrophe, stored verbatim by add(), no
+# server-side sanitization at creation time) flows back into edit()'s
+# WHERE clause on every subsequent legitimate edit -- the exact same
+# second-order pattern TASK-0026J's BLOCKER A closed for trunk names.
+# Must apply cleanly, no SQL error.
+code="$(post_fields "$RESTRICTED_JAR" "/index.php/default/queues/edit/id/task0026lq-mal's" \
+    "musiconhold=default" "announce=" "context=from-queue" "timeout=42" "queue_youarenext=" "queue_thereare=" \
+    "queue_callswaiting=" "queue_thankyou=" "announce_frequency=0" "retry=5" "wrapuptime=0" "maxlen=0" \
+    "servicelevel=60" "strategy=ringall" "joinempty=yes" "leavewhenempty=0" "reportholdtime=0" "memberdelay=0" \
+    "weight=0" "ringinuse=0" "snep_csrf_token=${RESTRICTED_CSRF}")"
+NEW_TIMEOUT="$(db_query "SELECT timeout FROM queues WHERE id=${QMAL_ID};")"
+if [ "$code" = 302 ] && [ "$NEW_TIMEOUT" = "42" ]; then
+    harness_ok "Queues: edit() second-order boundary (mass-assignable apostrophe-bearing name) applies cleanly" "HTTP $code, timeout updated to 42"
+else
+    harness_bad "Queues: edit() second-order boundary (mass-assignable apostrophe-bearing name) applies cleanly" "HTTP $code, timeout=${NEW_TIMEOUT}"
+fi
+
+# 40. membersAction()'s removeAllMembers() boundary: SQL-shaped route id
+# causes no crash, no SQL error.
+code="$(post_fields "$RESTRICTED_JAR" "/index.php/default/queues/members/id/x%27%20OR%20%271%27%3D%271" \
+    "snep_csrf_token=${RESTRICTED_CSRF}")"
+TAIL_MEMBERS="$(app_exec 'tail -c 2000 /var/log/apache2/mag-error.log 2>/dev/null')"
+if [ "$code" = 302 ] && ! echo "$TAIL_MEMBERS" | grep -qi "SQLSTATE\|syntax error"; then
+    harness_ok "Queues: membersAction() SQL-shaped id causes no SQL error" "HTTP $code, no SQL/syntax error"
+else
+    harness_bad "Queues: membersAction() SQL-shaped id causes no SQL error" "HTTP $code, log tail: $(echo "$TAIL_MEMBERS" | tr '\n' ' ' | tail -c 300)"
+fi
+
+FATALS_AFTER_F="$(fatal_count)"
+if [ "$FATALS_AFTER_F" = "$FATALS_AFTER_E" ]; then
+    harness_ok "BLOCKER F: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_AFTER_E})"
+else
+    harness_bad "BLOCKER F: application remained healthy" "PHP Fatal Error count changed: ${FATALS_AFTER_E} -> ${FATALS_AFTER_F}"
+fi
 
 harness_complete

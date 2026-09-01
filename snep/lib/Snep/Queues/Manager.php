@@ -143,7 +143,7 @@ class Snep_Queues_Manager {
             'ringinuse' => $queue['ringinuse']
         );
 
-        $db->update('queues', $update_data, "name = '{$queue['name']}'");
+        $db->update('queues', $update_data, $db->quoteInto('name = ?', $queue['name']));
     }
 
     /**
@@ -155,7 +155,7 @@ class Snep_Queues_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('queues', "name = '$name'");
+        $db->delete('queues', $db->quoteInto('name = ?', $name));
 
         try {
             $db->commit();
@@ -173,7 +173,7 @@ class Snep_Queues_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('queues_agent', "queue = '$name'");
+        $db->delete('queues_agent', $db->quoteInto('queue = ?', $name));
 
         try {
             $db->commit();
@@ -191,7 +191,7 @@ class Snep_Queues_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('users_queues_permissions', "users_queues_permissions.queue_id = $id");
+        $db->delete('users_queues_permissions', $db->quoteInto('users_queues_permissions.queue_id = ?', $id));
 
         try {
             $db->commit();
@@ -209,7 +209,7 @@ class Snep_Queues_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('queue_peers', "queue_peers.fila = '$queue'");
+        $db->delete('queue_peers', $db->quoteInto('queue_peers.fila = ?', $queue));
 
         try {
             $db->commit();
@@ -265,7 +265,7 @@ class Snep_Queues_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('queue_members', "queue_name = '$queue'");
+        $db->delete('queue_members', $db->quoteInto('queue_name = ?', $queue));
 
         try {
             $db->commit();
@@ -283,7 +283,7 @@ class Snep_Queues_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('queue_members', "membername = '$member'");
+        $db->delete('queue_members', $db->quoteInto('membername = ?', $member));
 
         try {
             $db->commit();
@@ -355,7 +355,7 @@ class Snep_Queues_Manager {
 
         $db = Zend_Registry::get('db');
 
-        $rules_query = "SELECT rule.id, rule.desc FROM regras_negocio as rule, regras_negocio_actions_config as rconf WHERE (rconf.regra_id = rule.id AND rconf.value = '$id' AND (rconf.key = 'queue'))";
+        $rules_query = "SELECT rule.id, rule.desc FROM regras_negocio as rule, regras_negocio_actions_config as rconf WHERE (rconf.regra_id = rule.id AND rconf.value = " . $db->quote($id) . " AND (rconf.key = 'queue'))";
         $regras = $db->query($rules_query)->fetchAll();
 
         return $regras;

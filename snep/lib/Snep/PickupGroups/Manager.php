@@ -51,7 +51,7 @@ class Snep_PickupGroups_Manager {
     public static function delete($id) {
 
         $db = Zend_Registry::get('db');
-        $db->delete("grupos", "cod_grupo='{$id}'");
+        $db->delete("grupos", $db->quoteInto('cod_grupo = ?', $id));
     }
 
     /**
@@ -64,7 +64,7 @@ class Snep_PickupGroups_Manager {
         $db = Zend_Registry::get('db');
         $select = $db->select()
                 ->from('grupos')
-                ->where("cod_grupo = '$id'");
+                ->where('cod_grupo = ?', $id);
 
         $stmt = $db->query($select);
         $registros = $stmt->fetch();
@@ -136,7 +136,7 @@ class Snep_PickupGroups_Manager {
                 ->from('grupos');
 
         if (!is_null($query)) {
-            $select->where("$field like '%$query%'");
+            $select->where("$field like ?", "%$query%");
         }
 
         return $select;
@@ -151,7 +151,7 @@ class Snep_PickupGroups_Manager {
 
         $db = Zend_Registry::get('db');
 
-        $rules_query = "SELECT rule.id, rule.desc FROM regras_negocio as rule, regras_negocio_actions_config as rconf WHERE (rconf.regra_id = rule.id AND rconf.value = '$id' AND (rconf.key = 'pickupgroup'))";
+        $rules_query = "SELECT rule.id, rule.desc FROM regras_negocio as rule, regras_negocio_actions_config as rconf WHERE (rconf.regra_id = rule.id AND rconf.value = " . $db->quote($id) . " AND (rconf.key = 'pickupgroup'))";
         $regras = $db->query($rules_query)->fetchAll();
 
         return $regras;
@@ -187,7 +187,7 @@ class Snep_PickupGroups_Manager {
 
         try {
 
-            $db->update('grupos', $value, 'cod_grupo =' . $pickupGroup['id']);
+            $db->update('grupos', $value, $db->quoteInto('cod_grupo = ?', $pickupGroup['id']));
             $db->commit();
             return true;
         } catch (Exception $e) {
@@ -253,7 +253,7 @@ class Snep_PickupGroups_Manager {
 
             $value = array("peers.pickupgroup" => $extensionsGroup['pickupgroup']);
 
-            $db->update("peers", $value, "name = " . $extensionsGroup['extensions']);
+            $db->update("peers", $value, $db->quoteInto('name = ?', $extensionsGroup['extensions']));
             $db->commit();
 
             return true;
@@ -274,7 +274,7 @@ class Snep_PickupGroups_Manager {
         $db = Zend_Registry::get('db');
         $select = $db->select()
                 ->from('grupos')
-                ->where("cod_grupo = '$id'");
+                ->where('cod_grupo = ?', $id);
 
         $stmt = $db->query($select);
         $registros = $stmt->fetch();
@@ -315,7 +315,7 @@ class Snep_PickupGroups_Manager {
 
         try {
 
-            $db->update('grupos', $value, 'cod_grupo =' . $pickupGroup['id']);
+            $db->update('grupos', $value, $db->quoteInto('cod_grupo = ?', $pickupGroup['id']));
             $db->commit();
             return true;
         } catch (Exception $e) {
