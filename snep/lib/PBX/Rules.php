@@ -44,7 +44,7 @@ class PBX_Rules {
      */
     public static function delete($id) {
         $db = Snep_Db::getInstance();
-        $db->delete("regras_negocio", "id='{$id}'");
+        $db->delete("regras_negocio", $db->quoteInto('id = ?', $id));
     }
 
     /**
@@ -59,7 +59,7 @@ class PBX_Rules {
 
         $select = $db->select()
                 ->from('regras_negocio')
-                ->where("id = '$id'");
+                ->where('id = ?', $id);
 
         $regra_raw = $db->query($select)->fetchObject();
 
@@ -121,7 +121,7 @@ class PBX_Rules {
 
         $select = $db->select()
                 ->from('regras_negocio_actions')
-                ->where("regra_id = $id")
+                ->where('regra_id = ?', $id)
                 ->order('prio');
 
         $actions = $db->query($select)->fetchAll();
@@ -130,7 +130,7 @@ class PBX_Rules {
         if (count($actions) > 0) {
             $select = $db->select()
                     ->from('regras_negocio_actions_config')
-                    ->where("regra_id = $id")
+                    ->where('regra_id = ?', $id)
                     ->order('prio');
 
             $configs_raw = $db->query($select)->fetchAll();
@@ -236,9 +236,9 @@ class PBX_Rules {
         $db->beginTransaction();
 
         try {
-            $db->update("regras_negocio", $update_data, "id='{$rule->getId()}'");
+            $db->update("regras_negocio", $update_data, $db->quoteInto('id = ?', $rule->getId()));
 
-            $db->delete("regras_negocio_actions", "regra_id='{$rule->getId()}'");
+            $db->delete("regras_negocio_actions", $db->quoteInto('regra_id = ?', $rule->getId()));
             $action_prio = 0;
             foreach ($rule->getAcoes() as $acao) {
                 $action_update_data = array(

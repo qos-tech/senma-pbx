@@ -386,8 +386,8 @@ class PBX_Rule {
       $select = $db->select()
       ->from(array("n" => "contacts_names"))
       ->join(array("p" => "contacts_phone"), 'n.id = p.contact_id')
-      ->where("`group` = '$expr'")
-      ->where("`phone` = '$value'");
+      ->where('`group` = ?', $expr)
+      ->where('`phone` = ?', $value);
 
       $stmt = $db->query($select);
       $groups = $stmt->fetchAll();
@@ -782,7 +782,7 @@ class PBX_Rule {
     $select = $db->select()
             ->from(array("n" => "date_alias"), array("id","name"))
             ->join(array("p" => "date_alias_list"), 'n.id = p.dateid', array("date","timerange","list_id" => "id"))
-            ->where("n.id = $id");
+            ->where('n.id = ?', $id);
 
     $stmt = $db->query($select);
     $dates = $stmt->fetchAll();

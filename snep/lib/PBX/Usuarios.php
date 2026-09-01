@@ -50,8 +50,7 @@ class PBX_Usuarios {
     public static function get($userid) {
         $db = Snep_Db::getInstance();
 
-        $userid = str_replace("'", "\'", $userid);
-        $select = $db->select()->from('peers')->where("name = '$userid' AND peer_type='R'");
+        $select = $db->select()->from('peers')->where('name = ?', $userid)->where("peer_type='R'");
         $stmt = $db->query($select);
         $usuario = $stmt->fetchObject();
         if (!$usuario) {
@@ -202,8 +201,8 @@ class PBX_Usuarios {
         $select = $db->select()
             ->from('core_peer_groups')
             ->joinInner('peers','peers.id = core_peer_groups.peer_id')
-            ->where('peers.name = '.$exten)
-            ->where('core_peer_groups.group_id = '.$group);
+            ->where('peers.name = ?', $exten)
+            ->where('core_peer_groups.group_id = ?', $group);
 
         $stmt = $db->query($select);
         return  $stmt->fetchAll();
