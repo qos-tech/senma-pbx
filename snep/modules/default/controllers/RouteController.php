@@ -111,11 +111,24 @@ class RouteController extends Zend_Controller_Action {
         $hide_routes = $config->system->hide_routes;
         $where = "";
 
+        // TASK-0026O: regras_negocio.type is a MariaDB
+        // enum('incoming','outgoing','others') column (see
+        // snep/install/database/schema.sql) -- $_GET['type'] was
+        // interpolated raw into the WHERE clause below. type selects
+        // among this fixed 3-value domain (route/index.phtml's own
+        // dropdown links), so an allowlist is used rather than
+        // parameterization alone; a value outside the domain can never
+        // match a real row, so it is filtered to an empty result set,
+        // matching pre-fix behavior for any unrecognized value.
+        $validRouteTypes = array("incoming", "outgoing", "others");
+        $select = $db->select()->from("regras_negocio");
         if(isset($_GET["type"])){
             $type = $_GET['type'];
-            $select = $db->select()->from("regras_negocio")->where("type = '$type'");
-        }else{
-            $select = $db->select()->from("regras_negocio");
+            if (in_array($type, $validRouteTypes, true)) {
+                $select->where("type = ?", $type);
+            } else {
+                $select->where("1 = 0");
+            }
         }
 
         if ($hide_routes === "1") {

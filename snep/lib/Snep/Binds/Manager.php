@@ -126,7 +126,7 @@ class Snep_Binds_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('core_binds', "user_id = '$id'");
+        $db->delete('core_binds', $db->quoteInto('user_id = ?', $id));
 
         try {
             $db->commit();
@@ -144,7 +144,7 @@ class Snep_Binds_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('core_binds', "peer_name = '$peer'");
+        $db->delete('core_binds', $db->quoteInto('peer_name = ?', $peer));
 
         try {
             $db->commit();
@@ -162,7 +162,7 @@ class Snep_Binds_Manager {
         $db = Zend_Registry::get('db');
 
         $db->beginTransaction();
-        $db->delete('core_binds_exceptions', "user_id = '$id'");
+        $db->delete('core_binds_exceptions', $db->quoteInto('user_id = ?', $id));
 
         try {
             $db->commit();
