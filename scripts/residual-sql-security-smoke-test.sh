@@ -111,6 +111,28 @@
 # including the sibling sites (PBX_Rule::getValidAliasDateById(),
 # PBX_Usuarios::get(), PBX_Rules::get()/update()) fixed alongside them.
 #
+# TASK-0026O extends this suite again to close the two confirmed sinks
+# TASK-0026N's own Phase 8 final sweep discovered but explicitly left
+# unfixed (docs/tasks/0026n-pbx-rule-sql-closure.md, "Security handoff"):
+#
+#   O1 -- RouteController::indexAction()'s own inline SQL
+#     (`where("type = '$type'")`, raw $_GET['type']) -- reachable on the
+#     route list page itself. regras_negocio.type is a MariaDB
+#     enum('incoming','outgoing','others') column (schema.sql), so this
+#     was closed with a strict allowlist (not just parameterization) --
+#     see docs/tasks/0026o-route-binds-sql-closure.md.
+#   O2/O3 -- Snep_Binds_Manager::removeBond()/removeBondException()
+#     (`delete('core_binds'/'core_binds_exceptions', "user_id = '$id'")`)
+#     -- reachable via UsersController::removeAction() (route id) and
+#     ::bondAction() (POST id).
+#
+# Sibling audit additionally found and fixed removeBondByPeer() (identical
+# `delete('core_binds', "peer_name = '$peer'")` pattern) -- reachable via
+# ExtensionsController::removeAction() with the raw, unvalidated $_POST['id']
+# (Snep_Extensions_Manager::getPeer() returns false, not an exception, for a
+# non-matching id, so execution reaches removeBondByPeer() with the raw
+# value regardless of whether it matches a real extension).
+#
 # Every payload below is a harmless, non-destructive, syntax-shaped
 # string or boolean-oracle value applied only to fixtures this script
 # owns -- never a real exploit chain, never password/hash/schema
@@ -294,7 +316,7 @@ if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session'
 RESTRICTED_CSRF="$(harness_csrf_token "$RESTRICTED_JAR" "$BASE_URL")"
 if [ -z "$RESTRICTED_CSRF" ]; then harness_blocked "could not read the restricted session's CSRF token"; fi
 
-for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report" "/index.php/default/pickup-groups" "/index.php/default/queues" "/index.php/default/contacts" "/index.php/default/contact-groups" "/index.php/default/dates-alias" "/index.php/default/expression-alias" "/index.php/default/cost-center" "/index.php/default/extensions-groups" "/index.php/default/sound-files" "/index.php/billing/billing" "/index.php/billing/telcos" "/index.php/default/route"; do
+for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report" "/index.php/default/pickup-groups" "/index.php/default/queues" "/index.php/default/contacts" "/index.php/default/contact-groups" "/index.php/default/dates-alias" "/index.php/default/expression-alias" "/index.php/default/cost-center" "/index.php/default/extensions-groups" "/index.php/default/sound-files" "/index.php/billing/billing" "/index.php/billing/telcos" "/index.php/default/route" "/index.php/default/users"; do
     code="$(request "$RESTRICTED_JAR" GET "$boundary_path")"
     if [ "$code" = 302 ] && redirects_to_permission_error; then
         harness_ok "authorization intact: ${boundary_path}" "zero-permission user denied (HTTP 302, Location: permission/error)"
@@ -315,9 +337,9 @@ else
     harness_bad "authenticated-open confirmed: /index.php/default/simulator" "expected HTTP 200 for a zero-permission session, got HTTP ${code}"
 fi
 
-code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&default_contacts_write=1&default_contact-groups_write=1&default_dates-alias_write=1&default_expression-alias_write=1&default_cost-center_write=1&default_extensions-groups_write=1&default_sound-files_write=1&billing_billing_write=1&billing_telcos_write=1&default_route_write=1&snep_csrf_token=${ADMIN_CSRF}")"
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&default_contacts_write=1&default_contact-groups_write=1&default_dates-alias_write=1&default_expression-alias_write=1&default_cost-center_write=1&default_extensions-groups_write=1&default_sound-files_write=1&billing_billing_write=1&billing_telcos_write=1&default_route_write=1&default_route_read=1&default_users_write=1&snep_csrf_token=${ADMIN_CSRF}")"
 if [ "$code" = 302 ]; then
-    harness_ok "admin grants the required TASK-0026M/N permissions" "HTTP $code (contacts/contact-groups/dates-alias/expression-alias/cost-center/extensions-groups/sound-files write, billing/telcos write, route write, plus the six TASK-0026J-L permissions)"
+    harness_ok "admin grants the required TASK-0026M/N/O permissions" "HTTP $code (contacts/contact-groups/dates-alias/expression-alias/cost-center/extensions-groups/sound-files write, billing/telcos write, route write+read, users write, plus the six TASK-0026J-L permissions)"
 else
     harness_blocked "granting permissions to the restricted user failed (HTTP $code) -- cannot proceed"
 fi
@@ -954,6 +976,26 @@ manager_check() {
     local before_total after_total tail_text total_delta
     before_total="$(fatal_count)"
     post_fields "$RESTRICTED_JAR" "$path" "$@" >/dev/null
+    after_total="$(fatal_count)"
+    tail_text="$(app_exec 'tail -c 4000 /var/log/apache2/mag-error.log 2>/dev/null')"
+    total_delta=$((after_total - before_total))
+    if [ "$total_delta" -eq 0 ] && ! echo "$tail_text" | grep -qi "SQLSTATE\|syntax error"; then
+        harness_ok "$label" "no PHP Fatal Error, no SQL/syntax error"
+    else
+        harness_bad "$label" "fatal_delta=${total_delta}; log tail: $(echo "$tail_text" | tr '\n' ' ' | tail -c 300)"
+    fi
+}
+
+# manager_check_get <label> <path> -- GET twin of manager_check(), for
+# request-controlled query-string boundaries (TASK-0026O:
+# RouteController::indexAction()'s $_GET['type']). <path> must already be
+# fully percent-encoded by the caller (request() issues a plain GET, it
+# does not encode the path itself).
+manager_check_get() {
+    local label="$1" path="$2"
+    local before_total after_total tail_text total_delta
+    before_total="$(fatal_count)"
+    request "$RESTRICTED_JAR" GET "$path" >/dev/null
     after_total="$(fatal_count)"
     tail_text="$(app_exec 'tail -c 4000 /var/log/apache2/mag-error.log 2>/dev/null')"
     total_delta=$((after_total - before_total))
@@ -1893,6 +1935,262 @@ if [ "$FATALS_AFTER_N" = "$FATALS_BEFORE_N" ]; then
     harness_ok "TASK-0026N: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_BEFORE_N})"
 else
     harness_bad "TASK-0026N: application remained healthy" "PHP Fatal Error count changed: ${FATALS_BEFORE_N} -> ${FATALS_AFTER_N}"
+fi
+
+# =============================================================================
+# TASK-0026O -- Route list and user binds SQL boundary closure
+# =============================================================================
+#
+# Closes the two confirmed sinks TASK-0026N's own Phase 8 final sweep
+# discovered but explicitly left unfixed (docs/tasks/0026n-pbx-rule-sql-closure.md,
+# "Security handoff"):
+#
+#   O1 -- RouteController::indexAction()'s own inline SQL
+#     (`where("type = '$type'")`, raw $_GET['type']) -- regras_negocio.type
+#     is a MariaDB enum('incoming','outgoing','others') column, so this is
+#     closed with a strict allowlist rather than parameterization alone.
+#   O2/O3 -- Snep_Binds_Manager::removeBond()/removeBondException()
+#     (`delete(..., "user_id = '$id'")`) -- reachable via
+#     UsersController::removeAction() (route id) and ::bondAction() (POST
+#     id).
+#
+# Sibling audit additionally found and fixed removeBondByPeer() (identical
+# pattern) -- reachable via ExtensionsController::removeAction()'s raw,
+# unvalidated $_POST['id'] (Snep_Extensions_Manager::getPeer() returns
+# false, not an exception, for a non-matching id, so execution still
+# reaches removeBondByPeer() with the raw value).
+#
+# Discovered while reconstructing the route boundary, documented in
+# docs/tasks/0026o-route-binds-sql-closure.md, not itself an SQL defect:
+# RouteController::indexAction() and UsersController's remove/bond actions
+# both require a distinct "_read"-suffixed permission for the index action
+# specifically ("write" alone is not enough for the GET list page) --
+# Snep_Modules::loadResources() synthesizes this "read" entry
+# automatically for every resource, even ones whose resources.xml only
+# ever declares a "write" child, and the permission-management UI shows
+# both checkboxes under the exact same visible label (a pre-existing
+# UsersController::permissionAction() quirk that copies the "read" label
+# onto "write"'s empty one) -- easy for an admin to miss when granting
+# access. This preflight now grants default_route_read=1 alongside
+# default_route_write=1 for that reason; not fixed, since it is an
+# authorization UX ambiguity, not an SQL-injection defect.
+log "==> TASK-0026O: RouteController::indexAction() type boundary"
+
+FATALS_BEFORE_O="$(fatal_count)"
+
+# --- O1: RouteController::indexAction() -----------------------------------
+
+code="$(request "$RESTRICTED_JAR" GET /index.php/default/route)"
+if [ "$code" = 200 ] && grep -q 'var controller = "route"' "$BODY"; then
+    harness_ok "RouteController: legitimate route list works" "HTTP $code"
+else
+    harness_bad "RouteController: legitimate route list works" "HTTP $code"
+fi
+
+code="$(request "$RESTRICTED_JAR" GET "/index.php/default/route?type=incoming")"
+if [ "$code" = 200 ] && grep -q 'var controller = "route"' "$BODY"; then
+    harness_ok "RouteController: legitimate supported type=incoming works" "HTTP $code"
+else
+    harness_bad "RouteController: legitimate supported type=incoming works" "HTTP $code"
+fi
+
+manager_check_get "RouteController: apostrophe-shaped type causes no SQL error" "/index.php/default/route?type=foo%27bar"
+
+# Canary fixture: a real type=outgoing route with a unique desc marker,
+# created directly via PBX_Rules::register() (the real addAction() HTTP
+# flow adds unrelated form-validation complexity not needed here, matching
+# this program's established fixture-creation precedent).
+O_CANARY_PHP="$(mktemp)"
+cat > "$O_CANARY_PHP" <<'PHPEOF'
+$r = new PBX_Rule();
+$r->setDesc('task0026o-canary-route');
+$r->setPriority(999);
+$r->setTypeRule('outgoing');
+$r->addSrc(['type' => 'X', 'value' => '']);
+$r->addDst(['type' => 'X', 'value' => '']);
+foreach (['sun','mon','tue','wed','thu','fri','sat'] as $d) { $r->addWeekDay($d); }
+$r->addValidTime('00:00-23:59');
+$r->record();
+PBX_Rules::register($r);
+echo 'O_CANARY_ID:' . $r->getId() . PHP_EOL;
+PHPEOF
+O_CANARY_OUT="$(run_manager_php_file "$O_CANARY_PHP")"
+rm -f "$O_CANARY_PHP"
+O_CANARY_RULE_ID="$(echo "$O_CANARY_OUT" | grep '^O_CANARY_ID:' | sed 's/O_CANARY_ID://' | tr -d '\r')"
+if [ -n "$O_CANARY_RULE_ID" ]; then
+    harness_ok "RouteController: type=outgoing canary route fixture created" "rule id=${O_CANARY_RULE_ID}"
+else
+    harness_blocked "could not create the TASK-0026O type=outgoing canary route fixture"
+fi
+cleanup_o_canary_route() {
+    [ -n "$O_CANARY_RULE_ID" ] || return 0
+    O_CLEAN_PHP="$(mktemp)"
+    printf 'PBX_Rules::delete(%s);\necho "cleaned";\n' "$O_CANARY_RULE_ID" > "$O_CLEAN_PHP"
+    run_manager_php_file "$O_CLEAN_PHP" | grep -q cleaned
+    rm -f "$O_CLEAN_PHP"
+}
+harness_register_cleanup "TASK-0026O canary route fixture (id=${O_CANARY_RULE_ID:-none})" "cleanup_o_canary_route"
+
+# Positive control: the canary's own type (outgoing) legitimately shows it.
+code="$(request "$RESTRICTED_JAR" GET "/index.php/default/route?type=outgoing")"
+if [ "$code" = 200 ] && grep -qF 'task0026o-canary-route' "$BODY"; then
+    harness_ok "RouteController: type=outgoing legitimately shows the canary route" "HTTP $code"
+else
+    harness_bad "RouteController: type=outgoing legitimately shows the canary route" "HTTP $code"
+fi
+
+# Negative control: a different legitimate type never shows it.
+code="$(request "$RESTRICTED_JAR" GET "/index.php/default/route?type=incoming")"
+if [ "$code" = 200 ] && ! grep -qF 'task0026o-canary-route' "$BODY"; then
+    harness_ok "RouteController: type=incoming correctly hides the outgoing canary" "HTTP $code"
+else
+    harness_bad "RouteController: type=incoming correctly hides the outgoing canary" "HTTP $code"
+fi
+
+# Core boolean proof: a boolean-shaped, non-allowlisted type cannot bypass
+# the filter to leak the canary. Pre-fix, this exact apostrophe-escape
+# payload (`where("type = '$type'")`) turns the WHERE clause always-true,
+# returning every route regardless of type -- confirmed live during this
+# task's own development (see docs/tasks/0026o-route-binds-sql-closure.md).
+code="$(request "$RESTRICTED_JAR" GET "/index.php/default/route?type=foo%27%20OR%20%271%27%3D%271")"
+if [ "$code" = 200 ] && ! grep -qF 'task0026o-canary-route' "$BODY"; then
+    harness_ok "RouteController: boolean-shaped type cannot bypass the type filter" "HTTP $code, canary not leaked"
+else
+    harness_bad "RouteController: boolean-shaped type cannot bypass the type filter" "HTTP $code"
+fi
+
+# Unsupported-but-harmless value: fails safely (no rows, no error),
+# matching pre-fix semantics for any value outside the enum domain (no
+# regras_negocio row can ever carry a type outside incoming/outgoing/others).
+code="$(request "$RESTRICTED_JAR" GET "/index.php/default/route?type=bogus")"
+if [ "$code" = 200 ] && ! grep -qF 'task0026o-canary-route' "$BODY"; then
+    harness_ok "RouteController: unsupported type value fails safely (no rows, no error)" "HTTP $code"
+else
+    harness_bad "RouteController: unsupported type value fails safely (no rows, no error)" "HTTP $code"
+fi
+
+cleanup_o_canary_route
+
+# --- O2/O3: Snep_Binds_Manager::removeBond()/removeBondException() (plus
+# the removeBondByPeer() sibling) -------------------------------------------
+
+log "==> TASK-0026O: Snep_Binds_Manager removeBond()/removeBondException()/removeBondByPeer() boundary"
+
+# Real-HTTP core proof: UsersController::removeAction()'s apostrophe-shaped
+# route-param id, exactly as confirmed live pre-fix during this task's own
+# development (a genuine SQLSTATE[42000] syntax error).
+manager_check "Snep_Binds_Manager::removeBond(): apostrophe-shaped users/remove id causes no SQL error" \
+    /index.php/default/users/remove "id=foo'bar" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# Direct-invocation coverage for the full removeBond()/removeBondException()/
+# removeBondByPeer() boundary, including cross-user boolean isolation (a
+# `core_binds`/`core_binds_exceptions` row FK-requires a real `users`/`peers`
+# row, so this is exercised directly rather than through the two
+# unrelated-bug-free but harder-to-fixture HTTP flows).
+BINDS_PHP="$(mktemp)"
+cat > "$BINDS_PHP" <<'PHPEOF'
+$db = Zend_Registry::get('db');
+$now = date('Y-m-d H:i:s');
+
+$db->insert('users', ['name' => 'task0026o-bind-victim', 'password' => 'x', 'email' => 'task0026o-bind-victim@example.test', 'dashboard' => '', 'profile_id' => 1, 'created' => $now, 'updated' => $now]);
+$victimId = $db->lastInsertId();
+$db->insert('users', ['name' => 'task0026o-bind-other', 'password' => 'x', 'email' => 'task0026o-bind-other@example.test', 'dashboard' => '', 'profile_id' => 1, 'created' => $now, 'updated' => $now]);
+$otherId = $db->lastInsertId();
+$db->insert('peers', ['name' => 'task0026o-bind-peer', 'password' => 'x', 'host' => 'dynamic', 'port' => '0', 'defaultuser' => 'task0026o-bind-peer', 'ipaddr' => '', 'regexten' => '', 'setvar' => '', 'peer_type' => 'R', 'trunk' => 'no', 'lastms' => 0, 'canal' => 'MANUAL/x']);
+
+Snep_Binds_Manager::addBond($victimId, 'bound', 'task0026o-bind-peer');
+Snep_Binds_Manager::addBondException($victimId, '5551234');
+echo 'BINDS_FIXTURE:' . ((count(Snep_Binds_Manager::getBond($victimId)) === 1 && count(Snep_Binds_Manager::getBondException($victimId)) === 1) ? 'OK' : 'BAD') . PHP_EOL;
+
+// removeBond(): apostrophe-shaped id causes no SQL error, never touches the victim
+try {
+    Snep_Binds_Manager::removeBond("foo'bar");
+    echo 'BOND_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'BOND_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+echo 'BOND_APOSTROPHE_ISOLATED:' . ((count(Snep_Binds_Manager::getBond($victimId)) === 1) ? 'OK' : 'BAD') . PHP_EOL;
+
+// removeBond(): boolean-shaped id (a real apostrophe-escape attempt --
+// confirmed live pre-fix during this task's own development to genuinely
+// delete the victim's row) cannot remove/select the victim's own row.
+$boolId = "0' OR user_id='" . $victimId;
+try {
+    Snep_Binds_Manager::removeBond($boolId);
+} catch (Exception $e) {
+    echo 'BOND_BOOLEAN_EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+echo 'BOND_BOOLEAN_ISOLATED:' . ((count(Snep_Binds_Manager::getBond($victimId)) === 1) ? 'OK' : 'BAD') . PHP_EOL;
+
+// removeBondException(): apostrophe-shaped id causes no SQL error, never touches the victim
+try {
+    Snep_Binds_Manager::removeBondException("foo'bar");
+    echo 'BONDEXC_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'BONDEXC_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+echo 'BONDEXC_APOSTROPHE_ISOLATED:' . ((count(Snep_Binds_Manager::getBondException($victimId)) === 1) ? 'OK' : 'BAD') . PHP_EOL;
+
+// removeBondException(): boolean-shaped id cannot alter target selection
+// (same payload shape confirmed live pre-fix to genuinely delete the
+// victim's exception row).
+try {
+    Snep_Binds_Manager::removeBondException($boolId);
+} catch (Exception $e) {
+    echo 'BONDEXC_BOOLEAN_EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+echo 'BONDEXC_BOOLEAN_ISOLATED:' . ((count(Snep_Binds_Manager::getBondException($victimId)) === 1) ? 'OK' : 'BAD') . PHP_EOL;
+
+// legitimate flow: removing the victim's own binds by their real id actually works
+Snep_Binds_Manager::removeBond($victimId);
+echo 'BOND_LEGIT_REMOVE:' . ((count(Snep_Binds_Manager::getBond($victimId)) === 0) ? 'OK' : 'BAD') . PHP_EOL;
+
+Snep_Binds_Manager::removeBondException($victimId);
+echo 'BONDEXC_LEGIT_REMOVE:' . ((count(Snep_Binds_Manager::getBondException($victimId)) === 0) ? 'OK' : 'BAD') . PHP_EOL;
+
+// removeBondByPeer() sibling (reachable via ExtensionsController::removeAction()'s
+// raw $_POST['id'], which still reaches this call even when getPeer() found no
+// matching row -- see this section's header comment).
+Snep_Binds_Manager::addBond($otherId, 'bound', 'task0026o-bind-peer');
+echo 'BYPEER_FIXTURE:' . ((count(Snep_Binds_Manager::getBond($otherId)) === 1) ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    Snep_Binds_Manager::removeBondByPeer("foo'bar");
+    echo 'BYPEER_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'BYPEER_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+echo 'BYPEER_APOSTROPHE_ISOLATED:' . ((count(Snep_Binds_Manager::getBond($otherId)) === 1) ? 'OK' : 'BAD') . PHP_EOL;
+
+Snep_Binds_Manager::removeBondByPeer('task0026o-bind-peer');
+echo 'BYPEER_LEGIT_REMOVE:' . ((count(Snep_Binds_Manager::getBond($otherId)) === 0) ? 'OK' : 'BAD') . PHP_EOL;
+
+// cleanup
+$db->delete('core_binds', $db->quoteInto('peer_name = ?', 'task0026o-bind-peer'));
+$db->delete('core_binds_exceptions', $db->quoteInto('user_id = ?', $victimId));
+$db->delete('peers', $db->quoteInto('name = ?', 'task0026o-bind-peer'));
+$db->delete('users', $db->quoteInto('name = ?', 'task0026o-bind-victim'));
+$db->delete('users', $db->quoteInto('name = ?', 'task0026o-bind-other'));
+echo 'BINDS_CLEANUP:OK' . PHP_EOL;
+PHPEOF
+BINDS_OUT="$(run_manager_php_file "$BINDS_PHP")"
+rm -f "$BINDS_PHP"
+for m in BINDS_FIXTURE BOND_APOSTROPHE BOND_APOSTROPHE_ISOLATED BOND_BOOLEAN_ISOLATED BONDEXC_APOSTROPHE BONDEXC_APOSTROPHE_ISOLATED BONDEXC_BOOLEAN_ISOLATED BOND_LEGIT_REMOVE BONDEXC_LEGIT_REMOVE BYPEER_FIXTURE BYPEER_APOSTROPHE BYPEER_APOSTROPHE_ISOLATED BYPEER_LEGIT_REMOVE BINDS_CLEANUP; do
+    assert_marker "Snep_Binds_Manager: ${m}" "$m" "$BINDS_OUT"
+done
+# Best-effort safety net in case the direct-invocation script above aborted
+# before reaching its own inline cleanup (e.g. an unexpected fatal) --
+# every prior manager-layer TASK-0026x suite section relies on inline
+# cleanup alone; this adds an extra guarantee per this task's own explicit
+# Phase 5 "Guarantee cleanup" instruction.
+harness_register_best_effort_cleanup "TASK-0026O binds fixture safety net" \
+    "$COMPOSE exec -T db mariadb -u'${DB_USER}' -p'${DB_PASSWORD}' '${DB_NAME}' -e \"DELETE FROM core_binds WHERE peer_name='task0026o-bind-peer'; DELETE FROM core_binds_exceptions WHERE user_id IN (SELECT id FROM users WHERE name IN ('task0026o-bind-victim','task0026o-bind-other')); DELETE FROM peers WHERE name='task0026o-bind-peer'; DELETE FROM users WHERE name IN ('task0026o-bind-victim','task0026o-bind-other');\" >/dev/null 2>&1; true"
+
+FATALS_AFTER_O="$(fatal_count)"
+if [ "$FATALS_AFTER_O" = "$FATALS_BEFORE_O" ]; then
+    harness_ok "TASK-0026O: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_BEFORE_O})"
+else
+    harness_bad "TASK-0026O: application remained healthy" "PHP Fatal Error count changed: ${FATALS_BEFORE_O} -> ${FATALS_AFTER_O}"
 fi
 
 harness_complete
