@@ -1,0 +1,13 @@
+# TASK-0026S: this entire subtree contains one-time installer/schema-migration
+# assets (SQL fixtures, Asterisk config templates, and PHP DB-mutating update
+# scripts such as database/update/betha/convert-data-rc3.php and
+# database/update/3.01/updateCallerid.php). None of it is linked from, or
+# required by, any supported web-application flow -- it exists on disk only
+# for Docker bind-mount consumption (compose.yaml's db/asterisk service
+# volumes) and historical reference. A bare HTTP GET must never be able to
+# execute a migration/DDL script, so deny the whole tree at the web-server
+# layer rather than patching individual scripts. Apache 2.4-native syntax
+# (matches snep/lib/linfo/*/.htaccess's deny-all intent, ported off the
+# Apache 2.2 "Deny from all" spelling the same way snep/includes/.htaccess
+# already did, so this works without mod_access_compat).
+Require all denied
