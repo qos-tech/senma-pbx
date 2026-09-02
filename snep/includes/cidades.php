@@ -17,32 +17,40 @@
  *  You should have received a copy of the GNU General Public License
  *  along with SNEP.  If not, see <http://www.gnu.org/licenses/>.
  *
- *  Provide <select> option list for cyties  
+ *  Provide <select> option list for cyties
+ *
+ *  TASK-0026R (Q-SQL-004): ported off the removed mysql_ extension
+ *  (mysql_connect(), PHP 8-incompatible, and even before that,
+ *  unparameterized) onto this application's existing Zend_Db abstraction
+ *  (Snep_Db::getInstance(), the same connection/config path
+ *  ip_status_trunks.php/ip_status_peers.php resolve via -- see
+ *  docs/tasks/0026r-full-residual-sql-remediation.md). The query
+ *  targets and the is_numeric()-branched table choice are preserved
+ *  byte-for-byte -- only the connection method and the SQL-construction
+ *  mechanism changed. Deliberately left unauthenticated, matching the
+ *  established ip_status_*.php sibling pattern in this same directory --
+ *  authentication-model changes are out of this task's scope.
  */
 
-$setup = parse_ini_file("setup.conf");
-            
+define('APPLICATION_PATH', realpath(dirname(__FILE__) . '/..'));
+set_include_path(implode(PATH_SEPARATOR, array(APPLICATION_PATH . '/lib', get_include_path())));
+require_once 'Snep/Config.php';
+require_once 'Snep/Db.php';
+
+Snep_Config::setConfigFile(dirname(__FILE__) . '/setup.conf');
+$db = Snep_Db::getInstance();
+
 $idestado = $_GET['estado'];
 
-mysql_connect($setup["db.host"],$setup["db.username"],$setup["db.password"]);
-mysql_selectdb($setup["db.dbname"]);
-
-
-
-if (is_numeric($idestado) ) {  // use core_cnl (connection with ITC)
-    $result = mysql_query("SELECT id,name FROM core_city WHERE state_id = ".$idestado);
+if (is_numeric($idestado)) {  // use core_cnl (connection with ITC)
+    $select = $db->select()->from('core_city', array('id', 'name'))->where('state_id = ?', $idestado);
 } else {
-    $result = mysql_query("SELECT id,name FROM core_cnl_city WHERE state = '".$idestado."'");
+    $select = $db->select()->from('core_cnl_city', array('id', 'name'))->where('state = ?', $idestado);
 }
- while($row = mysql_fetch_array($result) ){
-        echo "<option value='".$row['id']."'>".$row['name']."</option>";
-    } 
-/*if (mysql_num_rows($result) == 0) {
-    echo "<option value='5565'>"."Other"."</option>";
-}else {
-    while($row = mysql_fetch_array($result) ){
-   	    echo "<option value='".$row['id']."'>".$row['name']."</option>";
-    }   
-}*/
+$result = $db->query($select)->fetchAll();
+
+foreach ($result as $row) {
+    echo "<option value='".$row['id']."'>".$row['name']."</option>";
+}
 
 ?>
