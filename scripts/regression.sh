@@ -125,6 +125,12 @@ run_suite "auth-hardening-security" "auth-hardening-security-smoke-test.sh"
 # authenticated fixture session, same precondition authorization-smoke/
 # authorization-coverage need next).
 run_suite "disclosure-path-security" "disclosure-path-security-smoke-test.sh"
+# TASK-0026S: placed right after disclosure-path-security and before
+# authorization -- same reasoning as the other security suites' own
+# placement (an independent trust-boundary proof, unauthenticated by
+# design since the finding itself was unauthenticated reachability, same
+# precondition authorization-smoke/authorization-coverage need next).
+run_suite "legacy-maintenance-exposure-security" "legacy-maintenance-exposure-security-smoke-test.sh"
 run_suite "authorization-coverage" "authorization-coverage-check.sh"
 run_suite "authorization-smoke"    "authorization-smoke-test.sh"
 run_suite "http-smoke"             "smoke-test.sh"

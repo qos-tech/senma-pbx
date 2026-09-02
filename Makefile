@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -148,6 +148,18 @@ auth-hardening-security-smoke: up
 # Deliberately separate from `make smoke` -- never run implicitly by it.
 disclosure-path-security-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/disclosure-path-security-smoke-test.sh
+
+# TASK-0026S: proves snep/install/ (one-time installer/schema-migration
+# assets, including the DB-mutating convert-data-rc3.php/updateCallerid.php
+# scripts) cannot be invoked over HTTP -- GET/POST both blocked at the
+# web-server layer (snep/install/.htaccess), the whole subtree equally
+# contained (not just the one known script), no schema/data mutation, no
+# source/path/SQL-error disclosure in the blocked response, the ordinary
+# application still works, and filesystem/CLI availability (Docker
+# bind-mount, php -l) is preserved. Deliberately separate from `make
+# smoke` -- never run implicitly by it.
+legacy-maintenance-exposure-security-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/legacy-maintenance-exposure-security-smoke-test.sh
 
 # TASK-0027A: deterministic, fixed-timestamp proof of
 # harness_cdr_report_window() (lib/harness.sh) -- the timezone-safe CDR
