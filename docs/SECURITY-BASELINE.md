@@ -133,15 +133,27 @@ make lint
 make regression
 ```
 
-`make regression` runs 21 suites serially (see
-`docs/tasks/0026z-security-audit-closure.md` §"Security regression
-inventory" for the full list and per-suite purpose) and never treats
+`make regression` runs 23 suites serially (see
+`docs/tasks/0026z-r1-final-security-gate-re-evaluation.md` §7/§8 for the
+full current list and per-suite purpose — grown from the 21 at
+TASK-0026Z's own checkpoint by TASK-0026J's `residual-sql-security` and
+TASK-0026S's `legacy-maintenance-exposure-security`) and never treats
 FAIL/BLOCKED/INCONCLUSIVE as PASS.
 
 ## Security gate expectations
 
-A release candidate's security gate is `GO` only when every criterion in
-TASK-0026Z's Phase 6 holds, most notably:
+```text
+SECURITY_GATE = GO
+```
+
+as of `docs/tasks/0026z-r1-final-security-gate-re-evaluation.md`, which
+re-evaluated and superseded TASK-0026Z's original `NO-GO` (the SQL sinks
+that drove that NO-GO were closed by TASK-0026J, and every sibling found
+by the closure chain that followed — TASK-0026K through TASK-0026R — was
+in turn closed; TASK-0026S then closed the one non-SQL finding TASK-0026R's
+own post-remediation sweep surfaced). A release candidate's security gate
+is `GO` only when every criterion in that document's own Phase 10/§11
+holds, most notably:
 
 ```text
 known unauthenticated RCE = 0
@@ -153,25 +165,24 @@ known pass-the-hash = 0
 known CSRF on supported browser mutations = 0
 known universal default credential = 0
 known path traversal on supported surfaces = 0
-canonical security regression = PASS
+known unauthenticated DB-mutating maintenance endpoint = 0
+canonical security regression = PASS (twice consecutively)
 ```
 
-See `docs/tasks/0026z-security-audit-closure.md` for the current gate
-state and the reasoning behind it — a green `make regression` alone does
-not certify this gate, since the regression suites do not cover every
-code path (see that document's "newly discovered security debt" table).
+See `docs/tasks/0026z-r1-final-security-gate-re-evaluation.md` for the
+current gate state and full reasoning, and
+`docs/tasks/0026z-security-audit-closure.md` for the historical first
+closure attempt it reconciles (left unmodified as the historical record)
+— a green `make regression` alone does not by itself certify this gate;
+it is one of several criteria evaluated explicitly.
 
 ## Deferred Product Readiness security debt
 
-Tracked in full in `docs/tasks/0026z-security-audit-closure.md`
-("Product Readiness handoff"). Summary of items with a security
-dimension:
+Tracked in full in `docs/tasks/0026z-r1-final-security-gate-re-evaluation.md`
+§10 (current) and `docs/tasks/0026z-security-audit-closure.md` §12
+(historical origin of most items). Summary of items with a security
+dimension, none of which is pilot-blocking:
 
-- Two confirmed, unremediated SQL-injection sinks outside any prior
-  task's scope: `Snep_InterfaceConf.php`'s legacy chan_sip/iax2 trunk
-  lookup, and `CallsReportController.php`'s request-driven report-filter
-  query construction (main web UI, not the already-hardened API twin).
-  **Pilot-blocking** — see the closure document's GO/NO-GO decision.
 - Per-controller `getMessage()` → `sneperror.phtml` disclosure sinks
   (`DatesAliasController`, `ExpressionAliasController`,
   `SimulatorController`, `ExtensionsController`) — a distinct, narrower
@@ -185,4 +196,17 @@ dimension:
   X-Content-Type-Options, Referrer-Policy, HSTS) beyond `expose_php=Off`.
 - Reachable `chan_sip`/`iax2` legacy technology selection remains a
   broader Product Readiness / architecture question (whether to keep it
-  selectable at all), independent of the SQL-injection debt above.
+  selectable at all) — the SQL-injection sink previously at this exact
+  boundary (`Snep_InterfaceConf.php`) is closed (TASK-0026J).
+- `snep/agi/*.php` is web-reachable (same unrestricted document root
+  `snep/install/` had before TASK-0026S) but non-productive — a plain
+  HTTP request hangs on `Asterisk_AGI`'s constructor blocking on a stdin
+  protocol-handshake read that never arrives (TASK-0026Q). A distinct
+  subtree from TASK-0026S's own fix, not yet remediated; candidate for
+  the same `.htaccess`-deny pattern in a small dedicated future task.
+
+Two items previously listed here as pilot-blocking are now closed:
+the `Snep_InterfaceConf.php`/`CallsReportController.php` SQL sinks
+(TASK-0026J, confirmed by the full TASK-0026K–R closure chain) and the
+unauthenticated web-reachable DB-mutating maintenance scripts
+(TASK-0026S).
