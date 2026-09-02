@@ -133,6 +133,27 @@
 # non-matching id, so execution reaches removeBondByPeer() with the raw
 # value regardless of whether it matches a real extension).
 #
+# TASK-0026P extends this suite again to close the one confirmed sink
+# TASK-0026O's own Phase 7 final sweep discovered but explicitly left
+# unfixed (docs/tasks/0026o-route-binds-sql-closure.md, "Security
+# handoff"):
+#
+#   P1 -- Snep_ModuleSettings_Manager::getConfig()
+#     (`where("config_name = '$module'")`) -- reachable via
+#     ModuleSettingsController::indexAction()'s own POST field-NAME
+#     parsing, gated only by a read-level permission (no "write"
+#     resource exists for this controller at all) -- see
+#     docs/tasks/0026p-module-settings-sql-closure.md.
+#
+# Sibling audit additionally found and fixed get() (identical pattern,
+# not independently confirmed exploitable, fixed for defense in depth)
+# and delConfig() (identical pattern, zero callers anywhere in the tree,
+# fixed anyway as an exact-pattern sibling). A genuine regression --
+# Zend_Db_Select::_where() skips its own quoteInto() call when its value
+# argument is null, leaving a raw unbound '?' in the SQL -- was found and
+# fixed during this task's own development; see that doc for the full
+# explanation.
+#
 # Every payload below is a harmless, non-destructive, syntax-shaped
 # string or boolean-oracle value applied only to fixtures this script
 # owns -- never a real exploit chain, never password/hash/schema
@@ -316,7 +337,7 @@ if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session'
 RESTRICTED_CSRF="$(harness_csrf_token "$RESTRICTED_JAR" "$BASE_URL")"
 if [ -z "$RESTRICTED_CSRF" ]; then harness_blocked "could not read the restricted session's CSRF token"; fi
 
-for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report" "/index.php/default/pickup-groups" "/index.php/default/queues" "/index.php/default/contacts" "/index.php/default/contact-groups" "/index.php/default/dates-alias" "/index.php/default/expression-alias" "/index.php/default/cost-center" "/index.php/default/extensions-groups" "/index.php/default/sound-files" "/index.php/billing/billing" "/index.php/billing/telcos" "/index.php/default/route" "/index.php/default/users"; do
+for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report" "/index.php/default/pickup-groups" "/index.php/default/queues" "/index.php/default/contacts" "/index.php/default/contact-groups" "/index.php/default/dates-alias" "/index.php/default/expression-alias" "/index.php/default/cost-center" "/index.php/default/extensions-groups" "/index.php/default/sound-files" "/index.php/billing/billing" "/index.php/billing/telcos" "/index.php/default/route" "/index.php/default/users" "/index.php/default/module-settings"; do
     code="$(request "$RESTRICTED_JAR" GET "$boundary_path")"
     if [ "$code" = 302 ] && redirects_to_permission_error; then
         harness_ok "authorization intact: ${boundary_path}" "zero-permission user denied (HTTP 302, Location: permission/error)"
@@ -337,9 +358,9 @@ else
     harness_bad "authenticated-open confirmed: /index.php/default/simulator" "expected HTTP 200 for a zero-permission session, got HTTP ${code}"
 fi
 
-code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&default_contacts_write=1&default_contact-groups_write=1&default_dates-alias_write=1&default_expression-alias_write=1&default_cost-center_write=1&default_extensions-groups_write=1&default_sound-files_write=1&billing_billing_write=1&billing_telcos_write=1&default_route_write=1&default_route_read=1&default_users_write=1&snep_csrf_token=${ADMIN_CSRF}")"
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&default_contacts_write=1&default_contact-groups_write=1&default_dates-alias_write=1&default_expression-alias_write=1&default_cost-center_write=1&default_extensions-groups_write=1&default_sound-files_write=1&billing_billing_write=1&billing_telcos_write=1&default_route_write=1&default_route_read=1&default_users_write=1&default_module-settings_read=1&snep_csrf_token=${ADMIN_CSRF}")"
 if [ "$code" = 302 ]; then
-    harness_ok "admin grants the required TASK-0026M/N/O permissions" "HTTP $code (contacts/contact-groups/dates-alias/expression-alias/cost-center/extensions-groups/sound-files write, billing/telcos write, route write+read, users write, plus the six TASK-0026J-L permissions)"
+    harness_ok "admin grants the required TASK-0026M/N/O/P permissions" "HTTP $code (contacts/contact-groups/dates-alias/expression-alias/cost-center/extensions-groups/sound-files write, billing/telcos write, route write+read, users write, module-settings read, plus the six TASK-0026J-L permissions)"
 else
     harness_blocked "granting permissions to the restricted user failed (HTTP $code) -- cannot proceed"
 fi
@@ -2191,6 +2212,196 @@ if [ "$FATALS_AFTER_O" = "$FATALS_BEFORE_O" ]; then
     harness_ok "TASK-0026O: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_BEFORE_O})"
 else
     harness_bad "TASK-0026O: application remained healthy" "PHP Fatal Error count changed: ${FATALS_BEFORE_O} -> ${FATALS_AFTER_O}"
+fi
+
+# =============================================================================
+# TASK-0026P -- Module Settings SQL boundary closure
+# =============================================================================
+#
+# Closes the one confirmed sink TASK-0026O's own Phase 7 final sweep
+# discovered but explicitly left unfixed
+# (docs/tasks/0026o-route-binds-sql-closure.md, "Security handoff"):
+#
+#   P1 -- Snep_ModuleSettings_Manager::getConfig()
+#     (`where("config_name = '$module'")`) -- reachable via
+#     ModuleSettingsController::indexAction()'s own POST field-NAME
+#     parsing (`explode("_x_", $key)`, $key being an arbitrary attacker-
+#     chosen field name, not a value). `module-settings` has no "write"
+#     child in resources.xml -- only a `default_module-settings_read`
+#     grant exists at all, and this task's own live verification
+#     confirmed a read-only grant is sufficient to reach the vulnerable
+#     POST-driven code path (index/read and the save/write logic share
+#     the same indexAction()).
+#
+# Sibling audit additionally found and fixed:
+#   - Snep_ModuleSettings_Manager::get() -- identical
+#     `where("config_module = '$module'")` pattern; its two real call
+#     sites are not independently confirmed exploitable (one hardcoded
+#     literal, one filesystem-config.json-derived), fixed anyway for
+#     defense in depth.
+#   - Snep_ModuleSettings_Manager::delConfig() -- identical
+#     `delete(..., "config_module='{$module}'")` pattern; zero callers
+#     anywhere in the tree (DEAD/UNREACHABLE), fixed anyway as an exact-
+#     pattern sibling within the same audited class.
+#
+# A genuine regression was found and corrected during this task's own
+# development: Zend_Db_Select::_where() (snep/lib/Zend/Db/Select.php:1004)
+# only calls quoteInto() when its $value argument is not null -- naively
+# parameterizing via ->where('col = ?', $module) left a raw, unbound '?'
+# in the SQL whenever $module was null, which is a REAL, already-existing
+# input shape here: any POST field name without "_x_" in it (e.g. the
+# request's own snep_csrf_token field, included in $formData on every
+# single request since ModuleSettingsController only unsets
+# controller/action/module/signup) makes $res[1] undefined, and
+# getConfig($res[1]) is called with null. Pre-fix, PHP's own
+# null-to-'' string interpolation made this silently safe (matches
+# nothing); a naive value-argument fix would have turned this pre-
+# existing, already-live edge case into a new HTTP 500 on every real
+# module-settings POST. Fixed by pre-building the condition via
+# $db->quoteInto() (which has no such null-value quirk) and passing it
+# as the already-safe $cond argument instead.
+#
+# Every payload below is a harmless, non-destructive, syntax-shaped
+# string or boolean-oracle value applied only to fixtures this script
+# owns -- never a real exploit chain, never password/hash/schema
+# extraction.
+
+log "==> TASK-0026P: Snep_ModuleSettings_Manager module-settings boundary"
+
+FATALS_BEFORE_P="$(fatal_count)"
+
+# --- Real-HTTP core proof ---------------------------------------------------
+
+code="$(request "$RESTRICTED_JAR" GET /index.php/default/module-settings)"
+if [ "$code" = 200 ] && grep -q 'defaultForm' "$BODY"; then
+    harness_ok "ModuleSettings: legitimate page renders (read-only grant)" "HTTP $code"
+else
+    harness_bad "ModuleSettings: legitimate page renders (read-only grant)" "HTTP $code"
+fi
+
+# The severity-defining property: a read-only grant (no "write" resource
+# exists at all for this controller) is sufficient to reach the POST-
+# driven save/lookup code path, since indexAction() handles both and
+# action=='index' always maps to type='read' (Snep_PermissionPlugin).
+manager_check "ModuleSettings: read-only grant reaches the POST-driven save path with no SQL error" \
+    /index.php/default/module-settings "task0026psmoke_x_authcheck=1" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# Legitimate save flow: a real (fixture-namespaced, collision-free)
+# module/setting pair persists correctly through the real HTTP flow.
+post_fields "$RESTRICTED_JAR" /index.php/default/module-settings \
+    "task0026psmoke_x_customsetting=task0026p-legit-value" "snep_csrf_token=${RESTRICTED_CSRF}" >/dev/null
+LEGIT_SAVED="$(db_query "SELECT config_value FROM core_config WHERE config_module='task0026psmoke' AND config_name='customsetting';")"
+if [ "$LEGIT_SAVED" = "task0026p-legit-value" ]; then
+    harness_ok "ModuleSettings: legitimate save flow persists correctly" "config_value='${LEGIT_SAVED}'"
+else
+    harness_bad "ModuleSettings: legitimate save flow persists correctly" "got config_value='${LEGIT_SAVED}'"
+fi
+harness_register_cleanup "TASK-0026P module-settings legitimate-save fixture" \
+    "$COMPOSE exec -T db mariadb -u'${DB_USER}' -p'${DB_PASSWORD}' '${DB_NAME}' -e \"DELETE FROM core_config WHERE config_module='task0026psmoke';\" >/dev/null"
+
+# P1 core proof: apostrophe-shaped field NAME (not value) causes no SQL
+# error -- exactly the payload confirmed live during this task's own
+# reconstruction to produce a genuine SQLSTATE[42000] pre-fix.
+manager_check "Snep_ModuleSettings_Manager::getConfig(): apostrophe-shaped field name causes no SQL error" \
+    /index.php/default/module-settings "default_x_foo'bar=someval" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# Malformed field-name structure (no "_x_" separator at all -- the exact
+# shape the request's own snep_csrf_token field already carries on every
+# request) fails safely, not just for this one extra field.
+manager_check "ModuleSettings: malformed field-name structure (no _x_ separator) fails safely" \
+    /index.php/default/module-settings "malformedfieldnoseparator=someval" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# --- Direct-invocation coverage: boolean isolation, siblings, edge cases ---
+
+MODSETTINGS_PHP="$(mktemp)"
+cat > "$MODSETTINGS_PHP" <<'PHPEOF'
+$db = Zend_Registry::get('db');
+$db->insert('core_config', ['config_module' => 'task0026p-victim-module', 'config_name' => 'task0026p-victim-setting', 'config_value' => 'victim-secret-value']);
+echo 'VICTIM_FIXTURE:OK' . PHP_EOL;
+
+$legit = Snep_ModuleSettings_Manager::getConfig('task0026p-victim-setting');
+echo 'GETCONFIG_LEGIT:' . ((is_array($legit) && ($legit['config_value'] ?? null) === 'victim-secret-value') ? 'OK' : 'BAD') . PHP_EOL;
+
+$legitGet = Snep_ModuleSettings_Manager::get('task0026p-victim-module');
+echo 'GET_LEGIT:' . ((is_array($legitGet) && count($legitGet) === 1 && $legitGet[0]['config_value'] === 'victim-secret-value') ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    Snep_ModuleSettings_Manager::getConfig("foo'bar");
+    echo 'GETCONFIG_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'GETCONFIG_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+try {
+    Snep_ModuleSettings_Manager::get("foo'bar");
+    echo 'GET_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'GET_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+// boolean-shaped (real apostrophe-escape attempt -- confirmed live
+// pre-fix during this task's own development to genuinely cross-match
+// the victim row) cannot alter target selection.
+$boolPayload = "nonexistent' OR config_name='task0026p-victim-setting";
+try {
+    $r = Snep_ModuleSettings_Manager::getConfig($boolPayload);
+    echo 'GETCONFIG_BOOLEAN_ISOLATED:' . (($r === false) ? 'OK' : 'BAD') . PHP_EOL;
+} catch (Exception $e) {
+    echo 'GETCONFIG_BOOLEAN_ISOLATED:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+$boolPayloadModule = "nonexistent' OR config_module='task0026p-victim-module";
+try {
+    $r = Snep_ModuleSettings_Manager::get($boolPayloadModule);
+    echo 'GET_BOOLEAN_ISOLATED:' . ((is_array($r) && count($r) === 0) ? 'OK' : 'BAD') . PHP_EOL;
+} catch (Exception $e) {
+    echo 'GET_BOOLEAN_ISOLATED:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+// malformed (null) field -- the exact edge case the Zend_Db_Select
+// null-value regression above was found and fixed for -- fails safely.
+try {
+    $r = Snep_ModuleSettings_Manager::getConfig(null);
+    echo 'GETCONFIG_NULL:' . (($r === false) ? 'OK' : 'BAD') . PHP_EOL;
+} catch (Exception $e) {
+    echo 'GETCONFIG_NULL:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+// unsupported/nonexistent setting behaves normally
+$r = Snep_ModuleSettings_Manager::getConfig('task0026p-nonexistent-setting');
+echo 'GETCONFIG_NONEXISTENT:' . (($r === false) ? 'OK' : 'BAD') . PHP_EOL;
+
+// delConfig() sibling -- apostrophe-shaped, no error, victim untouched
+try {
+    Snep_ModuleSettings_Manager::delConfig("foo'bar");
+    echo 'DELCONFIG_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'DELCONFIG_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+$stillThere = Snep_ModuleSettings_Manager::getConfig('task0026p-victim-setting');
+echo 'DELCONFIG_APOSTROPHE_ISOLATED:' . ((is_array($stillThere) && ($stillThere['config_value'] ?? null) === 'victim-secret-value') ? 'OK' : 'BAD') . PHP_EOL;
+
+// legitimate delConfig() removal
+Snep_ModuleSettings_Manager::delConfig('task0026p-victim-module');
+$gone = Snep_ModuleSettings_Manager::getConfig('task0026p-victim-setting');
+echo 'DELCONFIG_LEGIT:' . (($gone === false) ? 'OK' : 'BAD') . PHP_EOL;
+
+echo 'MODSETTINGS_CLEANUP:OK' . PHP_EOL;
+PHPEOF
+MODSETTINGS_OUT="$(run_manager_php_file "$MODSETTINGS_PHP")"
+rm -f "$MODSETTINGS_PHP"
+for m in VICTIM_FIXTURE GETCONFIG_LEGIT GET_LEGIT GETCONFIG_APOSTROPHE GET_APOSTROPHE GETCONFIG_BOOLEAN_ISOLATED GET_BOOLEAN_ISOLATED GETCONFIG_NULL GETCONFIG_NONEXISTENT DELCONFIG_APOSTROPHE DELCONFIG_APOSTROPHE_ISOLATED DELCONFIG_LEGIT MODSETTINGS_CLEANUP; do
+    assert_marker "Snep_ModuleSettings_Manager: ${m}" "$m" "$MODSETTINGS_OUT"
+done
+# Best-effort safety net in case the direct-invocation script above
+# aborted before reaching its own inline cleanup, per this task's own
+# explicit "Guarantee cleanup" instruction.
+harness_register_best_effort_cleanup "TASK-0026P module-settings direct-invocation fixture safety net" \
+    "$COMPOSE exec -T db mariadb -u'${DB_USER}' -p'${DB_PASSWORD}' '${DB_NAME}' -e \"DELETE FROM core_config WHERE config_module IN ('task0026p-victim-module','task0026psmoke');\" >/dev/null 2>&1; true"
+
+FATALS_AFTER_P="$(fatal_count)"
+if [ "$FATALS_AFTER_P" = "$FATALS_BEFORE_P" ]; then
+    harness_ok "TASK-0026P: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_BEFORE_P})"
+else
+    harness_bad "TASK-0026P: application remained healthy" "PHP Fatal Error count changed: ${FATALS_BEFORE_P} -> ${FATALS_AFTER_P}"
 fi
 
 harness_complete
