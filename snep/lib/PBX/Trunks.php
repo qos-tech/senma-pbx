@@ -80,7 +80,7 @@ class PBX_Trunks {
     public static function get($id) {
         $db = Zend_Registry::get('db');
 
-        $select = $db->select()->from('trunks')->where("id = $id");
+        $select = $db->select()->from('trunks')->where('id = ?', $id);
         $stmt = $db->query($select);
         $rawTrunk = $stmt->fetchObject();
         if (!$rawTrunk) {

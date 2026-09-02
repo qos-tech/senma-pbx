@@ -54,12 +54,12 @@ class Snep_Cnl {
      * @return <Array> Data found
      */
     public static function getState($state,$country) {
-        
+
         $db = Zend_Registry::get('db');
         $select = $db->select()
         ->from('core_cnl_state')
-        ->where("id = '$state'")
-        ->where("country = '$country'");
+        ->where('id = ?', $state)
+        ->where('country = ?', $country);
 
         $stmt = $db->query($select);
         $registros = $stmt->fetchAll();
@@ -99,12 +99,12 @@ class Snep_Cnl {
      * @return <Array> Data found
      */
     public static function getCityCode($state,$name) {
-        
+
         $db = Zend_Registry::get('db');
         $select = $db->select()
         ->from('core_cnl_city')
-        ->where("name = '$name'")
-        ->where("state = '$state'");
+        ->where('name = ?', $name)
+        ->where('state = ?', $state);
 
         $stmt = $db->query($select);
         $registros = $stmt->fetchAll();
@@ -181,7 +181,7 @@ class Snep_Cnl {
             $select = $db->select()
             ->from(array('p' => 'core_cnl_prefix'), array('c.name', 'c.state'))
             ->joinleft(array('c' => 'core_cnl_city'), 'p.city = c.id')
-            ->where("p.id = '$prefix'");
+            ->where('p.id = ?', $prefix);
 
             $stmt = $db->query($select);
             $registros = $stmt->fetchAll();
@@ -241,12 +241,12 @@ class Snep_Cnl {
      * @return <Array> Data found
      */
     public static function getPrefix($prefix, $country) {
-        
+
         $db = Zend_Registry::get('db');
         $select = $db->select()
         ->from('core_cnl_prefix')
-        ->where("id = '$prefix'")
-        ->where("country = '$country'");
+        ->where('id = ?', $prefix)
+        ->where('country = ?', $country);
 
         $stmt = $db->query($select);
         $registros = $stmt->fetchAll();

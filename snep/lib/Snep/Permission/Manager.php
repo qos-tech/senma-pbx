@@ -89,7 +89,7 @@ class Snep_Permission_Manager {
     public static function removePermissionUser($id, $modules) {
 
         $db = Zend_Registry::get('db');
-        $where[] = "user_id = '$id'";
+        $where[] = $db->quoteInto('user_id = ?', $id);
         $where[] = "allow =" . 0;
 
         $db->delete("users_permissions", $where);
@@ -115,7 +115,7 @@ class Snep_Permission_Manager {
     public static function addPermissionUser($id, $modules) {
 
         $db = Zend_Registry::get('db');
-        $where[] = "user_id = '$id'";
+        $where[] = $db->quoteInto('user_id = ?', $id);
         $where[] = "allow =" . 1;
 
         $db->delete("users_permissions", $where);
@@ -188,7 +188,7 @@ class Snep_Permission_Manager {
 
         $db = Zend_Registry::get('db');
 
-        $where[] = "profile_id = $id";
+        $where[] = $db->quoteInto('profile_id = ?', $id);
 
         $update_data = array('allow' => false,
             'updated' => date('Y-m-d H:i:s'));
