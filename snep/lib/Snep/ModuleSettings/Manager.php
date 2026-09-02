@@ -93,9 +93,17 @@ class Snep_ModuleSettings_Manager {
     public static function get($module) {
 
         $db = Zend_Registry::get('db');
+        // TASK-0026P: Zend_Db_Select::_where() only calls quoteInto() when
+        // $value !== null (Zend/Db/Select.php:1004) -- passing $module
+        // straight through as the where()-value argument leaves a raw,
+        // unbound '?' in the SQL whenever $module is null, which throws
+        // instead of matching nothing as the pre-fix string interpolation
+        // did. Pre-quoting via quoteInto() (with an explicit string cast,
+        // matching PHP's own null-to-'' interpolation) and passing the
+        // fully-built condition as $cond avoids that null-value quirk.
         $select = $db->select()
                 ->from('core_config')
-                ->where("config_module = '$module'");
+                ->where($db->quoteInto('config_module = ?', (string) $module));
 
         $stmt = $db->query($select);
         $data = $stmt->fetchAll();
@@ -118,9 +126,11 @@ class Snep_ModuleSettings_Manager {
     public static function getConfig($module) {
 
         $db = Zend_Registry::get('db');
+        // TASK-0026P: see the identical note in get() above -- same
+        // Zend_Db_Select null-value quirk, same fix.
         $select = $db->select()
                 ->from('core_config')
-                ->where("config_name = '$module'");
+                ->where($db->quoteInto('config_name = ?', (string) $module));
 
         $stmt = $db->query($select);
         $data = $stmt->fetch();
@@ -140,7 +150,7 @@ class Snep_ModuleSettings_Manager {
     public static function delConfig($module) {
 
         $db = Zend_Registry::get('db');
-        $db->delete("core_config", "config_module='{$module}'");
+        $db->delete("core_config", $db->quoteInto('config_module = ?', $module));
     }
 
 }
