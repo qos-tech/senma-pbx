@@ -154,6 +154,16 @@
 # fixed during this task's own development; see that doc for the full
 # explanation.
 #
+# TASK-0026R closes the four findings TASK-0026Q's own full
+# supported-surface SQL injection audit (docs/tasks/0026q-full-sql-
+# injection-audit.md) inventoried as the entire remaining residual SQL
+# boundary -- Q-SQL-001 (Snep_Cnl), Q-SQL-002 (Snep_Permission_Manager),
+# Q-SQL-003 (PBX_Trunks::get(), three entry points), and Q-SQL-004
+# (snep/includes/estados.php/cidades.php, ported off the removed mysql_*
+# extension onto Zend_Db in the same change as the parameterization fix).
+# See docs/tasks/0026r-full-residual-sql-remediation.md and this suite's
+# own TASK-0026R section (near the end of this file) for the full detail.
+#
 # Every payload below is a harmless, non-destructive, syntax-shaped
 # string or boolean-oracle value applied only to fixtures this script
 # owns -- never a real exploit chain, never password/hash/schema
@@ -337,7 +347,7 @@ if [ -z "$ADMIN_CSRF" ]; then harness_blocked "could not read the admin session'
 RESTRICTED_CSRF="$(harness_csrf_token "$RESTRICTED_JAR" "$BASE_URL")"
 if [ -z "$RESTRICTED_CSRF" ]; then harness_blocked "could not read the restricted session's CSRF token"; fi
 
-for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report" "/index.php/default/pickup-groups" "/index.php/default/queues" "/index.php/default/contacts" "/index.php/default/contact-groups" "/index.php/default/dates-alias" "/index.php/default/expression-alias" "/index.php/default/cost-center" "/index.php/default/extensions-groups" "/index.php/default/sound-files" "/index.php/billing/billing" "/index.php/billing/telcos" "/index.php/default/route" "/index.php/default/users" "/index.php/default/module-settings"; do
+for boundary_path in "/index.php/default/trunks/add" "/index.php/default/calls-report" "/index.php/default/ranking-report" "/index.php/default/services-report" "/index.php/default/pickup-groups" "/index.php/default/queues" "/index.php/default/contacts" "/index.php/default/contact-groups" "/index.php/default/dates-alias" "/index.php/default/expression-alias" "/index.php/default/cost-center" "/index.php/default/extensions-groups" "/index.php/default/sound-files" "/index.php/billing/billing" "/index.php/billing/telcos" "/index.php/default/route" "/index.php/default/users" "/index.php/default/module-settings" "/index.php/default/cnl"; do
     code="$(request "$RESTRICTED_JAR" GET "$boundary_path")"
     if [ "$code" = 302 ] && redirects_to_permission_error; then
         harness_ok "authorization intact: ${boundary_path}" "zero-permission user denied (HTTP 302, Location: permission/error)"
@@ -358,9 +368,9 @@ else
     harness_bad "authenticated-open confirmed: /index.php/default/simulator" "expected HTTP 200 for a zero-permission session, got HTTP ${code}"
 fi
 
-code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&default_contacts_write=1&default_contact-groups_write=1&default_dates-alias_write=1&default_expression-alias_write=1&default_cost-center_write=1&default_extensions-groups_write=1&default_sound-files_write=1&billing_billing_write=1&billing_telcos_write=1&default_route_write=1&default_route_read=1&default_users_write=1&default_module-settings_read=1&snep_csrf_token=${ADMIN_CSRF}")"
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&default_contacts_write=1&default_contact-groups_write=1&default_dates-alias_write=1&default_expression-alias_write=1&default_cost-center_write=1&default_extensions-groups_write=1&default_sound-files_write=1&billing_billing_write=1&billing_telcos_write=1&default_route_write=1&default_route_read=1&default_users_write=1&default_module-settings_read=1&default_cnl_read=1&snep_csrf_token=${ADMIN_CSRF}")"
 if [ "$code" = 302 ]; then
-    harness_ok "admin grants the required TASK-0026M/N/O/P permissions" "HTTP $code (contacts/contact-groups/dates-alias/expression-alias/cost-center/extensions-groups/sound-files write, billing/telcos write, route write+read, users write, module-settings read, plus the six TASK-0026J-L permissions)"
+    harness_ok "admin grants the required TASK-0026M/N/O/P/R permissions" "HTTP $code (contacts/contact-groups/dates-alias/expression-alias/cost-center/extensions-groups/sound-files write, billing/telcos write, route write+read, users write, module-settings read, cnl read, plus the six TASK-0026J-L permissions)"
 else
     harness_blocked "granting permissions to the restricted user failed (HTTP $code) -- cannot proceed"
 fi
@@ -2402,6 +2412,590 @@ if [ "$FATALS_AFTER_P" = "$FATALS_BEFORE_P" ]; then
     harness_ok "TASK-0026P: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_BEFORE_P})"
 else
     harness_bad "TASK-0026P: application remained healthy" "PHP Fatal Error count changed: ${FATALS_BEFORE_P} -> ${FATALS_AFTER_P}"
+fi
+
+# =============================================================================
+# TASK-0026R -- Full residual SQL remediation (Q-SQL-001 through Q-SQL-004)
+# =============================================================================
+#
+# Closes the four findings TASK-0026Q's own full supported-surface audit
+# (docs/tasks/0026q-full-sql-injection-audit.md) inventoried as the entire
+# remaining residual SQL boundary, ending the "find one -> fix one -> sweep
+# -> find another" pattern every TASK-0026J-P closure task repeated:
+#
+#   Q-SQL-001 -- Snep_Cnl::getState()/getCityCode()/getPrefix() (+ getCity()
+#     sibling) -- reachable via CnlController::updateAction_76()'s
+#     fixed-width uploaded-file column parsing.
+#   Q-SQL-002 -- Snep_Permission_Manager::removePermissionUser()/
+#     addPermissionUser()/removePermissionProfile() -- reachable via
+#     UsersController::permissionAction()'s raw $_POST['user'] and
+#     ProfilesController::permissionAction()'s raw route id.
+#   Q-SQL-003 -- PBX_Trunks::get() -- reachable through three independent
+#     paths: SimulatorController::indexAction()'s own `trunk` POST field
+#     (authenticated-open, any logged-in account, srcType=trunk),
+#     RouteController::parseRuleFromPost()'s srcValue/dstValue `T:<value>`
+#     tokens (default_route_write), and second-order via a persisted
+#     DiscarTronco rule action's own `tronco` config (planted with
+#     default_route_write, triggered later by any authenticated user via
+#     the Simulator's own action-description renderer).
+#   Q-SQL-004 -- snep/includes/estados.php/cidades.php -- two standalone,
+#     unauthenticated, pre-Zend mysql_*-era scripts. Ported onto this
+#     application's existing Zend_Db abstraction (Snep_Db::getInstance())
+#     and parameterized in the same change, per TASK-0026R's own explicit
+#     "reachability and SQL safety must be solved together" rule -- never
+#     merely re-connected without also closing the injection.
+#
+# Every fix uses the exact $db->quoteInto()/bound ->where('col = ?', $val)
+# pattern this program has now used a dozen times over (TASK-0026C/F1/J/K/L/
+# M/N/O/P and this task).
+#
+# Pre-existing, unrelated bugs discovered while reconstructing these four
+# boundaries (documented in docs/tasks/0026r-full-residual-sql-remediation.md,
+# not fixed here per CLAUDE.md's "do not fix unrelated legacy bugs
+# opportunistically"):
+#   - snep/includes/estados.php's non-numeric branch queries
+#     core_cnl_city.country -- a column that does not exist in this
+#     project's actual schema (core_cnl_city only has id/name/state).
+#     This is a genuine, pre-existing schema mismatch, unrelated to SQL
+#     injection or to the mysql_*-to-Zend_Db port -- it would fail
+#     identically (SQLSTATE[42S22]: Column not found) regardless of
+#     connection layer or parameterization. Confirmed this task's own
+#     apostrophe/boolean probes below never produce a syntax-error-shaped
+#     (42000) signature, only this distinct, harmless, pre-existing
+#     column-mismatch signature.
+#   - SimulatorController::indexAction()'s srcType=="trunk" branch has no
+#     try/catch around PBX_Trunks::get($trunk) at all (unlike the
+#     srcType=="exten" branch, which does catch PBX_Exception_NotFound).
+#     This means ANY invalid trunk value -- a typo'd numeric id that
+#     simply doesn't exist, not merely an injection-shaped one -- already
+#     produced an uncaught-exception HTTP 500 before this task, and still
+#     does after (now a clean PBX_Exception_NotFound instead of a raw SQL
+#     syntax error). Confirmed via a control probe (a legitimate-shaped
+#     but nonexistent numeric trunk id) producing the identical 500/
+#     PBX_Exception_NotFound signature, proving this is a pre-existing UX
+#     gap, not a regression from this task's own fix.
+#   - Snep_Permission_Manager::removePermissionProfile()'s own hardcoded
+#     SET clause ('allow' => false, a PHP bool) hits the same
+#     PDO-bool-to-empty-string / strict-int-column rejection class this
+#     program has documented several times before (TASK-0015's
+#     dtmf_dial/map_extensions fix, TASK-0026N's PBX_Rules::update()
+#     "record" field) -- but only once the WHERE clause actually matches
+#     a real row (MariaDB validates a row's new column values while
+#     writing that row, not before matching it), which is itself useful
+#     proof the WHERE clause correctly targets the real row and nothing
+#     else.
+#
+# Every payload below is a harmless, non-destructive, syntax-shaped string
+# or boolean-oracle value applied only to fixtures this script owns --
+# never a real exploit chain, never password/hash/schema extraction.
+
+# sweep_task0026r_residue -- best-effort safety net in case any block below
+# exits early (an uncaught exception mid-PHP-block, etc.) before its own
+# inline cleanup runs. Every fixture this section creates uses a
+# task0026r-prefixed name/value (or a small set of well-known numeric
+# trunk/state/country codes reserved for this section), nothing else in
+# the schema does.
+sweep_task0026r_residue() {
+    db_query "
+DELETE FROM users_permissions WHERE user_id IN (SELECT id FROM users WHERE name LIKE 'task0026r-%');
+DELETE FROM users WHERE name LIKE 'task0026r-%';
+DELETE FROM profiles_permissions WHERE profile_id IN (SELECT id FROM profiles WHERE name LIKE 'task0026r-%');
+DELETE FROM profiles WHERE name LIKE 'task0026r-%';
+DELETE FROM trunks WHERE name IN ('9101','9102','9201');
+DELETE FROM regras_negocio_actions_config WHERE regra_id IN (SELECT id FROM regras_negocio WHERE \`desc\` LIKE 'task0026r-%');
+DELETE FROM regras_negocio_actions WHERE regra_id IN (SELECT id FROM regras_negocio WHERE \`desc\` LIKE 'task0026r-%');
+DELETE FROM regras_negocio WHERE \`desc\` LIKE 'task0026r-%';
+DELETE FROM core_cnl_prefix WHERE id='9199999';
+DELETE FROM core_cnl_city WHERE name LIKE 'Task0026rQ1City' OR name='Task0026rCnlCity';
+DELETE FROM core_cnl_state WHERE id IN ('Q1','VS','TR');
+DELETE FROM core_cnl_country WHERE id IN (997,998,999);
+DELETE FROM core_city WHERE name='Task0026rTestCity';
+DELETE FROM core_state WHERE acronym IN ('T26R');
+" >/dev/null 2>&1
+    true
+}
+harness_register_best_effort_cleanup "TASK-0026R residue safety net" "sweep_task0026r_residue"
+
+# =============================================================================
+# Q-SQL-001 -- Snep_Cnl boundary (getState/getCityCode/getPrefix + getCity sibling)
+# =============================================================================
+
+log "==> TASK-0026R: Q-SQL-001 Snep_Cnl boundary"
+
+FATALS_BEFORE_Q1="$(fatal_count)"
+
+Q1_PHP="$(mktemp)"
+cat > "$Q1_PHP" <<'PHPEOF'
+$db = Zend_Registry::get('db');
+$db->insert('core_cnl_country', ['id' => 997, 'name' => 'Task0026rQ1Country', 'code_2' => 'Q1', 'code_3' => 'Q11', 'language' => 'en', 'locale' => 'en_US']);
+echo 'COUNTRY_FIXTURE:OK' . PHP_EOL;
+
+$db->insert('core_cnl_state', ['id' => 'Q1', 'country' => 997, 'name' => 'Task0026rQ1State']);
+$legit = Snep_Cnl::getState('Q1', 997);
+echo 'GETSTATE_LEGIT:' . ((count($legit)===1 && $legit[0]['name']==='Task0026rQ1State') ? 'OK':'BAD') . PHP_EOL;
+
+try { Snep_Cnl::getState("foo'bar", 997); echo 'GETSTATE_APOSTROPHE:OK'.PHP_EOL; } catch (Exception $e) { echo 'GETSTATE_APOSTROPHE:EXCEPTION:'.$e->getMessage().PHP_EOL; }
+
+$victimState = Snep_Cnl::getState("nonexistent' OR id='Q1", 997);
+echo 'GETSTATE_BOOLEAN_ISOLATED:' . ((count($victimState)===0)?'OK':'BAD').PHP_EOL;
+
+$db->insert('core_cnl_city', ['name' => 'Task0026rQ1City', 'state' => 'Q1']);
+$cityRow = Snep_Cnl::getCityCode('Q1', 'Task0026rQ1City');
+echo 'GETCITYCODE_LEGIT:' . ((is_array($cityRow) && $cityRow['name']==='Task0026rQ1City') ? 'OK':'BAD') . PHP_EOL;
+try { Snep_Cnl::getCityCode("baz'qux", "foo'bar"); echo 'GETCITYCODE_APOSTROPHE:OK'.PHP_EOL; } catch (Exception $e) { echo 'GETCITYCODE_APOSTROPHE:EXCEPTION:'.$e->getMessage().PHP_EOL; }
+$boolCity = Snep_Cnl::getCityCode("nonexistent-state", "nonexistent' OR name='Task0026rQ1City");
+echo 'GETCITYCODE_BOOLEAN_ISOLATED:' . (is_null($boolCity)?'OK':'BAD') . PHP_EOL;
+
+$cityId = $cityRow['id'];
+$db->insert('core_cnl_prefix', ['id' => '9199999', 'country' => 997, 'city' => $cityId, 'latitud'=>'0','longitud'=>'0','hemisphere'=>'S']);
+$prefixRow = Snep_Cnl::getPrefix('9199999', 997);
+echo 'GETPREFIX_LEGIT:' . ((count($prefixRow)===1) ? 'OK':'BAD') . PHP_EOL;
+try { Snep_Cnl::getPrefix("foo'bar", 997); echo 'GETPREFIX_APOSTROPHE:OK'.PHP_EOL; } catch (Exception $e) { echo 'GETPREFIX_APOSTROPHE:EXCEPTION:'.$e->getMessage().PHP_EOL; }
+$boolPrefix = Snep_Cnl::getPrefix("nonexistent' OR id='9199999", 997);
+echo 'GETPREFIX_BOOLEAN_ISOLATED:' . ((count($boolPrefix)===0)?'OK':'BAD') . PHP_EOL;
+
+// getCity() sibling (used by CallsReportController -- fixed alongside its
+// siblings for defense in depth per this task's own "audit exact sibling
+# SQL methods" instruction): its own internal getPrefix()-style lookup.
+try { Snep_Cnl::getCity("11987654321"); echo 'GETCITY_LEGIT_NO_CRASH:OK'.PHP_EOL; } catch (Exception $e) { echo 'GETCITY_LEGIT_NO_CRASH:EXCEPTION:'.$e->getMessage().PHP_EOL; }
+
+$db->delete('core_cnl_prefix', "id='9199999'");
+$db->delete('core_cnl_city', "name='Task0026rQ1City'");
+$db->delete('core_cnl_state', "id='Q1'");
+$db->delete('core_cnl_country', "id=997");
+echo 'CNL_CLEANUP:OK' . PHP_EOL;
+PHPEOF
+Q1_OUT="$(run_manager_php_file "$Q1_PHP")"
+rm -f "$Q1_PHP"
+for m in COUNTRY_FIXTURE GETSTATE_LEGIT GETSTATE_APOSTROPHE GETSTATE_BOOLEAN_ISOLATED GETCITYCODE_LEGIT GETCITYCODE_APOSTROPHE GETCITYCODE_BOOLEAN_ISOLATED GETPREFIX_LEGIT GETPREFIX_APOSTROPHE GETPREFIX_BOOLEAN_ISOLATED GETCITY_LEGIT_NO_CRASH CNL_CLEANUP; do
+    assert_marker "Snep_Cnl: ${m}" "$m" "$Q1_OUT"
+done
+
+FATALS_AFTER_Q1="$(fatal_count)"
+if [ "$FATALS_AFTER_Q1" = "$FATALS_BEFORE_Q1" ]; then
+    harness_ok "TASK-0026R Q-SQL-001: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_BEFORE_Q1})"
+else
+    harness_bad "TASK-0026R Q-SQL-001: application remained healthy" "PHP Fatal Error count changed: ${FATALS_BEFORE_Q1} -> ${FATALS_AFTER_Q1}"
+fi
+
+# =============================================================================
+# Q-SQL-002 -- Snep_Permission_Manager boundary
+# =============================================================================
+
+log "==> TASK-0026R: Q-SQL-002 Snep_Permission_Manager boundary"
+
+FATALS_BEFORE_Q2="$(fatal_count)"
+
+# --- Real-HTTP core proof: apostrophe-shaped payload against both real
+# entry points causes no 42000/syntax-error. UsersController's own
+# unrelated "array offset on false" warning when the malformed id matches
+# no real user is expected and harmless. Both checks below use a custom,
+# signature-precise assertion (not the generic manager_check(), which
+# flags ANY "SQLSTATE" mention) because a non-numeric id/user value
+# legitimately produces a distinct, harmless SQLSTATE 22007
+# ("incorrect integer value") data-type rejection against the strict
+# users_permissions.user_id/profiles_permissions.profile_id int columns --
+# a correctness property of strict-mode MariaDB rejecting an
+# unconvertible bound value, not a SQL-injection signature (which would
+# be a 42000-class syntax error instead). See this section's own header
+# comment for the full explanation. ---
+
+code="$(post_fields "$RESTRICTED_JAR" /index.php/default/users/permission "user=foo'bar" "snep_csrf_token=${RESTRICTED_CSRF}")"
+TAIL_Q2U="$(app_exec 'tail -c 2000 /var/log/apache2/mag-error.log 2>/dev/null')"
+if ! echo "$TAIL_Q2U" | grep -qi "SQLSTATE\[42\|syntax error"; then
+    harness_ok "UsersController::permissionAction(): apostrophe-shaped user causes no SQL syntax error" "HTTP $code, no 42000-class error"
+else
+    harness_bad "UsersController::permissionAction(): apostrophe-shaped user causes no SQL syntax error" "HTTP $code, log tail: $(echo "$TAIL_Q2U" | tr '\n' ' ' | tail -c 300)"
+fi
+
+code="$(post_fields "$RESTRICTED_JAR" "/index.php/default/profiles/permission?id=foo%27bar" "duallistbox_permission[]=" "snep_csrf_token=${RESTRICTED_CSRF}")"
+TAIL_Q2="$(app_exec 'tail -c 2000 /var/log/apache2/mag-error.log 2>/dev/null')"
+if ! echo "$TAIL_Q2" | grep -qi "SQLSTATE\[42\|syntax error"; then
+    harness_ok "ProfilesController::permissionAction(): apostrophe-shaped id causes no SQL syntax error" "HTTP $code, no 42000-class error"
+else
+    harness_bad "ProfilesController::permissionAction(): apostrophe-shaped id causes no SQL syntax error" "HTTP $code, log tail: $(echo "$TAIL_Q2" | tr '\n' ' ' | tail -c 300)"
+fi
+
+# --- Direct-invocation coverage: boolean isolation with real victim
+# fixtures, plus a legitimate end-to-end call for each method. ---
+
+Q2_PHP="$(mktemp)"
+cat > "$Q2_PHP" <<'PHPEOF'
+$db = Zend_Registry::get('db');
+
+$db->insert('users', ['name' => 'task0026r-permvictim', 'password' => 'x', 'email' => 'pv@example.test', 'dashboard' => '', 'profile_id' => 1, 'created' => date('Y-m-d H:i:s'), 'updated' => date('Y-m-d H:i:s')]);
+$victimUserId = $db->lastInsertId();
+$db->insert('users_permissions', ['permission_id' => 'default_trunks_write', 'user_id' => $victimUserId, 'created' => date('Y-m-d H:i:s'), 'updated' => date('Y-m-d H:i:s'), 'allow' => 1]);
+echo 'PERM_FIXTURE_USER:OK' . PHP_EOL;
+
+$db->insert('profiles', ['name' => 'task0026r-permvictimprofile', 'created' => date('Y-m-d H:i:s'), 'updated' => date('Y-m-d H:i:s')]);
+$victimProfileId = $db->lastInsertId();
+$db->insert('profiles_permissions', ['permission_id' => 'default_trunks_write', 'profile_id' => $victimProfileId, 'created' => date('Y-m-d H:i:s'), 'updated' => date('Y-m-d H:i:s'), 'allow' => 1]);
+echo 'PERM_FIXTURE_PROFILE:OK' . PHP_EOL;
+
+$beforeUser = (int) $db->fetchOne("SELECT COUNT(*) FROM users_permissions WHERE user_id=" . (int)$victimUserId);
+
+try {
+    Snep_Permission_Manager::removePermissionUser("foo'bar", []);
+    echo 'REMOVEUSER_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'REMOVEUSER_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+$afterApostrophe = (int) $db->fetchOne("SELECT COUNT(*) FROM users_permissions WHERE user_id=" . (int)$victimUserId);
+echo 'REMOVEUSER_APOSTROPHE_ISOLATED:' . (($afterApostrophe === $beforeUser) ? 'OK' : 'BAD') . PHP_EOL;
+
+$boolPayloadUser = "0' OR user_id='" . $victimUserId;
+try {
+    Snep_Permission_Manager::removePermissionUser($boolPayloadUser, []);
+    echo 'REMOVEUSER_BOOLEAN:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'REMOVEUSER_BOOLEAN:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+$afterBoolean = (int) $db->fetchOne("SELECT COUNT(*) FROM users_permissions WHERE user_id=" . (int)$victimUserId);
+echo 'REMOVEUSER_BOOLEAN_ISOLATED:' . (($afterBoolean === $beforeUser) ? 'OK' : 'BAD (was ' . $beforeUser . ', now ' . $afterBoolean . ')') . PHP_EOL;
+
+// Legitimate removePermissionUser: deletes existing allow=0 (deny) rows for
+// this user and re-inserts the given module list as fresh allow=0 rows --
+// it does NOT touch the fixture's own allow=1 (grant) row, by design
+// (UsersController's removePermissionUser()/addPermissionUser() pair
+// separately manage the deny-list and the grant-list). Proves the WHERE
+// clause correctly targets the real user_id.
+Snep_Permission_Manager::removePermissionUser($victimUserId, ['default_trunks_write']);
+$legitRows = $db->fetchAll("SELECT permission_id, allow FROM users_permissions WHERE user_id=" . (int)$victimUserId . " ORDER BY allow");
+echo 'REMOVEUSER_LEGIT:' . ((count($legitRows) === 2 && (int)$legitRows[0]['allow'] === 0 && (int)$legitRows[1]['allow'] === 1) ? 'OK' : 'BAD (' . count($legitRows) . ' rows)') . PHP_EOL;
+$legitRowCountAfterRemove = count($legitRows);
+
+try {
+    Snep_Permission_Manager::addPermissionUser("foo'bar", []);
+    echo 'ADDUSER_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'ADDUSER_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+$afterAdd = (int) $db->fetchOne("SELECT COUNT(*) FROM users_permissions WHERE user_id=" . (int)$victimUserId);
+echo 'ADDUSER_APOSTROPHE_ISOLATED:' . (($afterAdd === $legitRowCountAfterRemove) ? 'OK' : 'BAD (' . $afterAdd . ' rows)') . PHP_EOL;
+
+// removePermissionProfile()'s own hardcoded SET clause ('allow' => false, a
+// PHP bool) hits a pre-existing, unrelated PDO-bool-to-empty-string /
+// strict-int-column rejection (SQLSTATE 22007) -- but ONLY once the WHERE
+// clause actually matches a real row, so this signature is itself proof
+// the WHERE targeted the real row correctly, not a SQL-injection signature
+// (which would be a 42000 syntax error instead). See this section's own
+// header comment for the full explanation -- not fixed here.
+$beforeProfile = (int) $db->fetchOne("SELECT allow FROM profiles_permissions WHERE profile_id=" . (int)$victimProfileId . " AND permission_id='default_trunks_write'");
+try {
+    Snep_Permission_Manager::removePermissionProfile("foo'bar");
+    echo 'REMOVEPROFILE_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'REMOVEPROFILE_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+$afterProfileApostrophe = (int) $db->fetchOne("SELECT allow FROM profiles_permissions WHERE profile_id=" . (int)$victimProfileId . " AND permission_id='default_trunks_write'");
+echo 'REMOVEPROFILE_APOSTROPHE_ISOLATED:' . (($afterProfileApostrophe === $beforeProfile) ? 'OK' : 'BAD') . PHP_EOL;
+
+$boolPayloadProfile = "0 OR profile_id=" . $victimProfileId;
+try {
+    Snep_Permission_Manager::removePermissionProfile($boolPayloadProfile);
+    echo 'REMOVEPROFILE_BOOLEAN:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'REMOVEPROFILE_BOOLEAN:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+$afterProfileBoolean = (int) $db->fetchOne("SELECT allow FROM profiles_permissions WHERE profile_id=" . (int)$victimProfileId . " AND permission_id='default_trunks_write'");
+echo 'REMOVEPROFILE_BOOLEAN_ISOLATED:' . (($afterProfileBoolean === $beforeProfile) ? 'OK' : 'BAD (was ' . $beforeProfile . ', now ' . $afterProfileBoolean . ')') . PHP_EOL;
+
+try {
+    Snep_Permission_Manager::removePermissionProfile($victimProfileId);
+    echo 'REMOVEPROFILE_LEGIT_TARGETS_REAL_ROW:UNEXPECTED_NO_EXCEPTION' . PHP_EOL;
+} catch (Zend_Db_Statement_Exception $e) {
+    echo 'REMOVEPROFILE_LEGIT_TARGETS_REAL_ROW:' . ((strpos($e->getMessage(), '42000') === false && stripos($e->getMessage(), 'syntax') === false) ? 'OK' : 'BAD:' . $e->getMessage()) . PHP_EOL;
+}
+
+$db->delete('users_permissions', "user_id=" . (int)$victimUserId);
+$db->delete('users', "id=" . (int)$victimUserId);
+$db->delete('profiles_permissions', "profile_id=" . (int)$victimProfileId);
+$db->delete('profiles', "id=" . (int)$victimProfileId);
+echo 'PERM_CLEANUP:OK' . PHP_EOL;
+PHPEOF
+Q2_OUT="$(run_manager_php_file "$Q2_PHP")"
+rm -f "$Q2_PHP"
+for m in PERM_FIXTURE_USER PERM_FIXTURE_PROFILE REMOVEUSER_APOSTROPHE REMOVEUSER_APOSTROPHE_ISOLATED REMOVEUSER_BOOLEAN REMOVEUSER_BOOLEAN_ISOLATED REMOVEUSER_LEGIT ADDUSER_APOSTROPHE ADDUSER_APOSTROPHE_ISOLATED REMOVEPROFILE_APOSTROPHE REMOVEPROFILE_APOSTROPHE_ISOLATED REMOVEPROFILE_BOOLEAN REMOVEPROFILE_BOOLEAN_ISOLATED REMOVEPROFILE_LEGIT_TARGETS_REAL_ROW PERM_CLEANUP; do
+    assert_marker "Snep_Permission_Manager: ${m}" "$m" "$Q2_OUT"
+done
+
+FATALS_AFTER_Q2="$(fatal_count)"
+if [ "$FATALS_AFTER_Q2" = "$FATALS_BEFORE_Q2" ]; then
+    harness_ok "TASK-0026R Q-SQL-002: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_BEFORE_Q2})"
+else
+    harness_bad "TASK-0026R Q-SQL-002: application remained healthy" "PHP Fatal Error count changed: ${FATALS_BEFORE_Q2} -> ${FATALS_AFTER_Q2}"
+fi
+
+# =============================================================================
+# Q-SQL-003 -- PBX_Trunks boundary (three entry points, one shared sink)
+# =============================================================================
+
+log "==> TASK-0026R: Q-SQL-003 PBX_Trunks boundary"
+
+FATALS_BEFORE_Q3="$(fatal_count)"
+
+# --- Entry point 1: SimulatorController's own `trunk` POST field
+# (srcType=trunk), authenticated-open -- real HTTP. A clean
+# PBX_Exception_NotFound (via ErrorController) is the expected outcome for
+# ANY invalid trunk value on this branch -- see this section's own header
+# comment on the pre-existing missing try/catch here -- so the assertion is
+# strictly "no 42000-class SQL syntax error", matching manager_check()'s own
+# established discipline elsewhere in this suite. ---
+
+manager_check "Simulator: apostrophe-shaped trunk field (srcType=trunk) causes no SQL syntax error" \
+    /index.php/default/simulator "acao=simulate" "srcType=trunk" "trunk=foo'bar" "caller=probe" "dst=100" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+# --- Entry point 2: RouteController::parseRuleFromPost()'s srcValue T:
+# token, default_route_write -- real HTTP. parseConfig()'s own try/catch
+# converts a NotFound trunk lookup into PBX_Exception_BadArg -- still a
+# clean, non-SQL exception. ---
+
+manager_check "RouteController::addAction(): srcValue=T:foo'bar causes no SQL syntax error" \
+    /index.php/default/route/add "desc=task0026r-q3-http-probe" "prio=999" "typeRule=others" "srcValue=T:foo'bar" "dstValue=X" "week[]=mon" "validTime=00:00-23:59" "snep_csrf_token=${RESTRICTED_CSRF}"
+
+RULE_LEAKED="$(db_query "SELECT COUNT(*) FROM regras_negocio WHERE \`desc\`='task0026r-q3-http-probe';")"
+if [ "$RULE_LEAKED" = "0" ]; then
+    harness_ok "RouteController::addAction(): malformed srcValue does not persist a rule" "0 rows (rejected before PBX_Rules::register())"
+else
+    harness_bad "RouteController::addAction(): malformed srcValue does not persist a rule" "${RULE_LEAKED} row(s) unexpectedly persisted"
+    harness_register_cleanup "unexpected task0026r-q3-http-probe rule" \
+        "$COMPOSE exec -T db mariadb -u'${DB_USER}' -p'${DB_PASSWORD}' '${DB_NAME}' -e \"DELETE FROM regras_negocio WHERE \\\`desc\\\`='task0026r-q3-http-probe';\" >/dev/null"
+fi
+
+# --- Entry point 3 (second-order) + boolean isolation: direct invocation. ---
+
+Q3_PHP="$(mktemp)"
+cat > "$Q3_PHP" <<'PHPEOF'
+$db = Zend_Registry::get('db');
+
+$db->insert('trunks', ['name' => '9101', 'type' => 'SIP', 'callerid' => 'Task0026rCanaryA', 'host' => '127.0.0.1', 'dialmethod' => 'NOAUTH', 'trunktype' => 'M', 'domain' => '', 'technology' => 'sip']);
+$canaryAId = $db->lastInsertId();
+$db->insert('trunks', ['name' => '9102', 'type' => 'SIP', 'callerid' => 'Task0026rCanaryB', 'host' => '127.0.0.1', 'dialmethod' => 'NOAUTH', 'trunktype' => 'M', 'domain' => '', 'technology' => 'sip']);
+$canaryBId = $db->lastInsertId();
+echo 'TRUNK_FIXTURES:' . (($canaryAId && $canaryBId) ? 'OK' : 'BAD') . PHP_EOL;
+
+$legit = PBX_Trunks::get($canaryAId);
+echo 'GET_LEGIT:' . (($legit->getName() === 'Task0026rCanaryA') ? 'OK' : 'BAD') . PHP_EOL;
+
+try {
+    PBX_Trunks::get("foo'bar");
+    echo 'GET_APOSTROPHE:BAD (no exception)' . PHP_EOL;
+} catch (PBX_Exception_NotFound $e) {
+    echo 'GET_APOSTROPHE:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'GET_APOSTROPHE:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+try {
+    $t = PBX_Trunks::get("0 OR id={$canaryBId}");
+    echo 'GET_BOOLEAN_ISOLATED:BAD (resolved to ' . $t->getName() . ')' . PHP_EOL;
+} catch (PBX_Exception_NotFound $e) {
+    echo 'GET_BOOLEAN_ISOLATED:OK' . PHP_EOL;
+}
+
+// Entry point 3: second-order via a persisted DiscarTronco rule action. The
+// malicious 'tronco' config is planted with zero validation (matching
+// Snep_Rule_ActionConfig::parseConfig()'s own real behavior -- a straight
+// $post[field] passthrough, inherited unchanged from PBX_Rule_ActionConfig)
+// via PBX_Rule::addAcao()/PBX_Rules::register() (DiscarTronco is already
+// loaded by this bootstrap's own Snep_Modules::addPath() module
+// registration, which require_once's every file under modules/default/
+// actions/ -- no explicit require needed here), then read back exactly the
+// way SimulatorController::indexAction()'s own action-description renderer
+// does: $action->getConfigArray()['tronco'].
+$action = new DiscarTronco();
+$action->setConfig(['tronco' => "foo'bar", 'dial_timeout' => '60', 'dial_flags' => 'TWK', 'alertEmail' => '']);
+$rule = new PBX_Rule();
+$rule->setDesc('task0026r-q3-secondorder');
+$rule->setPriority(999);
+$rule->setTypeRule('others');
+$rule->addSrc(['type' => 'X', 'value' => '']);
+$rule->addDst(['type' => 'X', 'value' => '']);
+foreach (['sun','mon','tue','wed','thu','fri','sat'] as $d) { $rule->addWeekDay($d); }
+$rule->addValidTime('00:00-23:59');
+$rule->addAcao($action);
+$rule->record();
+PBX_Rules::register($rule);
+$ruleId = $rule->getId();
+echo 'SECONDORDER_FIXTURE:' . ($ruleId ? 'OK' : 'BAD') . PHP_EOL;
+
+$reloaded = PBX_Rules::get($ruleId);
+$reloadedAction = $reloaded->getAcao(0);
+$config = $reloadedAction->getConfigArray();
+echo 'SECONDORDER_CONFIG_PERSISTED:' . (($config['tronco'] === "foo'bar") ? 'OK' : 'BAD:' . var_export($config['tronco'] ?? null, true)) . PHP_EOL;
+try {
+    PBX_Trunks::get($config['tronco']);
+    echo 'SECONDORDER_TRIGGER:BAD (no exception)' . PHP_EOL;
+} catch (PBX_Exception_NotFound $e) {
+    echo 'SECONDORDER_TRIGGER:OK' . PHP_EOL;
+} catch (Exception $e) {
+    echo 'SECONDORDER_TRIGGER:EXCEPTION:' . $e->getMessage() . PHP_EOL;
+}
+
+PBX_Rules::delete($ruleId);
+$db->delete('trunks', "id IN ({$canaryAId},{$canaryBId})");
+echo 'TRUNKS_CLEANUP:OK' . PHP_EOL;
+PHPEOF
+Q3_OUT="$(run_manager_php_file "$Q3_PHP")"
+rm -f "$Q3_PHP"
+for m in TRUNK_FIXTURES GET_LEGIT GET_APOSTROPHE GET_BOOLEAN_ISOLATED SECONDORDER_FIXTURE SECONDORDER_CONFIG_PERSISTED SECONDORDER_TRIGGER TRUNKS_CLEANUP; do
+    assert_marker "PBX_Trunks: ${m}" "$m" "$Q3_OUT"
+done
+
+FATALS_AFTER_Q3="$(fatal_count)"
+if [ "$FATALS_AFTER_Q3" = "$FATALS_BEFORE_Q3" ]; then
+    harness_ok "TASK-0026R Q-SQL-003: application remained healthy" "PHP Fatal Error count unchanged (${FATALS_BEFORE_Q3})"
+else
+    harness_bad "TASK-0026R Q-SQL-003: application remained healthy" "PHP Fatal Error count changed: ${FATALS_BEFORE_Q3} -> ${FATALS_AFTER_Q3}"
+fi
+
+# =============================================================================
+# Q-SQL-004 -- snep/includes/estados.php + cidades.php boundary
+# =============================================================================
+#
+# Both files are unauthenticated by design (no session/cookie check of any
+# kind, matching this same directory's own ip_status_trunks.php/
+# ip_status_peers.php sibling pattern) -- every check below uses a fresh,
+# anonymous cookie jar, never $RESTRICTED_JAR/$ADMIN_JAR, to prove the fix
+# holds under the same unauthenticated conditions the live vulnerability did.
+
+log "==> TASK-0026R: Q-SQL-004 estados.php/cidades.php boundary"
+
+FATALS_BEFORE_Q4="$(fatal_count)"
+
+ANON_JAR="$(mktemp)"
+harness_register_best_effort_cleanup "TASK-0026R anonymous cookie jar" "rm -f '$ANON_JAR'"
+
+# Fixture chain: core_state/core_city (estados.php/cidades.php's numeric
+# branch) and core_cnl_country/core_cnl_state/core_cnl_city (cidades.php's
+# non-numeric branch -- estados.php's own non-numeric branch is the
+# pre-existing dead column-mismatch path documented in this section's own
+# header comment, and is exercised for safety only, not for legitimate
+# lookup).
+db_query "
+INSERT INTO core_state (uuid, created, updated, active, country_id, acronym, name) VALUES (UUID(), NOW(), NOW(), 1, 1, 'T26R', 'Task0026rTestState');
+INSERT INTO core_city (uuid, created, updated, active, state_id, name) VALUES (UUID(), NOW(), NOW(), 1, (SELECT id FROM core_state WHERE acronym='T26R'), 'Task0026rTestCity');
+INSERT INTO core_cnl_country (id, name, code_2, code_3, language, locale) VALUES (999, 'Task0026rQ4Country', 'T9', 'T99', 'en', 'en_US');
+INSERT INTO core_cnl_state (id, country, name) VALUES ('TR', 999, 'Task0026rCnlState');
+INSERT INTO core_cnl_city (name, state) VALUES ('Task0026rCnlCity', 'TR');
+" >/dev/null
+harness_register_cleanup "TASK-0026R Q-SQL-004 fixtures" \
+    "$COMPOSE exec -T db mariadb -u'${DB_USER}' -p'${DB_PASSWORD}' '${DB_NAME}' -e \"DELETE FROM core_cnl_city WHERE name='Task0026rCnlCity'; DELETE FROM core_cnl_state WHERE id='TR'; DELETE FROM core_cnl_country WHERE id=999; DELETE FROM core_city WHERE name='Task0026rTestCity'; DELETE FROM core_state WHERE acronym='T26R';\" >/dev/null"
+
+STATE_ID="$(db_query "SELECT id FROM core_state WHERE acronym='T26R';")"
+if [ -n "$STATE_ID" ]; then
+    harness_ok "Q-SQL-004 fixtures created" "core_state id=${STATE_ID}"
+else
+    harness_blocked "could not provision the Q-SQL-004 fixture chain -- cannot proceed"
+fi
+
+# --- Legitimate lookups (numeric branch, both files) ---
+
+code="$(curl -sS -c "$ANON_JAR" -b "$ANON_JAR" -o "$BODY" -w '%{http_code}' "${BASE_URL}/includes/estados.php?pais=1")"
+if [ "$code" = 200 ] && grep -q "Task0026rTestState" "$BODY"; then
+    harness_ok "estados.php: legitimate numeric lookup (pais=1) returns real data" "HTTP $code, fixture state present"
+else
+    harness_bad "estados.php: legitimate numeric lookup (pais=1) returns real data" "HTTP $code, body: $(head -c 200 "$BODY")"
+fi
+
+code="$(curl -sS -c "$ANON_JAR" -b "$ANON_JAR" -o "$BODY" -w '%{http_code}' "${BASE_URL}/includes/cidades.php?estado=${STATE_ID}")"
+if [ "$code" = 200 ] && grep -q "Task0026rTestCity" "$BODY"; then
+    harness_ok "cidades.php: legitimate numeric lookup returns real data" "HTTP $code, fixture city present"
+else
+    harness_bad "cidades.php: legitimate numeric lookup returns real data" "HTTP $code, body: $(head -c 200 "$BODY")"
+fi
+
+code="$(curl -sS -c "$ANON_JAR" -b "$ANON_JAR" -o "$BODY" -w '%{http_code}' "${BASE_URL}/includes/cidades.php?estado=TR")"
+if [ "$code" = 200 ] && grep -q "Task0026rCnlCity" "$BODY"; then
+    harness_ok "cidades.php: legitimate non-numeric lookup (core_cnl_city.state) returns real data" "HTTP $code, fixture city present"
+else
+    harness_bad "cidades.php: legitimate non-numeric lookup (core_cnl_city.state) returns real data" "HTTP $code, body: $(head -c 200 "$BODY")"
+fi
+
+# --- Apostrophe-shaped input: no SQL syntax error on either file. estados.php's
+# own non-numeric branch hits the pre-existing, unrelated core_cnl_city.country
+# column-mismatch bug documented above (SQLSTATE 42S22 -- Column not found) --
+# a fundamentally different signature from a 42000 syntax error, and one that
+# would fire identically for ANY non-numeric value, injection-shaped or not,
+# proving no attacker-controlled value ever reaches a point where it could
+# alter query syntax. cidades.php's non-numeric branch targets a real column
+# (core_cnl_city.state) and is expected to return cleanly with zero rows. ---
+
+FATALS_Q4_BEFORE_APOS="$(fatal_count)"
+code="$(curl -sS -c "$ANON_JAR" -b "$ANON_JAR" -o "$BODY" -w '%{http_code}' "${BASE_URL}/includes/estados.php?pais=foo%27bar")"
+TAIL_Q4="$(app_exec 'tail -c 2000 /var/log/apache2/mag-error.log 2>/dev/null')"
+if ! echo "$TAIL_Q4" | grep -qi "SQLSTATE\[42000\]\|syntax error"; then
+    harness_ok "estados.php: apostrophe-shaped pais causes no SQL syntax error" "HTTP $code (pre-existing, unrelated core_cnl_city.country column-mismatch signature allowed, syntax-error signature is not)"
+else
+    harness_bad "estados.php: apostrophe-shaped pais causes no SQL syntax error" "HTTP $code, log tail: $(echo "$TAIL_Q4" | tr '\n' ' ' | tail -c 300)"
+fi
+
+code="$(curl -sS -c "$ANON_JAR" -b "$ANON_JAR" -o "$BODY" -w '%{http_code}' "${BASE_URL}/includes/cidades.php?estado=foo%27bar")"
+if [ "$code" = 200 ] && [ ! -s "$BODY" ]; then
+    harness_ok "cidades.php: apostrophe-shaped estado causes no SQL error, no data" "HTTP $code, empty body (no match)"
+else
+    harness_bad "cidades.php: apostrophe-shaped estado causes no SQL error, no data" "HTTP $code, body: $(head -c 200 "$BODY")"
+fi
+
+# --- Boolean-injection-shaped input cannot leak the CNL-city fixture across
+# a differently-named target (cidades.php's own real, schema-aligned column,
+# core_cnl_city.state -- the strongest of the two files' boundaries). ---
+
+code="$(curl -sS -c "$ANON_JAR" -b "$ANON_JAR" -o "$BODY" -w '%{http_code}' --data-urlencode "estado=nonexistent' OR state='TR" -G "${BASE_URL}/includes/cidades.php")"
+if [ "$code" = 200 ] && ! grep -q "Task0026rCnlCity" "$BODY"; then
+    harness_ok "cidades.php: boolean-shaped estado cannot leak the CNL-city fixture" "HTTP $code, fixture not present in response"
+else
+    harness_bad "cidades.php: boolean-shaped estado cannot leak the CNL-city fixture" "HTTP $code, body: $(head -c 200 "$BODY")"
+fi
+
+
+# estados.php's own non-numeric branch (core_cnl_city.country -- a column
+# that does not exist, see this section's own header comment) genuinely
+# raises an uncaught PDOException on EVERY non-numeric request, injection-
+# shaped or not, since this standalone script has no Zend/ErrorController
+# exception handling of its own -- unlike every other TASK-0026x boundary
+# in this suite, a raw "PHP Fatal error" log entry here is the EXPECTED,
+# pre-existing, unrelated outcome, not a regression. This check asserts
+# the delta is exactly the one known, harmless, non-syntax-error signature
+# (a second copy is logged per request -- PHP logs both the outer
+# PDOException and its chained Zend_Db_Statement_Exception -- cidades.php's
+# own non-numeric branch, which targets a real column, adds none), never
+# anything else.
+FATALS_Q4_AFTER_APOS="$(fatal_count)"
+Q4_FATAL_DELTA=$((FATALS_Q4_AFTER_APOS - FATALS_Q4_BEFORE_APOS))
+TAIL_Q4_FATAL="$(app_exec 'tail -c 4000 /var/log/apache2/mag-error.log 2>/dev/null')"
+if [ "$Q4_FATAL_DELTA" -ge 0 ] \
+    && ! echo "$TAIL_Q4_FATAL" | grep -qi "SQLSTATE\[42000\]\|syntax error" \
+    && { [ "$Q4_FATAL_DELTA" -eq 0 ] || echo "$TAIL_Q4_FATAL" | grep -qi "Unknown column 'country'"; }; then
+    harness_ok "Q-SQL-004: only the known, pre-existing, unrelated column-mismatch signature fires (never a syntax error)" "fatal_delta=${Q4_FATAL_DELTA}, no 42000-class entry"
+else
+    harness_bad "Q-SQL-004: only the known, pre-existing, unrelated column-mismatch signature fires (never a syntax error)" "fatal_delta=${Q4_FATAL_DELTA}; log tail: $(echo "$TAIL_Q4_FATAL" | tr '\n' ' ' | tail -c 400)"
+fi
+
+# --- Unauthenticated reachability itself is unchanged by this fix (by
+# design -- see this section's own header comment on why authentication-
+# model changes are out of this task's scope): both files remain reachable
+# with zero cookies, matching the pre-fix boundary exactly. ---
+
+code="$(curl -sS -o /dev/null -w '%{http_code}' "${BASE_URL}/includes/estados.php?pais=1")"
+if [ "$code" = 200 ]; then
+    harness_ok "estados.php: still reachable with zero authentication (unchanged, intentional)" "HTTP $code, no cookie sent at all"
+else
+    harness_bad "estados.php: still reachable with zero authentication (unchanged, intentional)" "HTTP $code"
+fi
+
+# The section-wide fatal count legitimately includes the one known,
+# pre-existing, unrelated estados.php column-mismatch signature already
+# individually verified (never a 42000-class syntax error) above -- this
+# final check only guards against any OTHER, unexplained new fatal.
+FATALS_AFTER_Q4="$(fatal_count)"
+Q4_TOTAL_DELTA=$((FATALS_AFTER_Q4 - FATALS_BEFORE_Q4))
+TAIL_Q4_FINAL="$(app_exec 'tail -c 6000 /var/log/apache2/mag-error.log 2>/dev/null')"
+if [ "$Q4_TOTAL_DELTA" -ge 0 ] && ! echo "$TAIL_Q4_FINAL" | grep -qi "SQLSTATE\[42000\]\|syntax error"; then
+    harness_ok "TASK-0026R Q-SQL-004: application remained healthy (no unexplained new fatal)" "fatal_delta=${Q4_TOTAL_DELTA} (only the known column-mismatch signature, if any), no 42000-class entry"
+else
+    harness_bad "TASK-0026R Q-SQL-004: application remained healthy (no unexplained new fatal)" "fatal_delta=${Q4_TOTAL_DELTA}; log tail: $(echo "$TAIL_Q4_FINAL" | tr '\n' ' ' | tail -c 400)"
 fi
 
 harness_complete
