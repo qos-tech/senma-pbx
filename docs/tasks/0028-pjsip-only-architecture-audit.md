@@ -237,3 +237,143 @@ encerra no checkpoint de auditoria e não inicia 0028A/B/C.
 - O worktree já estava sujo antes desta tarefa, com alterações não relacionadas
   em `AGENTS.md`, `CLAUDE.md`, skills e `.nexus/`; elas foram preservadas.
 - Mensagem de commit proposta, não executada: `docs: auditar arquitetura PJSIP-only`.
+
+## 13. Evidência independente — fase 1 (2026-09-03T15:07:51-03:00)
+
+Esta seção é um acréscimo de evidência reproduzível da fase 1. Ela não
+substitui a análise humana anterior, não aciona gerador, reload nem alteração
+de banco. Valores de autenticação, registro, contato e senha não foram
+coletados nem registrados.
+
+### 13.1 Ledger de runtime, módulos e ODBC (T01)
+
+Coleta executada no diretório raiz com os comandos somente-leitura da seção E
+do `PLAN.md`: `docker compose ps`, consultas `asterisk -rx`, leitura de
+includes e inspeção estrutural dos seis arquivos. Naquele instante, `app`,
+`asterisk`, `db` e `provider` estavam `healthy`; o runtime era Asterisk
+22.11.0 em Linux/aarch64. ODBC reportou a fonte `snep` com uma conexão ativa
+(de uma). Estes resultados confirmam e refinam o baseline aceito no §2.
+
+`module show like chan_` mostrou `chan_pjsip.so` em execução,
+`chan_iax2.so` instalado mas `Not Running`, e nenhuma linha para `chan_sip`.
+`pjsip show transports` mostrou três transports: UDP e TCP em `0.0.0.0:5060`
+e WSS em `0.0.0.0:8089`. `modules.conf` tem `autoload=yes` e não tem
+`noload` para PJSIP, SIP ou IAX2.
+
+O inventário do dialplan da mesma coleta preserva os achados legados como
+evidência de runtime, sem lhes atribuir consumo dos arquivos abaixo:
+
+| Origem ativa | Evidência filtrada |
+| --- | --- |
+| `extensions.conf:135` | `Dial(${INTERFACE},${ARG2},${ARG3})` |
+| `extensions.conf:113` | `SIPAddHeader(Alert-Info: Bellcore-r2)` |
+| `custom/preagi.conf:6` | `Dial(SIP/1003,60,twg)` |
+| `snep-features.conf:99` | `Channel: SIP/${EXTEN:3}` em arquivo `.call` |
+
+### 13.2 Cadeia de carga e conteúdo redigido dos arquivos gerados legados (T01)
+
+Foi feita uma busca recursiva de diretivas `#include`, `#tryinclude` e
+`include` sob `/etc/asterisk`, seguida da inspeção das cadeias pai. A cadeia
+de dialplan ativa é `extensions.conf -> snep/snep-features.conf`; nela, a
+única referência a arquivo legado é `#include snep/snep-sip-hints.conf`,
+comentada na linha 170. `pjsip.conf` inclui somente os três arquivos
+`senma-pjsip*`. Não há `sip.conf` nem `iax.conf` no runtime, embora os
+templates de instalação os contenham. Portanto, nenhum dos seis artefatos
+tem uma cadeia Asterisk ativa nesta coleta; a classificação não se baseia
+apenas na ausência do arquivo, mas também na ausência dos drivers em execução
+necessários para os parsers SIP/IAX2.
+
+| Arquivo | Cadeia de carga reproduzida | Conteúdo efetivo redigido | Classificação |
+| --- | --- | --- | --- |
+| `snep-sip.conf` | Nenhuma cadeia ativa; o template `sip.conf` não está instalado; `chan_sip` não está carregado. | 11 linhas: cabeçalho gerado somente; zero seções. | `GENERATED_BUT_NOT_LOADED`; `headers/includes only` |
+| `snep-sip-trunks.conf` | Nenhuma cadeia ativa; o template `sip.conf` não está instalado; `chan_sip` não está carregado. | 11 linhas: cabeçalho gerado somente; zero seções. | `GENERATED_BUT_NOT_LOADED`; `headers/includes only` |
+| `snep-sip-hints.conf` | `extensions.conf -> snep/snep-features.conf -> #include ...` (comentado; não é include efetivo). | 2 linhas: seção `[hints]`; zero entradas `exten =>`. | `GENERATED_BUT_NOT_LOADED`; `headers/includes only` |
+| `snep-iax2.conf` | Nenhuma cadeia ativa; o template `iax.conf` não está instalado; `chan_iax2` está `Not Running`. | 11 linhas: cabeçalho gerado somente; zero seções. | `GENERATED_BUT_NOT_LOADED`; `headers/includes only` |
+| `snep-iax2-trunks.conf` | Nenhuma cadeia ativa; o template `iax.conf` não está instalado; `chan_iax2` está `Not Running`. | 11 linhas: cabeçalho gerado somente; zero seções. | `GENERATED_BUT_NOT_LOADED`; `headers/includes only` |
+| `snep-iax2-hints.conf` | Nenhuma cadeia ativa; nenhum include IAX2 foi encontrado; `chan_iax2` está `Not Running`. | 2 linhas: seção `[hints]`; zero entradas `exten =>`. | `GENERATED_BUT_NOT_LOADED`; `headers/includes only` |
+
+Essa é uma classificação de consumo do runtime observado, não uma autorização
+para apagar os produtores: a geração ainda tem chamadores e dados-fonte,
+documentados em §13.3. Uma inclusão dinâmica fora de `/etc/asterisk` ou uma
+mudança posterior de módulos torna esta prova datada e exige nova coleta.
+
+### 13.3 Matriz de produtores, dados, saídas e efeitos de runtime (T02)
+
+As consultas `codegraph explore` e as buscas da seção F foram feitas antes da
+leitura dirigida das classes. Cada linha abaixo traz: ponto de entrada, alcance
+por usuário/chamador, fonte DB, saída e efeito de load/reload. Linhas de
+arquivo referem-se ao snapshot desta coleta.
+
+| Família/gerador | Ponto de entrada e alcance | Fonte DB | Saída | Efeito de runtime e estado |
+| --- | --- | --- | --- | --- |
+| `senma-pjsip-transports.conf` / `Snep_PjsipTransportConf::loadConfFromDb` | CRUD autenticado de `PjsipTransportsController` (`add`, `edit`, `remove`, linhas 118–270), que chama `regenerateAll` (438–440). | `pjsip_transports` habilitados e `pjsip_transport_networks` por `transport_id` (`PjsipTransportConf.php:86–94`). | Arquivo em `/etc/asterisk/snep/` (`:67`), com seções `type=transport`. | Escreve o arquivo e executa `module reload res_pjsip.so` (`:98–100`, `:168–177`). O arquivo é incluído por `pjsip.conf:16`; `chan_pjsip` está em execução. `LIVE_REACHABLE`. |
+| `senma-pjsip.conf` / `Snep_PjsipConf::loadConfFromDb` | Mutações de ramal em `ExtensionsController` chamam o gerador (por exemplo, 909–910, 965–970, 1026–1031 e 1066–1071); o CRUD de transports também o regenera (439). | `peers` habilitados, `peer_type='R'`, `canal LIKE 'PJSIP/%'` (`PjsipConf.php:129`). | Arquivo em `/etc/asterisk/snep/` (`:104`), com endpoint, auth e AOR PJSIP. | Escreve e executa `module reload res_pjsip.so` (`:158`, `:415–424`). Incluído por `pjsip.conf:17`; `LIVE_REACHABLE`. |
+| `senma-pjsip-trunks.conf` / `Snep_PjsipTrunkConf::loadConfFromDb` | Mutações de tronco chamam o gerador (por exemplo, `TrunksController.php:297–298`, 332–333, 534–535 e 603–604); CRUD de transports também o regenera (440). | `peers` habilitados, `peer_type='T'`, `canal LIKE 'PJSIP/%'`, com lookup em `trunks` pelo nome (`PjsipTrunkConf.php:113–125`). | Arquivo em `/etc/asterisk/snep/` (`:87`), com objetos de tronco PJSIP. | Escreve e executa `module reload res_pjsip.so` (`:149`, `:348–357`). Incluído por `pjsip.conf:24`; `LIVE_REACHABLE`. |
+| `snep-sip.conf`, `snep-sip-trunks.conf`, `snep-sip-hints.conf` / `Snep_InterfaceConf::loadConfFromDb` | Chamado após mutações de ramal e tronco, inclusive em caminhos que regeneram PJSIP (`ExtensionsController.php:900, 965, 1026, 1066`; `TrunksController.php:289, 328, 530, 599`). O formulário atual de criação de ramal inicia em PJSIP (`ExtensionsController.php:222–244`) e o `preparePost` atual de tronco aceita somente `pjsip` ou `pjsip_external` (`TrunksController.php:616–622`); dados legados persistidos ainda são a fonte possível deste gerador. | Para `sip`, `peers` habilitados cujo `canal LIKE 'SIP%'`; para linhas de tronco, lookup em `trunks` por nome (`InterfaceConf.php:39–45`, 73–74, 121–133). Hints vêm de `peers.blf` e `peers.canal` (`:233–247`). | Três arquivos `/etc/asterisk/snep/snep-sip*.conf` (`:43–45`, 240–247). | Executa `sip reload`, `dialplan reload` e `iax2 reload` (`:250–254`) após escrever, mas a coleta T01 não executou esses comandos. Sem cadeia ativa e sem `chan_sip` em execução: `GENERATED_BUT_UNUSED` no snapshot, não `DEAD`. |
+| `snep-iax2.conf`, `snep-iax2-trunks.conf`, `snep-iax2-hints.conf` / `Snep_InterfaceConf::loadConfFromDb` | Mesmo ponto de entrada e alcance da família SIP: o único laço percorre `sip` e `iax2` (`InterfaceConf.php:39`). | Para `iax2`, `peers` habilitados cujo `canal LIKE 'IAX2%'`; lookup em `trunks` e hints são os mesmos da linha SIP (`:73–74`, 121–133, 233–247). | Três arquivos `/etc/asterisk/snep/snep-iax2*.conf` (`:43–45`, 240–247). | Mesmo trio de comandos de reload (`:250–254`). Sem cadeia ativa e com `chan_iax2` `Not Running`: `GENERATED_BUT_UNUSED` no snapshot, não `DEAD`. |
+
+Os dois últimos grupos não têm lacuna de produção: sua classe, chamadores,
+consulta, seis destinos e tentativa de reload estão todos demonstrados. A
+lacuna deliberadamente limitada é de consumo futuro: esta fase não recarregou
+o Asterisk e não alterou nem consultou linhas de banco para materializar dados
+legados. Assim, o estado é suficiente para distinguir gerado de carregado,
+mas não para declarar os produtores mortos.
+
+#### Reprodução da evidência de fonte
+
+Foram executados os quatro `rg` da seção F contra `snep`, `docker` e
+`scripts`, além de duas explorações indexadas: `Snep_InterfaceConf
+loadConfFromDb ...` e `Snep_PjsipConf Snep_PjsipTrunkConf
+Snep_PjsipTransportConf ...`. Os resultados localizam as três inclusões PJSIP
+em `docker/asterisk-config/pjsip.conf:16–24`, os destinos legados dos
+templates `sip.conf`/`iax.conf`, todos os chamadores de
+`loadConfFromDb`, as consultas e os comandos de reload citados acima. A busca
+de dialplan também confirma que `SIPAddHeader`, `Dial(SIP/...)`, `Channel:
+SIP/...` e `Dial(${INTERFACE},...)` pertencem a superfícies a serem tratadas
+nas fases posteriores, e não são prova de que algum dos seis arquivos gerados
+tenha sido carregado.
+
+### 13.4 Transcript reproduzível de runtime (T01, 2026-09-03)
+
+Para que a classificação de §13.2 possa ser verificada sem inferência, esta é
+a transcrição redigida dos comandos somente-leitura da seção E executados no
+host Docker. Nenhum comando de reload, geração ou escrita SQL foi usado.
+
+```text
+$ docker compose ps
+app, asterisk, db e provider: Up (healthy)
+
+$ docker compose exec -T asterisk asterisk -rx "core show version"
+Asterisk 22.11.0 ... aarch64 running Linux
+
+$ docker compose exec -T asterisk asterisk -rx "module show like chan_"
+chan_pjsip.so: Running
+chan_iax2.so: Not Running
+chan_sip.so: no matching module line
+
+$ docker compose exec -T asterisk asterisk -rx "pjsip show transports"
+tcp  0.0.0.0:5060
+udp  0.0.0.0:5060
+wss  0.0.0.0:8089
+Objects found: 3
+
+$ docker compose exec -T asterisk asterisk -rx "odbc show"
+Name: snep; Number of active connections: 1 (out of 1)
+```
+
+O filtro host-side de `dialplan show` devolveu quatro ocorrências relevantes:
+`Dial(${INTERFACE},${ARG2},${ARG3})` em `extensions.conf:135`,
+`SIPAddHeader(...)` em `extensions.conf:113`, `Dial(SIP/1003,60,twg)` em
+`preagi.conf:6` e `Channel: SIP/${EXTEN:3}` em `snep-features.conf:99`.
+
+A inspeção recursiva das diretivas de include encontrou apenas os três
+artefatos PJSIP em `pjsip.conf` (linhas 16, 17 e 24). Em `extensions.conf`, a
+cadeia ativa é `extensions.conf:48 -> snep/snep-features.conf`; a única
+referência a hint SIP nesse arquivo é a diretiva comentada da linha 170. Não
+houve diretiva efetiva para nenhum dos seis arquivos legados. A inspeção
+estrutural redigida mostrou 11 linhas de cabeçalho e zero seções de endpoint
+ou tronco em cada um dos quatro arquivos de pares/troncos, e duas linhas
+(` [hints]`, precedida por linha em branco) com zero `exten =>` em cada arquivo
+de hints. O snapshot de instalação agora contém ambos os placeholders de hints
+que `Snep_InterfaceConf::loadConfFromDb()` escreve, portanto os seis destinos
+de geração podem ser conferidos também antes do bootstrap Docker.
