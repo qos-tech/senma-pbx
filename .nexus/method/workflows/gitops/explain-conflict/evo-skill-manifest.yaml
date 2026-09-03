@@ -1,0 +1,3 @@
+canonicalId: evo-explain-conflict
+type: workflow
+description: "Explain a merge conflict: what each side changed, why they collide, and what deciding between them costs"

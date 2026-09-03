@@ -77,22 +77,12 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
         <div class="form-group">
           <label class="col-sm-3 control-label"><?php echo $this->translate("Type");?></label>
           <div class="col-sm-6">
-            <?php if ($this->action === "edit") {
-              echo '<input type="hidden" name="technology" id="technology" value="'.$this->techType.'" />';
-            }?>
-
-            <select class="form-control" name="technology" id="technology" onChange="showDiv(this.value);" <?php echo $this->disabled;?> >
-              <option value="sip" <?php echo $this->sip;?>><?php echo $this->translate("SIP");?></option>
-              <option value="pjsip" <?php echo $this->pjsip;?>><?php echo $this->translate("PJSIP");?></option>
-              <option value="iax2" <?php echo $this->iax2;?>><?php echo $this->translate("IAX2");?></option>
-              <option value="khomp" <?php echo $this->khomp;?>><?php echo $this->translate("Khomp");?></option>
-              <option value="virtual" <?php echo $this->virtual;?>><?php echo $this->translate("Virtual");?></option>
-              <option value="manual" <?php echo $this->manual;?>><?php echo $this->translate("Manual");?></option>
-            </select>
+	            <input type="hidden" name="technology" id="technology" value="pjsip" />
+	            <p class="form-control-static"><?php echo $this->translate("PJSIP");?></p>
           </div>
         </div>
 
-        <!-- SIP/IAX -->
+        <!-- Parâmetros do endpoint PJSIP -->
         <div id="sipiax" >
           <div class="form-group">
             <label class="col-sm-3 control-label"><?php echo $this->translate("Password");?></label>
@@ -149,10 +139,7 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
             </div>
           </div>
 
-          <!-- TASK-0019: PJSIP-only transport selection (Automatic or an
-               explicit, enabled transport). Hidden for sip/iax2/etc. via
-               showDiv() below -- see
-               docs/tasks/0019-pjsip-transport-selection-ux.md. -->
+          <!-- Seleção de transporte PJSIP (Automático ou transporte ativo). -->
           <div id="pjsipTransport">
             <div class="form-group">
               <label class="col-sm-3 control-label"><?php echo $this->translate("PJSIP Transport");?></label>
@@ -167,19 +154,6 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
                 </select>
                 <span class="help-block"><?php echo $this->translate("Automatic lets Asterisk pick a compatible transport on its own. Selecting a specific transport pins this extension to it -- this is NOT the same as the 'default' transport shown on the Transports page.");?></span>
               </div>
-            </div>
-          </div>
-
-          <!-- TASK-0010 §2/§12: chan_sip's friend/peer/user matching mode
-               has no PJSIP equivalent (PJSIP always uses separate
-               endpoint+auth+aor). Hidden for PJSIP via showDiv() below --
-               not removed outright, since IAX2 still uses it. -->
-          <div class="form-group" id="typeSelector">
-            <label class="col-sm-3 control-label"><?php echo $this->translate("Type")?></label>
-            <div class="col-sm-6">
-              <label class="radio-inline"><input type="radio" name="type"  value="peer" <?php echo $this->typePeer;?>> peer</label>
-              <label class="radio-inline"><input type="radio" name="type"  value="user" <?php echo $this->typeUser;?>> user</label>
-              <label class="radio-inline"><input type="radio" name="type"  value="friend" <?php echo $this->typeFriend;?>> friend</label>
             </div>
           </div>
 
@@ -219,7 +193,7 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
             </div>
           </div>
         </div>
-        <!-- /SIPIAX -->
+        <!-- /Parâmetros do endpoint PJSIP -->
 
         <!-- Khomp -->
         <div id="khomp" class="invisible">
@@ -239,35 +213,6 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
         </div>
         <!-- /Khomp -->
 
-        <!-- Virtual -->
-        <div id="virtual" class="invisible">
-          <div class="form-group">
-            <label class="col-sm-3 control-label"><?php echo $this->translate("Trunk");?></label>
-            <div class="col-sm-6">
-              <select class="form-control" name="board" id="board">
-                <?php foreach($this->trunks as $key => $trunk){
-                  if($trunk['id'] == $this->trunkChecked) { ?>
-                    <option value="<?php echo $trunk['id']?>" selected><?php echo $trunk['callerid'];?></option>
-                  <?php }else{ ?>
-                    <option value="<?php echo $trunk['id']?>" ><?php echo $trunk['callerid'];?></option>
-                  <?php } ?>
-                <?php } ?>
-              </select>
-            </div>
-          </div>
-        </div>
-        <!-- /virtual -->
-
-        <!-- Manual -->
-        <div id="manual" class="invisible">
-          <div class="form-group">
-            <label class="col-sm-3 control-label"><?php echo $this->translate("Manual");?></label>
-            <div class="col-sm-6">
-              <input type="text" class="form-control" name="manual" placeholder='<?php echo $this->translate("Manual")?>' value="<?php echo $this->manual;?> "/>
-            </div>
-          </div>
-        </div>
-        <!-- /manual -->
       </fieldset>
 
       <fieldset>
@@ -425,12 +370,6 @@ jQuery(document).ready(function(){
         maxlength: 32,
 
       },
-      board: {
-        required: true,
-      },
-      channel: {
-        required: true,
-      },
       email: {
         required: function() {
           return jQuery("#voicemail").is(":checked");
@@ -459,12 +398,6 @@ jQuery(document).ready(function(){
         minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
         maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
         numbersOnly: "<?php echo $this->translate('Numbers only please'); ?>"
-      },
-      board: {
-        required: "<?php echo $this->translate('The trunk is required'); ?>",
-      },
-      channel: {
-        required: "<?php echo $this->translate('The channel is required'); ?>",
       },
       name: {
         required: "<?php echo $this->translate('The name is required'); ?>",
@@ -529,35 +462,9 @@ function generatePass(){
 function showDiv(div){
 
   document.getElementById("sipiax").className = "invisible";
-  document.getElementById("khomp").className = "invisible";
-  document.getElementById("virtual").className = "invisible";
-  document.getElementById("manual").className = "invisible";
-  document.getElementById("siponly").className = "invisible";
-  document.getElementById("typeSelector").className = "invisible";
-  // TASK-0019: transport selection has no chan_sip/IAX2 equivalent --
-  // shown for PJSIP only.
-  document.getElementById("pjsipTransport").className = "invisible";
-
-  if (div) {
-    // TASK-0011: PJSIP needs the same NAT/direct-media fields SIP does
-    // (siponly), mapped differently server-side (see
-    // ExtensionsController::execAdd()/Snep_PjsipConf).
-    if (div == 'sip' || div == 'pjsip') {
-      document.getElementById('siponly').className = "visible";
-    }
-    if (div == 'pjsip') {
-      document.getElementById('pjsipTransport').className = "visible";
-    }
-    // "Type" (friend/peer/user) has no PJSIP equivalent -- shown for
-    // sip/iax2 only.
-    if (div == 'sip' || div == 'iax2') {
-      document.getElementById('typeSelector').className = "visible";
-    }
-    if (div == "sip" || div == 'iax2' || div == 'pjsip') {
-      div = "sipiax"
-    }
-    document.getElementById(div).className = "visible";
-  }
+  document.getElementById("sipiax").className = "visible";
+  document.getElementById("siponly").className = "visible";
+  document.getElementById("pjsipTransport").className = "visible";
 }
 
 //force verify password

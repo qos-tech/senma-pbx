@@ -211,8 +211,8 @@ class TrunksController extends Zend_Controller_Action {
 
     //Define the action and load form
     $this->view->action = "add" ;
-    $this->view->techType = "sip";
-    $this->view->sip = 'selected' ;
+    $this->view->techType = "pjsip";
+    $this->view->pjsip = 'selected' ;
     $this->renderScript( $this->getRequest()->getControllerName().'/addedit.phtml' );
 
     //After POSt
@@ -403,14 +403,8 @@ class TrunksController extends Zend_Controller_Action {
       // Trunk technology
       $technologyTrunk = strtolower($trunk['technology']);
 
-      $this->view->sip     = ($technologyTrunk === "sip" ? "selected" : "");
-      $this->view->iax2    = ($technologyTrunk === "iax2" ? "selected" : "");
-      $this->view->virtual = ($technologyTrunk === "virtual" ? "selected" : "");
-      $this->view->khomp = ($technologyTrunk === "khomp" ? "selected" : "");
-      $this->view->snepsip = ($technologyTrunk === "snepsip" ? "selected" : "");
-      $this->view->snepiax2 = ($technologyTrunk === "snepiax2" ? "selected" : "");
-      // TASK-0015
       $this->view->pjsip = ($technologyTrunk === "pjsip" ? "selected" : "");
+      $this->view->pjsip_external = ($technologyTrunk === "pjsip_external" ? "selected" : "");
       $this->view->techType   = $technologyTrunk; //"selected";
       $this->view->technology = $technologyTrunk;
 
@@ -622,7 +616,56 @@ class TrunksController extends Zend_Controller_Action {
     protected function preparePost($post = null, $trunkId = null, $currentTransportId = null) {
 
       $post = $post === null ? $_POST : $post;
-      $tech = $post['technology'];
+      $tech = isset($post['technology']) ? strtolower($post['technology']) : '';
+      if (!in_array($tech, array('pjsip', 'pjsip_external'), true)) {
+        return $this->view->translate('São permitidos apenas troncos PJSIP provisionados ou endpoints PJSIP externos.');
+      }
+
+      // TASK-0028B: o endpoint PJSIP externo pertence ao Asterisk, não ao
+      // SENMA. Deliberadamente não há linha em peers, portanto nenhum gerador
+      // de configuração pode provisionar, sobrescrever ou recarregar um objeto
+      // que não administra. Ignora-se qualquer canal legado/livre e as duas
+      // expressões de runtime são derivadas do nome validado do endpoint.
+      if ($tech === 'pjsip_external') {
+        $endpoint = isset($post['external_endpoint']) ? trim($post['external_endpoint']) : '';
+        if (!preg_match('/^[A-Za-z0-9_.-]{1,80}$/', $endpoint)) {
+          return $this->view->translate('O nome do endpoint PJSIP externo deve conter de 1 a 80 letras, números, pontos, hífens ou sublinhados.');
+        }
+        if (!$this->externalPjsipEndpointExists($endpoint)) {
+          return $this->view->translate('O endpoint PJSIP externo não existe no runtime ativo do Asterisk.');
+        }
+
+        $sql = "SELECT name FROM trunks ORDER BY CAST(name as DECIMAL) DESC LIMIT 1";
+        $row = Snep_Db::getInstance()->query($sql)->fetch();
+        $trunkData = array(
+          'callerid' => isset($post['callerid']) ? $post['callerid'] : '',
+          'context' => 'default',
+          'dtmfmode' => 'rfc2833',
+          'allow' => 'alaw;ulaw;gsm',
+          'channel' => 'PJSIP/' . $endpoint,
+          'id_regex' => 'PJSIP/' . $endpoint,
+          'type' => 'PJSIP_EXTERNAL',
+          'trunktype' => 'T',
+          'technology' => 'PJSIP_EXTERNAL',
+          'username' => $endpoint,
+          'domain' => '',
+          'dialmethod' => 'NORMAL',
+          'map_extensions' => isset($post['map_extensions']) && $post['map_extensions'] === 'map_extensions' ? 1 : 0,
+          'dtmf_dial' => isset($post['dtmf_dial']) && $post['dtmf_dial'] === 'dtmf_dial' ? 1 : 0,
+          'dtmf_dial_number' => isset($post['dtmf_dial_number']) ? $post['dtmf_dial_number'] : '',
+          'reverse_auth' => 0,
+          'time_total' => isset($post['tempo']) && $post['tempo'] === 'tempo' ? $post['time_total'] : null,
+          'time_chargeby' => isset($post['tempo']) && $post['tempo'] === 'tempo' ? $post['time_chargeby'] : '',
+          'time_initial_date' => isset($post['tempo']) && $post['tempo'] === 'tempo' ? $post['time_initial_date'] : null,
+          'telco' => empty($post['telco']) ? null : $post['telco'],
+          'transport_id' => null,
+        );
+        if ($this->view->action === 'add') {
+          $trunkData['name'] = trim(((int) $row['name']) + 1);
+        }
+        return array('trunk' => $trunkData, 'ip' => array());
+      }
+
       $trunktype = $post['technology'] = strtoupper($tech);
       // TASK-0015: "pjsip" added -- a PJSIP trunk gets a peers row too
       // (peer_type='T'), same as every other IP-technology trunk;
@@ -891,6 +934,21 @@ class TrunksController extends Zend_Controller_Action {
     }
 
     return array("trunk" => $trunk_data, "ip" => $ip_data);
+  }
+
+  /**
+   * Confirma no runtime o endpoint externo antes de persistir sua referência.
+   * O identificador é validado antes de compor o comando AMI, e a resposta é
+   * conferida pela linha estrutural do CLI, não apenas pela ausência de erro.
+   */
+  private function externalPjsipEndpointExists($endpoint) {
+    try {
+      $result = PBX_Asterisk_AMI::getInstance()->Command('pjsip show endpoint ' . $endpoint);
+    } catch (Exception $ex) {
+      return false;
+    }
+    $data = isset($result['data']) ? $result['data'] : '';
+    return preg_match('/^Endpoint:\s+' . preg_quote($endpoint, '/') . '\\//mi', $data) === 1;
   }
 
   /**

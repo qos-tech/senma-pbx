@@ -4,3 +4,9 @@
 # Generated at container entrypoint from snep/includes/setup.conf.dist + .env.
 # See docker/entrypoint.sh and docs/tasks/0001-docker-bootstrap.md.
 snep/includes/setup.conf
+
+.qos-harness.json
+
+.phases/
+
+.qos-harness/reports/

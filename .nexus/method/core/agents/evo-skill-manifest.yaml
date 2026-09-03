@@ -1,0 +1,4 @@
+evo-master.agent.yaml:
+  canonicalId: evo-master
+  type: agent
+  description: "EVO Master Executor, Knowledge Custodian, and Workflow Orchestrator"

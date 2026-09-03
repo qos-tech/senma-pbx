@@ -219,9 +219,9 @@ class ExtensionsController extends Zend_Controller_Action {
 
           //Define the action and load form
           $this->view->action = "add" ;
-          $this->view->techType = 'sip';
+          // TASK-0028A: ramais novos são sempre endpoint/auth/AOR PJSIP.
+          $this->view->techType = 'pjsip';
           $this->view->directmedianonat = "checked";
-          $this->view->typeFriend = "checked";
           $this->view->dtmfrf = "checked";
           $this->view->nat_force_rport = 'checked' ;
           $this->view->nat_comedia = 'checked' ;
@@ -285,6 +285,15 @@ class ExtensionsController extends Zend_Controller_Action {
 
             // Load data about exten
             $exten = Snep_Extensions_Manager::getPeer($id);
+
+            // TASK-0028A: registros existentes que não são PJSIP não podem
+            // ser reinterpretados pela tela PJSIP. A migração é deliberada
+            // e será tratada em tarefa própria.
+            if (strpos((string) $exten['canal'], 'PJSIP/') !== 0) {
+              $message = $this->view->translate('Este ramal legado deve ser migrado para PJSIP antes de ser editado.');
+              $this->_helper->redirector('sneperror', 'error', null, array('error_message' => $message));
+              return;
+            }
 
             $nameValue = explode("<", $exten['callerid']);
             if(count($nameValue) > 1){
@@ -615,9 +624,20 @@ class ExtensionsController extends Zend_Controller_Action {
             $extenPickGrp = $formData["pickup_group"] == '' ? null : $pickup_group["cod_grupo"];
             $peerType = "R";
 
-            $techType = $formData["technology"];
+	            $techType = $formData["technology"];
 
-            $secret = (isset($formData["password"]))? $formData["password"]: "";
+	            // TASK-0028A: o fluxo de ramais passa a aceitar somente o
+	            // modelo endpoint/auth/AOR gerado por PJSIP. A validação no
+	            // servidor é deliberadamente anterior a qualquer persistência
+	            // para que um POST forjado não reative SIP, IAX2 ou Manual.
+	            if ($techType !== 'pjsip') {
+	              return $this->view->translate('A criação e a edição de ramais aceitam somente PJSIP.');
+	            }
+	            if ($update && strpos((string) $resultGetId['canal'], 'PJSIP/') !== 0) {
+	              return $this->view->translate('Este ramal legado deve ser migrado para PJSIP antes de ser editado.');
+	            }
+
+	            $secret = (isset($formData["password"]))? $formData["password"]: "";
 
             $blf = (isset($formData["blf"]))? $formData["blf"]: "";
             $dtmfmode = (isset($formData["dtmf"]))? $formData["dtmf"]: "";
@@ -672,8 +692,10 @@ class ExtensionsController extends Zend_Controller_Action {
               }
             }
 
-            // Type: friend, user, peer
-            $type = $formData['type'];
+            // A coluna histórica continua obrigatória para compatibilidade
+            // do schema, mas não representa uma escolha de produto nem é
+            // consumida pelo renderer PJSIP.
+            $type = 'friend';
 
             $channel = strtoupper($techType);
 
@@ -1176,12 +1198,36 @@ class ExtensionsController extends Zend_Controller_Action {
                   $this->view->codec1 = $codec1;
                   $this->view->codec2 = $codec2;
                   $this->view->codec3 = $codec3;
-
-                  $this->view->trunks = Snep_Trunks_Manager::getData();
+                  $this->view->transports = Snep_PjsipTransports_Manager::getEnabled();
 
                   if ($this->getRequest()->isPost()) {
 
                     $data = $this->_request->getParams();
+
+                    // TASK-0028A: a inclusão múltipla compartilha o mesmo
+                    // contrato PJSIP-only da inclusão unitária. A checagem
+                    // antecede o laço para não persistir parcialmente um POST
+                    // forjado com tecnologia legada.
+                    if (!isset($data['technology']) || $data['technology'] !== 'pjsip') {
+                      $message = $this->view->translate('A criação e a edição de ramais aceitam somente PJSIP.');
+                      $this->_helper->redirector('sneperror', 'error', null, array('error_message' => $message));
+                      return;
+                    }
+
+                    // Campos não oferecidos pela inclusão múltipla recebem
+                    // defaults PJSIP explícitos, evitando herdar estruturas
+                    // SIP/IAX2 ou depender de índices ausentes no POST.
+                    $data = array_merge(array(
+                      'passwordpadlock' => '',
+                      'cancallforward' => false,
+                      'minute_control' => false,
+                      'timetotal' => 0,
+                      'controltype' => 'N',
+                      'email' => '',
+                      'directmedia' => 'no',
+                      'dtmf' => 'rfc2833',
+                      'calllimit' => '1',
+                    ), $data);
 
                     $range = explode(";", $data["exten"]);
                     $this->view->error = "";
@@ -1196,11 +1242,6 @@ class ExtensionsController extends Zend_Controller_Action {
                         $data["exten"] = $exten;
                         $data["password"] = self::generatorPassword();
                         $data["name"] = $this->view->translate("Extension ") ." ".$exten . " <" . $exten.">" ;
-                        $data["sip"]["password"] = $exten;
-                        $data["iax"]["password"] = $exten;
-                        $data["calllimit"] = '1';
-                        $data['type'] = 'friend' ;
-
                         $ret = $this->execAdd($data);
 
                         //audit
@@ -1225,11 +1266,6 @@ class ExtensionsController extends Zend_Controller_Action {
                               $data["exten"] = $i;
                               $data["password"] = self::generatorPassword();;
                               $data["name"] = $this->view->translate("Extension ") ." ".$i . " <" . $i.">" ;
-                              $data["sip"]["password"] = $i . $i;
-                              $data["iax2"]["password"] = $i . $i;
-                              $data["calllimit"] = '1';
-                              $data['type'] = 'friend' ;
-
                               $ret = $this->execAdd($data);
 
                               if (is_string($ret)) {

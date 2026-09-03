@@ -1,0 +1,736 @@
+# TASK-0004 — PHP 8.4 remaining compatibility fixes
+
+## Objective
+Resolve the remaining confirmed PHP 8.4 incompatibility categories from
+`docs/tasks/0002-php84-compatibility-baseline.md` §6–11, while preserving
+behavior. First batch: curly-brace string/array offset syntax (§2).
+
+## Scope (this batch)
+- Curly-brace string/array offset syntax (`$var{expr}`, removed in
+  PHP 8.0 — a parse-time fatal, not just a runtime one).
+- Re-verification of the entire category before editing anything (per
+  CLAUDE.md's static-analysis rules and this task's explicit instruction),
+  not a blind re-application of TASK-0002's inventory.
+
+## Explicitly out of scope
+- Categories §6–11 other than curly-brace offsets (dynamic properties,
+  `count()`/`sizeof()` misuse, object/array misuse, changed offset
+  behavior, signature incompatibilities, undefined constants) — next
+  batches.
+- Architectural refactoring.
+- Asterisk 22, PJSIP, PostgreSQL, frontend redesign.
+
+## Re-verification method and findings
+
+Re-scanned the entire `snep/` tree with a broader pattern than TASK-0002
+used (which only matched `$varname{`, missing `->property{expr}` forms),
+then manually read every candidate's actual context rather than trusting
+either the old inventory or the new regex.
+
+**Correction to TASK-0002's count**: `lib/Zend/Json/Decoder.php` actually
+has **6** real occurrences (327, 354, 361, 434, 497, 555), not the 1
+originally recorded. `lib/Zend/Amf/Util/BinaryStream.php:143` is
+confirmed real (`$this->_stream{$this->_needle++}` — a property-offset
+form the original narrower regex should have caught but a second look
+confirms is genuine).
+
+**First-party code (`modules/`, `includes/`, `inspectors/`, `lib/Snep/`,
+`lib/PBX/`) re-scanned with a broad pattern: zero real occurrences**
+outside the already-known `lib/Asterisk/AGI.php`. The only first-party
+matches (`TdmLinksController.php`, `KhompLinksController.php`,
+`includes/ParseDown.php`) are false positives — literal strings like
+`"kecs{Busy,Locked,RemoteLock}"` (Khomp hardware status-code text) and
+regex quantifier syntax (`'/^[ ]{0,4}/'`) inside `preg_*` pattern
+strings, not PHP offset syntax. `lib/Zend/Db/Statement.php:194` is
+re-confirmed a false positive too (ordinary `"...{$escapeChar}..."`
+string interpolation adjacent to literal regex text, not offset syntax).
+
+**New finding that changes TASK-0002's "probably reachable" classification
+for `Zend_Json_Decoder`/`Encoder`**: traced `Zend_Json::decode()`/
+`encode()` (`lib/Zend/Json.php`) and found both only delegate to
+`Zend_Json_Decoder`/`Encoder` when `function_exists('json_decode'/
+'json_encode') === false` or `Zend_Json::$useBuiltinEncoderDecoder ===
+true`. PHP 8.4's `json` extension is always present, and nothing in the
+codebase ever sets `$useBuiltinEncoderDecoder` — confirmed via grep, zero
+hits. Additionally, all 7 `Encoder.php` sites are inside `_utf82utf16()`,
+itself guarded by `function_exists('mb_convert_encoding')` — confirmed
+the `mbstring` extension is installed in this image (`php -m`). Same
+guard pattern found on the `_utf162utf8()` method containing Decoder's
+line 555. **Net effect: both classes' buggy code paths are currently
+unreachable in this specific Docker image**, not "probably reachable" as
+speculated — corrected per CLAUDE.md's instruction to fix
+known-wrong findings rather than preserve them.
+
+## Fix vs. defer decision
+
+Despite being currently unreachable, `Zend_Json_Decoder`/`Encoder` were
+**fixed, not deferred**, because `Zend_Json::decode()`/`encode()` (the
+class that wraps them) is genuinely used by first-party code —
+`IndexController.php`, `RegisterController.php`,
+`ModuleSettingsController.php`, `lib/Snep/Version.php`,
+`lib/Snep/Notifications.php`, `lib/Snep/Rest/Controller.php` — so this is
+a fragile, environment-dependent landmine (would fatal immediately if a
+future image ever lacked `mbstring`, or if `$useBuiltinEncoderDecoder`
+were ever set) on a class family that's actually in the application's
+call graph, unlike the fully-dead vendored classes below. The fix itself
+is a zero-risk, zero-behavior-change syntax swap (`{` → `[`), so fixing
+it now costs nothing and removes real latent risk.
+
+Everything else is **deferred**, each for a distinct, documented reason
+— re-verified zero first-party usage (grepped fresh, not assumed from
+TASK-0002):
+
+| File(s) | Sites | Reason deferred |
+|---|---|---|
+| `lib/Asterisk/AGI.php` | 27 | First-party, but loaded only by `snep/agi/*.php` — a separate PHP execution context (Asterisk-invoked AGI, not the Apache/HTTP path). Cannot be exercised or validated by `make smoke`; belongs to a future AGI/Asterisk-focused task (Phase 4/5). |
+| `lib/Zend/Barcode/Object/{Code25,Ean5,Ean8,Ean13,Identcode,ObjectAbstract,Upca,Upce}.php` | 11 across 8 files | Re-confirmed zero first-party usage of `Zend_Barcode`. |
+| `lib/Zend/Amf/Util/BinaryStream.php` | 1 | Re-confirmed zero first-party usage of `Zend_Amf`. |
+| `lib/Zend/Validate/Isbn.php` | 3 | Re-confirmed zero first-party usage. |
+| `lib/Zend/Filter/Compress/Zip.php` | 1 | Re-confirmed zero first-party usage. |
+| `lib/Zend/View/Helper/Navigation/Sitemap.php` | 2 | Re-confirmed zero first-party usage (`Zend_Navigation`). |
+| `lib/Zend/Wildfire/Plugin/FirePhp.php` | 1 | Re-confirmed zero first-party usage; debug-only plugin. |
+| `lib/Zend/Tool/Project/Context/Zf/ApplicationConfigFile.php` | 1 | Re-confirmed zero first-party usage; `zf` CLI tooling, not part of the runtime app. |
+
+No fix is speculative or applied to unreachable code in this batch,
+matching the discipline established throughout TASK-0002.
+
+## Files changed
+- `snep/lib/Zend/Json/Decoder.php` — 6 sites, `$str{$i}`-style →
+  `$str[$i]`, plus a class-level doc comment explaining the fix and its
+  reachability analysis.
+- `snep/lib/Zend/Json/Encoder.php` — 7 sites, `$utf8{0}`-style →
+  `$utf8[0]`, same doc-comment treatment.
+
+## Validation performed
+- `php -l` on both touched files: clean.
+- Fresh re-grep of both files: zero real curly-brace offsets remain (only
+  matches are inside the explanatory doc comments, which quote the old
+  syntax as an example).
+- `make smoke`: **14 PASS, 0 FAIL, 1 EXPECTED_LIMITATION** (`queues`,
+  unchanged, documented no-Asterisk limitation) — identical result to the
+  pre-batch baseline.
+- App log inspection: fatal-error count `0 → 0`; only pre-existing
+  cosmetic warnings (`compact(): Undefined variable $extras`) and the
+  expected `403`-denial log lines for the protected-config-file check.
+  **Zero new PHP Fatal Errors.**
+
+## Unresolved / follow-up (batch 1)
+- `lib/Asterisk/AGI.php`'s 27 sites and the 7 vendored-dead files above
+  remain exactly as inventoried in TASK-0002, now re-verified rather than
+  just carried forward — still not fixed, deferred for the reasons in the
+  table above.
+- TASK-0002 §6–11 (dynamic properties, `count()` misuse, etc.) — not
+  started, next batch(es).
+
+---
+
+# Batch 2 — `lib/linfo` PHP 8.4 fatal chain
+
+## Objective
+Resolve the highest-priority remaining PHP 8.4 incompatibility that is
+first-party-reachable (in practice, not just in principle), testable
+without Asterisk, and fixable without behavior change.
+
+## Re-verification and new findings
+
+Re-checked TASK-0002 §7 (`count()`/`sizeof()` misuse) against the current
+tree before accepting it as a batch candidate, and found both remaining
+live candidates disqualified:
+
+- `ErrorsTdmController.php:93`'s zero-argument `count()` sits behind
+  `new AsteriskInfo()` (line 55 of the same action), which throws
+  immediately in this no-Asterisk topology and returns before line 93 is
+  ever reached — requires Asterisk to validate, out of this batch's scope.
+- `Billing/Manager.php`'s 3 `count($falsy)` sites (`getByArea()`,
+  `getByType()`, `rate()`) — traced every call site in the tree and found
+  **zero callers anywhere**. `CallsReportController.php` (the only place
+  that references `Billing_Manager` at all) only does
+  `class_exists("Billing_Manager")` feature-detection to decide whether to
+  join a `rated_calls` table in raw SQL — it never instantiates or calls
+  the class. TASK-0002's "reachable if billing reports render" was
+  speculative and is corrected here: these 3 sites are dead code.
+
+**New finding, not in TASK-0002's inventory**: `snep/lib/linfo/` (a
+vendored system-info library) was never covered by either of TASK-0002's
+systematic sweeps (the curly-brace sweep only covered `lib/Zend/*` and
+`lib/Asterisk/AGI.php`; the §12 removed-function sweep only covered
+`modules/`, `lib/Snep`, `lib/PBX`, `lib/Asterisk`, `includes/`, `agi/`,
+`inspectors/`). It is, however, genuinely reachable two ways: directly,
+unauthenticated, at `GET /lib/linfo/index.php?out=xml` (no Apache
+restriction on `/lib/`, confirmed by inspecting the Docker config), and
+indirectly via `SystemstatusController::indexAction()`
+(`GET /index.php/default/systemstatus`), which fetches that same URL
+through an internal loopback HTTP request. Neither path requires
+Asterisk.
+
+Direct `curl` to that endpoint returned a bare HTTP 500; the app log
+showed:
+```
+PHP Fatal error:  __autoload() is no longer supported, use spl_autoload_register() instead in /var/www/html/snep/lib/linfo/init.php on line 70
+```
+Confirmed via `php -l`, which also fails on this file: declaring a
+function literally named `__autoload()` is a **compile-time** fatal since
+PHP 8.0, regardless of the `if (function_exists('spl_autoload_register'))`
+guard around it not being taken at runtime — same severity class as
+curly-brace offsets (blocks the file from loading at all), a different
+forbidden construct.
+
+Tracing further: `lib/linfo/config.inc.php` (the live, non-sample config)
+sets `$settings['show']['distro'] = true`, so `getDistro()` — containing
+the 2 `create_function()` sites TASK-0002 had flagged but marked
+"not yet confirmed either way" — executes unconditionally on the very
+next step of the same request, once the `__autoload` blocker is cleared.
+Both bugs sit on the identical, unconditionally-reachable path.
+
+Swept the rest of `lib/linfo/lib/*.php` for every other known
+incompatibility pattern (other removed PHP8 functions, PHP4-style
+constructors, additional `each()`/curly-brace sites) before proposing
+scope — clean, nothing else found in that sweep.
+
+Also found, not part of the proposed/authorized scope: `lib/linfo/lib/functions.init.php:29`
+has the identical `function __autoload($class)` bug, unconditionally (no
+guard at all) — but it is never `require`/`include`d anywhere in the tree
+(grepped for `functions.init.php`), confirmed dead, and was excluded from
+this batch per instruction.
+
+## Fix
+
+**`snep/lib/linfo/init.php`** — renamed the dead-branch
+`function __autoload($class)` to `function linfo_legacy_autoload($class)`.
+Same body, same never-taken branch (`spl_autoload_register` has existed
+since PHP 5.1.2 and is always available here), same
+`if (function_exists('spl_autoload_register'))` guard preserved exactly —
+zero behavior change, the file now simply parses under PHP 8.4.
+
+**`snep/lib/linfo/lib/class.OS_Linux.php`** — replaced both
+`create_function('$ini', '...')` calls in `getDistro()`'s
+`$contents_distros` array (the `/etc/lsb-release` and `/etc/os-release`
+parsers) with equivalent closures (`function($ini) { ...same body... }`).
+Confirmed drop-in safe: the sole consumer,
+`$distro['closure']($contents)` at line 1372 (now shifted by the added
+doc comment), calls the value directly — this works identically whether
+`'closure'` holds the callable string `create_function()` used to return
+or a real `Closure` object. Added a class-level doc-comment paragraph
+explaining the fix and its reachability, matching batch 1's convention.
+
+## New finding uncovered by validation — not fixed, out of this batch's scope
+
+Testing the fix (`curl` directly against `/lib/linfo/index.php?out=xml`)
+surfaced a **third, distinct, pre-existing bug** in the same method chain,
+previously masked because the `__autoload` fatal always fired first:
+```
+PHP Fatal error:  Uncaught TypeError: ceil(): Argument #1 ($num) must be
+of type int|float, string given in
+/var/www/html/snep/lib/linfo/lib/class.OS_Linux.php:339
+Stack trace:
+#0 class.OS_Linux.php(339): ceil('371714.72 36954...')
+#1 class.Linfo.php(248): OS_Linux->getUpTime()
+#2 index.php(31): Linfo->scan()
+```
+`getUpTime()` passes the raw string contents of `/proc/uptime` (space-
+separated float text, e.g. `"371714.72 369545.10"`) straight to `ceil()`
+without a numeric cast — PHP 8's stricter internal-function typing (no
+more implicit string→float coercion with trailing garbage) turns this
+into a fatal `TypeError` where PHP 7 would have silently coerced the
+leading numeric portion. This is a **different incompatibility category**
+than either fix in this batch (internal-function argument-type
+strictness, not a removed API), was not part of the scope authorized for
+this batch (`init.php` + the 2 `create_function()` sites only), and was
+not touched. Reproduced twice for certainty; not a flake.
+
+**Effect on the two reachable entry points**:
+- `GET /lib/linfo/index.php?out=xml` directly: still returns a bare 500 —
+  now from this newly-exposed `ceil()` bug instead of the two fixed ones.
+  Net progress, not yet a clean 200.
+- `GET /index.php/default/systemstatus` (authenticated): **unchanged
+  external behavior** from the pre-batch baseline — still the same clean,
+  caught "500 — Erro Interno / Unable to connect to manager" page
+  documented in TASK-0002's P0 section. Traced why: `indexAction()`'s
+  loopback call catches only `HttpException`, and Zend_Http_Client does
+  not throw on a non-2xx response by default — it just returns the
+  (empty, since `display_errors=Off`) body. So a failing linfo endpoint
+  degrades silently into `$this->sysInfo` being unusable, non-fatal
+  warnings on the subsequent property/array accesses, and the page's
+  *visible* failure mode continues to be `statusbar_info()`'s uncaught
+  `AsteriskInfo` connection exception (line 140) — the same pre-existing,
+  out-of-scope, no-Asterisk limitation as always. This batch's fixes are
+  real and verified (confirmed by the log showing execution now reaching
+  fully through both previously-fatal lines into `getUpTime()`), but they
+  don't change this page's observed behavior yet, since a third,
+  unauthorized-for-this-batch bug sits between the fixes and a working
+  response.
+
+Recorded here as a candidate for a future batch — not fixed now, per this
+batch's explicit scope boundary.
+
+## Security/architecture finding — documented, not remediated
+
+`GET /lib/linfo/index.php?out=xml` is reachable directly over HTTP with
+**no authentication and no session** — confirmed via `curl` with no
+cookie jar. It's a raw PHP script under the docroot, not routed through
+the Zend front controller (where `AuthController`'s login gate lives), and
+`/lib/` carries no Apache-level access restriction (unlike
+`/includes/setup.conf`, which TASK-0003's smoke suite confirms returns
+403). Once the `ceil()` bug above is eventually fixed too, this endpoint
+would expose CPU/RAM/disk/OS/network system information to any
+unauthenticated visitor. This is a pre-existing exposure (predates this
+task entirely — the endpoint was equally unauthenticated before, it just
+also happened to fatal), not introduced or worsened by this batch's
+fixes. Per instruction, **not remediated here** — this batch is a
+compatibility fix, not an access-control change. Flagged for a future
+security/architecture-focused task.
+
+## Validation performed
+- `php -l` on both touched files: clean (`class.OS_Linux.php` also emits
+  one pre-existing, unrelated cosmetic warning — "continue targeting
+  switch" at line 1267 — not introduced by this batch, not fixed, per
+  the bug/technical-debt policy of documenting rather than opportunistically
+  fixing unrelated issues).
+- Direct `curl` to `/lib/linfo/index.php?out=xml`: confirmed both target
+  fatals (`__autoload`, `create_function()`) no longer occur; confirmed
+  (twice) the next-in-chain `ceil()` bug is what now surfaces instead —
+  see above.
+- `GET /index.php/default/systemstatus` (authenticated): confirmed
+  unchanged from TASK-0002's documented P0 baseline — same clean, caught
+  500, same message, no raw fatal text in the response body.
+- `make smoke`: **14 PASS, 0 FAIL, 1 EXPECTED_LIMITATION**, identical to
+  the pre-batch baseline, run twice for a clean final snapshot.
+- App log inspection: `make smoke`'s own before/after fatal-error diff is
+  `0 → 0` both runs (the smoke suite's 10 flows never touch
+  `systemstatus`/`lib/linfo`, so it can't observe the `ceil()` bug either
+  way). **Zero new PHP Fatal Errors on any of the 10 required flows.**
+  Diagnostic `curl` probes against `/lib/linfo/index.php` directly (not
+  part of the smoke suite) did surface the pre-existing `ceil()` fatal
+  described above — this is a newly-*uncovered*, not newly-*introduced*,
+  bug (confirmed by the stack trace showing it fires deeper in the same
+  call chain, past both of this batch's fixes).
+
+## Files changed
+- `snep/lib/linfo/init.php` — 1 site, `__autoload` → `linfo_legacy_autoload`.
+- `snep/lib/linfo/lib/class.OS_Linux.php` — 2 sites,
+  `create_function()` → closures, plus a class-level doc comment.
+
+## Unresolved / follow-up (batch 2)
+- `lib/linfo/lib/class.OS_Linux.php:339`'s `ceil()` `TypeError` in
+  `getUpTime()` — real, reachable, confirmed, not fixed (out of this
+  batch's authorized scope) — candidate for the next batch.
+- `lib/linfo/lib/functions.init.php:29`'s identical `__autoload` bug —
+  confirmed dead code (zero includers), deliberately excluded per
+  instruction.
+- Unauthenticated reachability of `/lib/linfo/index.php` — documented
+  above as a security/architecture finding, deliberately not remediated
+  in this compatibility-focused batch.
+- `ErrorsTdmController.php:93` and `Billing/Manager.php`'s 3 sites (§7
+  `count()` misuse) — re-confirmed Asterisk-gated / dead respectively,
+  excluded from this batch, unchanged from TASK-0002.
+
+---
+
+# Batch 3 — `getUpTime()`'s `ceil()` `TypeError`
+
+## Objective
+Fix the `ceil()` `TypeError` in `class.OS_Linux.php::getUpTime()`
+uncovered by batch 2's validation, per its own explicit deferral.
+
+## Root-cause trace (performed before editing)
+
+`getUpTime()` reads `/proc/uptime` via `LinfoCommon::getContents()`
+(`file_get_contents()` + `trim()`) — confirmed live content in this
+container: `372278.68 3701058.97` (the standard Linux
+`<uptime_seconds> <idle_seconds>` format). The method then did:
+```php
+list($seconds) = explode(' ', $contents, 1);      // bug
+$uptime = LinfoCommon::secondsConvert(ceil($seconds));
+```
+`explode()`'s `limit = 1` is documented to never split at all — the
+entire trimmed string becomes the single array element, so `$seconds`
+received `"372278.68 3701058.97"` in full, not just the first field.
+`secondsConvert()` (`class.LinfoCommon.php:88-99`) expects a plain
+number of seconds and does `floor()`/`%`-based arithmetic to produce
+"X years, Y days..." text — confirming the evident intent was to isolate
+just the first `/proc/uptime` field. This is a **pre-existing logic bug**
+(wrong `explode()` limit, not a removed API) that PHP 8's stricter
+internal-function argument-type coercion turned into a hard `TypeError`
+(PHP 7 would have silently coerced the leading numeric portion with a
+warning instead).
+
+**Pattern search**: the identical bug exists in `class.OS_CYGWIN.php:303,306`
+but that class is only ever instantiated when `getOS()` detects Cygwin —
+unreachable in this Linux container, same disposition as every other
+non-Linux platform class already excluded. `class.ext_transmission.php:129`
+has the same `explode(..., 1)` misuse shape but on `"\n"` (line-splitting,
+not fed to a typed function — silently wrong, not fatal) and is
+confirmed unreachable (`config.inc.php` enables zero linfo extensions).
+Neither touched, per instruction. Swept every method that runs
+immediately after `UpTime` in this deployment's enabled field set
+(`getCPU`, `getModel`, `getCPUArchitecture`, `getNet`, `getDevs`,
+`getProcessStats`) for the same raw-file-content-into-typed-function
+shape — none found.
+
+## Fix
+**`snep/lib/linfo/lib/class.OS_Linux.php:344`** (line shifted by the added
+comment) — `explode(' ', $contents, 1)` → `explode(' ', $contents, 2)`.
+One-character change, restores the behavior the surrounding code already
+describes (comment `// Seconds`, variable name `$seconds`), zero other
+logic touched.
+
+## Validation performed
+- `php -l`: clean (same pre-existing, unrelated "continue targeting
+  switch" warning as batch 2, now at line 1275 — not introduced by this
+  change, not fixed, per policy).
+- Direct `GET /lib/linfo/index.php?out=xml`: the `ceil()` `TypeError` is
+  confirmed gone — the log shows execution now proceeding past
+  `getUpTime()`, through `getCPU()`/`getModel()`, into `getDevs()`. Still
+  a bare 500 overall, **not** yet a 200 — see next section.
+- `GET /index.php/default/systemstatus` (authenticated): unchanged from
+  every prior batch's documented baseline — same clean, caught "500 —
+  Erro Interno / Unable to connect to manager" page. Same reasoning as
+  batch 2: the loopback call's failure doesn't propagate as an exception,
+  so this page's visible behavior is unaffected either way until linfo
+  itself returns 200.
+- `make smoke`: **14 PASS, 0 FAIL, 1 EXPECTED_LIMITATION**, identical to
+  baseline. App log fatal-error diff: `0 → 0`. **Zero new PHP Fatal
+  Errors on any of the 10 required flows** (smoke doesn't exercise
+  `systemstatus`/`lib/linfo`, so it can't observe the finding below
+  either way, same as batch 2).
+
+## New finding uncovered by validation — stopped here, not fixed, per instruction
+
+Fixing the `ceil()` bug let execution proceed further than ever before,
+and it immediately hit a **4th, distinct** PHP 8.4 fatal:
+```
+PHP Fatal error:  Uncaught ValueError: Path must not be empty in
+/var/www/html/snep/lib/linfo/lib/class.HW_IDS.php:153
+Stack trace:
+#0 class.HW_IDS.php(153): fopen('', 'r')
+#1 class.HW_IDS.php(278): HW_IDS->_fetchPciNames()
+#2 class.OS_Linux.php(706): HW_IDS->work('linux')
+#3 class.Linfo.php(248): OS_Linux->getDevs()
+#4 index.php(31): Linfo->scan()
+```
+`getDevs()` (enabled by this deployment's config) calls into
+`HW_IDS->_fetchPciNames()`, which calls `fopen('', 'r')` — an empty path
+string. This is a **different incompatibility category** than any fix in
+batches 1-3: PHP 8.1+ made several filesystem functions (including
+`fopen()`) throw `ValueError` on an empty-string path argument, where
+earlier PHP returned `false` with a warning. Per this batch's explicit
+instruction, **stopped immediately upon finding this — not investigated
+further, not fixed, no recursive chase**. Flagged as the batch-4
+candidate.
+
+**Effect on the two reachable entry points**, both unchanged in kind from
+batch 2's findings:
+- `GET /lib/linfo/index.php?out=xml` directly: still a bare 500, now from
+  this newly-exposed `HW_IDS` bug instead of `ceil()`. Continued net
+  progress (3 of however-many fatals in this chain now cleared), still
+  not a clean 200.
+- `GET /index.php/default/systemstatus`: unchanged, same pre-existing
+  Asterisk-absence 500 as always.
+
+## Files changed
+- `snep/lib/linfo/lib/class.OS_Linux.php` — 1 site,
+  `explode(' ', $contents, 1)` → `explode(' ', $contents, 2)`, plus an
+  explanatory comment.
+
+## Unresolved / follow-up (batch 3)
+- `lib/linfo/lib/class.HW_IDS.php:153`'s `fopen('')` `ValueError` in
+  `_fetchPciNames()`, reached via `getDevs()` — real, reachable,
+  confirmed, not fixed — proposed as the next batch-4 candidate.
+- `class.OS_CYGWIN.php`'s identical `explode(..., 1)`/`ceil()` bug —
+  confirmed dead (non-Linux platform code), deliberately excluded.
+- `class.ext_transmission.php`'s unrelated `explode(..., 1)` bug —
+  confirmed dead (no linfo extensions enabled), deliberately excluded.
+- Unauthenticated reachability of `/lib/linfo/index.php` — still
+  documented only, not remediated, per instruction.
+
+---
+
+# Batch 4 — `HW_IDS`'s empty-path `fopen()` `ValueError`
+
+## Objective
+Fix the `fopen('', 'r')` `ValueError` in `class.HW_IDS.php::_fetchPciNames()`
+uncovered by batch 3's validation, per its own explicit deferral.
+
+## Root-cause trace (performed before editing)
+
+`getDevs()` (`class.OS_Linux.php:682-706`) resolves `pci.ids`/`usb.ids` via
+`LinfoCommon::locateActualPath()` against 3 distro-specific candidate
+paths each (Debian/Ubuntu, openSUSE, CentOS/RedHat/Fedora locations).
+Confirmed live in this container: none of the 6 candidate paths exist,
+and none of `pciutils`/`hwdata`/`usbutils` are installed (checked via
+`dpkg -l`) — this is a minimal Docker image, not a bug in it.
+`locateActualPath()` returns `false` in that case (its own 6-line
+implementation: loop candidates, return the first `is_file()` hit, else
+`false`) — `getDevs()` logs an internal-only hint
+("Cannot find pci.ids; ensure pciutils is installed.", only surfaced if
+`show_errors` is enabled, confirmed `false` in this deployment) and
+**continues regardless**, passing `false` into `new HW_IDS($usb_ids,
+$pci_ids)`.
+
+`HW_IDS::__construct()` stores that `false` in `$this->_pci_file`/
+`$this->_usb_file` without validation. `_fetchPciNames()` then called
+`@fopen($this->_pci_file, 'r')` — PHP's weak-typing coerces `false` to
+`''`, so `fopen()` received a literal empty string.
+
+**Legacy/intended behavior (proven, not assumed)**: on every previously-
+supported PHP version, `@fopen('', 'r')` returned `false` with a
+suppressed warning, and the method's own loop condition
+(`$file != false && $contents = fgets($file)`) evaluated false
+immediately — zero iterations, method returns having resolved zero
+names, no error surfaces externally. This is a deliberately-coded
+graceful-absence path (3 fallback candidate paths tried, `@`-suppression,
+a self-terminating loop condition), not an assumption that the database
+always exists. `HW_IDS::result()` only iterates the name-*resolved* maps
+(`_pci_devices`/`_usb_devices`), never falls back to raw IDs — so the
+legacy behavior for "database unavailable" is specifically **PCI/USB
+devices omitted from the results entirely**, not an ID-only fallback (no
+such fallback path exists in this code at all).
+
+**PHP 8.4 behavior difference**: PHP 8.1 made `fopen()` throw
+`ValueError: Path must not be empty` for an empty-string path instead of
+warning-and-returning-`false`. `@` does not suppress `ValueError` (only
+E_WARNING/E_NOTICE-class diagnostics) — so the exact defensive pattern
+this code relied on stopped working. This is a runtime behavior change,
+not a legacy code defect: the graceful-degradation design was and
+remains correct.
+
+**Pattern search**: `_fetchUsbNames()` (line 172, pre-fix) has the
+identical shape and is also reachable — `$usb_ids` is `false` too
+(`usbutils` also absent) and `work()` calls both methods unconditionally
+in sequence, so fixing only the PCI one would have hit the identical
+fatal one call later. Both required fixing together, not separately.
+`class.ext_dhcpd3_leases.php:68` uses the same `locateActualPath()`
+pattern but is confirmed dead (zero linfo extensions enabled, same
+finding as batch 3). `class.CallExt.php:111` uses `locateActualPath()`
+for shell-command string building, not `fopen()` — different shape, no
+`ValueError` risk. Grepped first-party code (`modules/`, `lib/Snep`,
+`lib/PBX`, `includes/`, `agi/`, `inspectors/`) for the same
+`fopen($var`/`file_get_contents($var` shape — zero hits.
+
+**Callers of `HW_IDS`**: only `class.OS_Linux.php:705` is reachable
+(`OS_Linux` is the only parser class ever instantiated in this Linux
+container, per batch 3). `OS_CYGWIN.php:636`, `OS_FreeBSD.php:571`,
+`OS_DragonFly.php:340` are dead, non-Linux platform code, not touched.
+No first-party code calls `HW_IDS` at all — PCI/USB hardware-name lookup
+is optional enrichment, explicitly designed to fail gracefully (proven
+above), matching `Linfo::scan()`'s own `'Devices' => array('default' =>
+array(), ...)` field definition (an empty collection is an equally valid
+outcome by the framework's own design).
+
+## Fix
+
+**`snep/lib/linfo/lib/class.HW_IDS.php`** — added an `empty()` guard at
+the top of both `_fetchPciNames()` and `_fetchUsbNames()`:
+```php
+if (empty($this->_pci_file)) {   // / ->_usb_file in the USB method
+    return;
+}
+```
+This restores the exact zero-iteration, zero-side-effect outcome the
+`@fopen()` + self-terminating loop already produced pre-PHP-8.1 — not a
+new fallback, not a behavior change, not the "add speculative absence
+handling" pattern ruled out up front, since the graceful-absence
+semantics were independently proven to be the existing design rather
+than assumed. No package installed; `getDevs()` itself, non-Linux
+platform classes, and linfo's extension system were not touched.
+
+## Validation performed
+- `php -l`: clean.
+- Direct `GET /lib/linfo/index.php?out=xml`: **HTTP 200** (previously a
+  bare 500 across 3 prior blockers). Explicitly parsed the response with
+  PHP's own `simplexml_load_file()` inside the container (not just
+  eyeballed) — confirmed well-formed, root element `linfo`, and read back
+  `core/os` = `Linux`, `core/kernel` = `6.12.54-linuxkit`, `core/uptime`
+  = `4 days, 8 hours, 3 minutes, 33 seconds; booted 08/20/26 01:34 PM
+  (UTC)` (a sensible, correctly-formatted value — direct confirmation
+  that batch 3's `ceil()`/`explode()` fix is producing genuinely correct
+  output, not just avoiding a fatal). `<devices/>` and `<CPU/>` render as
+  empty self-closing tags: `devices` is the exact predicted outcome of
+  this fix (no ids database → empty PCI/USB collection, by design);
+  `CPU` being empty is an unrelated, pre-existing environmental
+  observation (this container's `/proc/cpuinfo` parsing under Docker
+  Desktop's linuxkit VM yields zero entries) — not a fatal, not a PHP8
+  issue, not touched, out of this batch's scope.
+- App log for the successful request: only the same 2 pre-existing,
+  unrelated cosmetic warnings seen in every prior batch (`compact():
+  Undefined variable $extras`, "continue targeting switch") — no fatal.
+- `GET /index.php/default/systemstatus` (authenticated): unchanged, same
+  pre-existing "Unable to connect to manager" 500 as every prior batch —
+  the known no-Asterisk limitation remains, as expected.
+- `make smoke`: **14 PASS, 0 FAIL, 1 EXPECTED_LIMITATION** — exactly the
+  expected baseline. App log fatal-error diff: `0 → 0`. **Zero new PHP
+  Fatal Errors on any of the 10 required flows.**
+
+No further PHP 8.4 blocker was exposed — the direct linfo endpoint now
+returns a complete, valid, correct response. This closes the fatal chain
+that batches 2–4 worked through (`__autoload` → `create_function()` →
+`ceil()` `TypeError` → `fopen()` `ValueError`).
+
+## Files changed
+- `snep/lib/linfo/lib/class.HW_IDS.php` — 2 sites, guard clauses added to
+  `_fetchPciNames()` and `_fetchUsbNames()`.
+
+## Unresolved / follow-up (batch 4)
+- None new. `GET /lib/linfo/index.php?out=xml` is now fully functional
+  under PHP 8.4.
+- Unauthenticated reachability of `/lib/linfo/index.php` remains
+  documented-only (batch 2), now more relevant since the endpoint
+  actually returns real system information instead of erroring —
+  still deliberately not remediated here, per instruction.
+- `GET /index.php/default/systemstatus`'s no-Asterisk 500 remains the
+  same pre-existing, out-of-scope limitation documented since TASK-0002's
+  P0.
+
+---
+
+# Post-batch-4 remaining compatibility assessment
+
+Before starting batch 5, re-ran the full compatibility inventory against
+the current tree (not TASK-0002's original counts). Headline finding:
+`snep/lib/Asterisk/AGI.php` (`Asterisk_AGI` class) was mis-classified in
+TASK-0002 as merely "AGI-context-only, not yet reachable." Tracing the
+actual call graph: `snep/lib/PBX/Asterisk/AGI.php` declares
+`class PBX_Asterisk_AGI extends Asterisk_AGI` and unconditionally
+`require_once("Asterisk/AGI.php")`s it — and `PBX_Asterisk_AGI` is the
+class every real AGI entrypoint (`agi_base.php`, `agi/snep.php`,
+`agi/Bootstrap.php`) actually uses. Confirmed live: `php -l` on
+`Asterisk/AGI.php` failed outright (parse error, line 830) before this
+batch. Since curly-brace offsets are a parse-time fatal, this meant the
+entire AGI subsystem was **guaranteed** to break the instant Asterisk was
+added and any dialplan action invoked AGI — not a "might get exercised"
+risk. Also newly found and classified (not fixed): a second, previously
+undocumented dead `each()` site in `Zend/Cache/Core.php:163`
+(`setConfig()`, zero callers anywhere — a documentation correction to
+TASK-0002, not a priority), and `Zend/Tool/Project/Provider/DbAdapter.php:100`'s
+`get_magic_quotes_gpc()` (removed PHP 8.0, `Zend_Tool` confirmed unused
+by first-party code, same disposition as `ApplicationConfigFile.php`).
+Full classification (A-F categories) was reported to you separately
+before this batch began.
+
+---
+
+# Batch 5 — `Asterisk_AGI` curly-brace offsets
+
+## Objective
+Fix the 27 confirmed curly-brace offset sites in `snep/lib/Asterisk/AGI.php`,
+identified as a guaranteed (not speculative) AGI-subsystem blocker by the
+post-batch-4 assessment above.
+
+## Re-verification before editing
+Re-grepped the file fresh immediately before editing: confirmed exactly
+26 lines / 27 sites (line 1182 has two occurrences on one line), all
+genuine `$var{expr}`-style string-offset access (`$buffer{strlen($buffer)-1}`,
+`$prompt{0}`, `$callerid{0}` ×2, `$code{0}`, `$text{$i}` ×2, `$str{0}`,
+`$token{...}` ×3) — none are string interpolation, docblock text, or
+exception-message strings. Also re-confirmed the file is otherwise clean
+of every other tracked category: zero `each()`, zero `create_function()`,
+zero `__autoload`, zero PHP4-style constructor, zero zero-argument
+`count()`/`sizeof()`.
+
+## Fix
+Mechanical `{` → `[` swap at all 27 sites (line-targeted, not a blind
+global regex, to avoid touching anything outside the confirmed set), plus
+a class-level doc-comment paragraph explaining the fix and its
+reachability — same pattern as every prior curly-brace batch. No logic,
+protocol handling, command parsing, or AGI action behavior touched.
+
+## Validation performed
+- `php -l`: **passes** ("No syntax errors detected") — this file failed
+  to parse at all before this batch; this is the primary proof for this
+  batch, exactly as scoped.
+- Re-ran the curly-brace inventory against this file specifically: 0
+  executable sites remain (the sole remaining grep match is inside the
+  new doc comment's prose, not code).
+- `make smoke`: **14 PASS, 0 FAIL, 1 EXPECTED_LIMITATION** — exactly the
+  expected baseline (this file is on no web code path, so this only
+  confirms zero regression, not the fix itself — `php -l` is what proves
+  the fix).
+- App log: zero new PHP Fatal Errors on the 10 required flows (before=0,
+  after=0).
+
+## Explicitly NOT claimed
+- **`Asterisk_AGI` now parses under PHP 8.4** — proven, via `php -l`.
+- **Actual AGI protocol/runtime behavior remains completely
+  unvalidated.** This batch changed offset syntax only; it did not
+  execute a single line of `Asterisk_AGI`'s logic (command dispatch,
+  response parsing, DTMF handling, etc.) under real conditions.
+- **Runtime validation requires an Asterisk instance** actually invoking
+  the real SENMA AGI entrypoints (`agi_base.php` / `agi/snep.php` via
+  Asterisk's `AGI()` dialplan application) — out of reach until the
+  Asterisk milestone, and out of this batch's scope by design.
+
+## Files changed
+- `snep/lib/Asterisk/AGI.php` — 27 sites, `{` → `[`, plus a class-level
+  doc comment.
+
+---
+
+# TASK-0004 final remaining-debt summary (pre-Asterisk phase)
+
+## Asterisk milestone debt (needs a real Asterisk instance to test)
+- `snep/modules/default/actions/DiscarTronco.php:270-272,297-299` —
+  `count($falsy)` `TypeError`, AGI outbound-dial billing action.
+- `snep/modules/default/controllers/ErrorsTdmController.php:93` —
+  zero-argument `count()` `ArgumentCountError`, unreachable until a real
+  AMI connection lets execution past `new AsteriskInfo()`.
+- `Asterisk_AGI`'s actual runtime/protocol behavior (batch 5 fixed only
+  the parse fatal; command execution, response parsing, DTMF/audio
+  handling, etc. are entirely unexercised under PHP 8.4).
+- Every `modules/default/actions/*.php`/`ivr`/`callback`/`portability`
+  action's real dialplan behavior — not a known defect, just genuinely
+  untestable without Asterisk dispatching AGI.
+- `QueuesController`'s and `SystemstatusController`'s no-Asterisk 500s —
+  not PHP 8 bugs, pre-existing topology limitations (ADR-0001), listed
+  here only because they'll need re-checking once Asterisk exists.
+
+## Dead/vendor debt (confirmed unreachable, not fixed, no action needed unless reachability changes)
+- Remaining vendored curly-brace offsets: `Zend/Barcode/Object/*.php` (8
+  files/11 sites), `Zend/Amf/Util/BinaryStream.php:143`,
+  `Zend/Validate/Isbn.php` (3), `Zend/Filter/Compress/Zip.php:240`,
+  `Zend/View/Helper/Navigation/Sitemap.php` (2),
+  `Zend/Wildfire/Plugin/FirePhp.php:740`,
+  `Zend/Tool/Project/Context/Zf/ApplicationConfigFile.php:142`.
+- Dead `each()` sites: `Zend/Cache/{Core.php:163,Frontend/*.php}`,
+  `Zend/Config/Yaml.php:292`, `Zend/Http/UserAgent/Features/Adapter/TeraWurfl.php:91`,
+  `Zend/Service/DeveloperGarden/Client/ClientAbstract.php:138`,
+  `Zend/XmlRpc/Value.php:489,495`.
+- Dead removed-function usages: `Zend/Feed/Element.php:196`
+  (`create_function()`), `Zend/Tool/Project/Provider/DbAdapter.php:100`
+  (`get_magic_quotes_gpc()`), `lib/linfo/lib/functions.init.php:29`
+  (`function __autoload`).
+- Dead linfo platform/plugin issues: `lib/linfo/lib/class.OS_CYGWIN.php:303`
+  (identical `explode(...,1)`/`ceil()` bug to batch 3's fix, non-Linux
+  platform class), `lib/linfo/lib/class.ext_transmission.php:129`
+  (`explode(...,1)` misuse, zero linfo extensions enabled).
+
+## Non-fatal/deprecation debt (out of this task's own scope rule: doesn't break behavior)
+- Dynamic properties (TASK-0002 §6): `Snep_Exten`, `PBX_Rule`,
+  `PBX_Asterisk_Interface` subclasses, plus ~9 lower-confidence
+  candidates — `E_DEPRECATED` only.
+- Iterator/ArrayAccess/Countable signature mismatches (TASK-0002 §10b):
+  return-type-only, `E_DEPRECATED` only; 60 of 68 vendored classes
+  remain unaudited by deliberate choice (low-probability, not worth a
+  full sweep).
+- `TrunksController.php:306-307` offset-on-`false` warning — pre-existing
+  non-PHP8 bug (invalid trunk ID), cosmetic warning only.
+- Bareword-function-argument undefined-constants sub-case (TASK-0002
+  §11) — honestly unchecked, not grep-tractable without a real parser.
+
+## Can TASK-0004's pre-Asterisk PHP 8.4 compatibility phase now be considered complete?
+
+**Yes.** Every confirmed PHP 8.4 fatal that is both first-party (or
+genuinely in the live vendored call graph) and testable without a real
+Asterisk instance has been fixed and validated: non-static-call
+incompatibilities (P1-B), reachable `each()` sites (P1-A), reachable
+`Zend_Json` curly-brace offsets (batch 1), the full `lib/linfo` fatal
+chain (`__autoload` → `create_function()` → `ceil()` `TypeError` →
+`fopen()` `ValueError`, batches 2-4), and now `Asterisk_AGI`'s guaranteed
+parse-time blocker (batch 5). `make smoke` has returned the identical
+14/0/1 baseline with zero new fatals after every batch. What remains is,
+by construction, exactly the two debt categories above that this phase
+was never able to touch: genuine Asterisk-runtime behavior (Asterisk
+milestone debt) and code with zero reachability regardless of Asterisk
+(dead/vendor debt) — plus non-fatal deprecations explicitly out of this
+task's scope from the start. There is no further meaningful,
+safely-testable PHP 8.4 compatibility work available before the Asterisk
+milestone begins.

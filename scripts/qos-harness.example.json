@@ -1,0 +1,47 @@
+{
+  "version": 1,
+  "project": {
+    "name": "My Project"
+  },
+  "engine": {
+    "default": "codex",
+    "verify_models": {
+      "codex": "gpt-5.4-mini",
+      "claude": "haiku",
+      "agy": "gemini-2.5-flash"
+    }
+  },
+  "verification": {
+    "mode": "always",
+    "max_cycles": 3
+  },
+  "tests": {
+    "command": ""
+  },
+  "notifications": {
+    "enabled": true,
+    "provider": "evolution",
+    "fallback_provider": "n8n",
+    "whatsapp_number": "5541999999999",
+    "n8n": {
+      "webhook": "https://n8n.example.com/webhook/ralph-whatsapp",
+      "token": "replace-with-a-secret",
+      "number": "5541999999999"
+    },
+    "evolution": {
+      "base_url": "https://evolution.example.com",
+      "instance": "qos",
+      "api_key": "replace-with-an-api-key",
+      "number": "5541999999999",
+      "payload_format": "text"
+    },
+    "events": [
+      "run_started",
+      "phase_started",
+      "phase_completed",
+      "phase_failed",
+      "run_completed",
+      "run_failed"
+    ]
+  }
+}

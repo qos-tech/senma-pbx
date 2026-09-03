@@ -47,70 +47,32 @@
             <div class="form-group">
                 <label class="col-sm-3 control-label"><?php echo $this->translate("Type");?></label>
                 <div class="col-sm-6">
-                    <select class="form-control" name="technology" id="technology" onChange="showDiv(this.value);">
-                        <option value="sip"><?php echo $this->translate("SIP");?></option>
-                        <option value="iax2"><?php echo $this->translate("IAX2");?></option>
-                        <option value="virtual"><?php echo $this->translate("Virtual");?></option>
-                    </select>
+                    <input type="hidden" name="technology" value="pjsip" />
+                    <p class="form-control-static"><?php echo $this->translate("PJSIP");?></p>
                 </div>
             </div>
 
-        <!-- SIP / IAX2 -->
+        <!-- Parâmetros compartilhados pelo endpoint PJSIP -->
         <div id="sipiax" class="visible">
-            <div id="siponly">
-                <div class="form-group">
-                    <label class="col-sm-3 control-label"><?php echo $this->translate("NAT")?></label>
-                    <div class="col-sm-7">
-                        <div class="checkbox">
-                            <label>
-                                <input type="checkbox" name="nat_no" checked/>
-                                no
-                            </label>
-                            &nbsp;&nbsp;
-                            <label>
-                                <input type="checkbox" name="nat_force_rport" />
-                                force-rport
-                            </label>
-                            &nbsp;&nbsp;
-                            <label>
-                                <input type="checkbox" name="nat_comedia" />
-                                comedia
-                            </label>
-                            &nbsp;&nbsp;
-                            <label>
-                                <input type="checkbox" name="nat_auto_force_rport" />
-                                auto-force-rport
-                            </label>
-                            &nbsp;&nbsp;
-                            <label >
-                                <input type="checkbox" name="nat_auto_comedia"/>
-                                auto-comedia
-                            </label>
-                        </div>
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("NAT")?></label>
+                <div class="col-sm-7">
+                    <div class="checkbox">
+                        <label><input type="checkbox" name="nat_no" checked/> no</label>&nbsp;&nbsp;
+                        <label><input type="checkbox" name="nat_force_rport" /> force-rport</label>&nbsp;&nbsp;
+                        <label><input type="checkbox" name="nat_comedia" /> comedia</label>&nbsp;&nbsp;
+                        <label><input type="checkbox" name="nat_auto_force_rport" /> auto-force-rport</label>&nbsp;&nbsp;
+                        <label><input type="checkbox" name="nat_auto_comedia"/> auto-comedia</label>
                     </div>
                 </div>
-                <div class="form-group">
-                    <label class="col-sm-3 control-label"><?php echo $this->translate("Direct Media")?></label>
-                    <div class="col-sm-6">
-                        <label class="radio-inline">
-                            <input type="radio" name="directmedia" id="yes" value="yes" checked="checked" />
-                            yes
-                        </label>
-
-                        <label class="radio-inline">
-                            <input type="radio" name="directmedia" id="no" value="no">
-                            no
-                        </label>
-                        <label class="radio-inline">
-                            <input type="radio" name="directmedia" id="update" value="update">
-                            update
-                        </label>
-                        <label class="radio-inline">
-                            <input type="radio" name="directmedia" id="outgoing" value="outgoing">
-                            outgoing
-                        </label>
-                    </div>
-
+            </div>
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("Direct Media")?></label>
+                <div class="col-sm-6">
+                    <label class="radio-inline"><input type="radio" name="directmedia" value="yes" /> yes</label>
+                    <label class="radio-inline"><input type="radio" name="directmedia" value="no" checked="checked" /> no</label>
+                    <label class="radio-inline"><input type="radio" name="directmedia" value="update" /> update</label>
+                    <label class="radio-inline"><input type="radio" name="directmedia" value="outgoing" /> outgoing</label>
                 </div>
             </div>
 
@@ -145,6 +107,18 @@
                 </div>
             </div>
 
+            <div class="form-group">
+                <label class="col-sm-3 control-label"><?php echo $this->translate("PJSIP Transport");?></label>
+                <div class="col-sm-6">
+                    <select class="form-control" name="transport_id">
+                        <option value=""><?php echo $this->translate("Automatic (Asterisk selects a compatible transport)");?></option>
+                        <?php foreach ($this->transports as $transport): ?>
+                            <option value="<?php echo $transport['id']; ?>"><?php echo $this->escape($transport['name']); ?><?php echo $transport['is_default'] ? ' (' . $this->translate('default') . ')' : ''; ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+            </div>
+
 
             <div class="form-group">
                 <label class="col-sm-3 control-label"><?php echo $this->translate("Codec 1");?></label>
@@ -174,27 +148,7 @@
             </div>
 
         </div>
-        <!-- /SIPIAX2 -->
-
-
-
-        <!-- Virtual -->
-        <div id="virtual" class="invisible">
-
-            <div class="form-group">
-                <label class="col-sm-3 control-label"><?php echo $this->translate("Trunk");?></label>
-                <div class="col-sm-6">
-
-                    <select class="form-control" name="board" id="board">
-                        <?php foreach($this->trunks as $key => $trunk){?>
-                            <option value="<?php echo $trunk['id']?>"><?php echo $trunk['callerid'];?></option>
-                        <?php } ?>
-                    </select>
-                </div>
-            </div>
-
-        </div>
-        <!-- /virtual -->
+        <!-- /Parâmetros PJSIP -->
 
         </fieldset>
 
@@ -220,9 +174,6 @@
                     minlength: 6,
                     regexExten: /^(([0-9]\-?\;?)+)$/
                 },
-                board: {
-                    required: true,
-                }
             },
             messages: {
                 "exten_group[]" : {
@@ -233,9 +184,6 @@
                     minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
                     regexExten: "<?php echo $this->translate('Please enter with range valid'); ?>"
                 },
-                board: {
-                    required: "<?php echo $this->translate('The trunk is required'); ?>",
-                }
             },
             highlight: function(element) {
                 jQuery(element).closest('.control-group').removeClass('success').addClass('error');
@@ -247,23 +195,5 @@
             }
         });
     });
-
-
-    function showDiv(div){
-
-        document.getElementById("sipiax").className = "invisible";
-        document.getElementById("virtual").className = "invisible";
-        document.getElementById("siponly").className = "invisible";
-        if (div) {
-            if (div == 'sip') {
-                document.getElementById('siponly').className = "visible";
-            }
-            if (div == "sip" || div == 'iax2') {
-                div = "sipiax"
-            }
-            document.getElementById(div).className = "visible";
-        }
-    }
-
 
 </script>

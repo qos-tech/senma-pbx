@@ -46,12 +46,7 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
     <fieldset>
     <legend><?php echo $this->translate('Interface Technology');?></legend>
 
-      <div class="form-group" data-intro='<?php echo $this->translate("You need define the technology for this trunk.<br>
-      - If you will trunk it with other SNEP, just define the SNEP IP address and do the same in the other side.<br>
-      - If your trunk technology is not listed here, you can use the <i>Virtual</i> option and configure the technology manually at Asterisk.<br>
-      You can configure any Asterisk Supported technology and use it here as <i>Virtual</i> just specifying the technology expression, like:<br>
-      * [Dahdi/g1]<br>
-      * [SIP/account]<br>");?>'>
+      <div class="form-group" data-intro='<?php echo $this->translate("Escolha um tronco PJSIP provisionado pelo SENMA ou referencie um endpoint PJSIP já existente no Asterisk. O endpoint externo não é gerado nem alterado pelo SENMA.");?>'>
         <label class="col-sm-3 control-label"><?php echo $this->translate("Type");?></label>
         <div class="col-sm-6">
           <?php if ($this->action === "edit") {
@@ -61,17 +56,20 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
 
           <select class="form-control" name="technology" id="technology" onChange="showDiv(this.value);" <?php echo $this->disabled;?> >
 
-            <option value="sip" <?php echo $this->sip;?>><?php echo $this->translate("SIP");?></option>
-            <option value="iax2" <?php echo $this->iax2;?>><?php echo $this->translate("IAX2");?></option>
-            <option value="khomp" <?php echo $this->khomp;?>><?php echo $this->translate("Khomp");?></option>
-            <option value="virtual" <?php echo $this->virtual;?>><?php echo $this->translate("Virtual");?></option>
-            <option value="snepsip" <?php echo $this->snepsip;?>><?php echo $this->translate("Snep SIP");?></option>
-            <option value="snepiax2" <?php echo $this->snepiax2;?>><?php echo $this->translate("Snep IAX");?></option>
-            <!-- TASK-0015: outbound-only, register-based model. See
-                 docs/tasks/0015-pjsip-trunk-provisioning.md. -->
             <option value="pjsip" <?php echo $this->pjsip;?>><?php echo $this->translate("PJSIP");?></option>
+            <option value="pjsip_external" <?php echo $this->pjsip_external;?>><?php echo $this->translate("Endpoint PJSIP externo");?></option>
 
           </select>
+        </div>
+      </div>
+
+      <div id="pjsip_external" class="invisible">
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Nome do endpoint PJSIP externo");?></label>
+          <div class="col-sm-6">
+            <input type="text" class="form-control" name="external_endpoint" placeholder="<?php echo $this->translate("Nome configurado no Asterisk");?>" value="<?php echo $this->escape($this->technology === 'pjsip_external' ? $this->trunk['username'] : '');?>" />
+            <span class="help-block"><?php echo $this->translate("O SENMA valida a existência no Asterisk antes de salvar e não gera endpoint, auth ou AOR.");?></span>
+          </div>
         </div>
       </div>
 
@@ -536,6 +534,7 @@ function showDiv(div){
   document.getElementById("khomp").className = "invisible";
   document.getElementById("virtual").className = "invisible";
   document.getElementById("snepiax2").className = "invisible";
+  document.getElementById("pjsip_external").className = "invisible";
   document.getElementById("disabled").className = "invisible";
 
   if(div != 'iax2'){
@@ -556,20 +555,19 @@ function showDiv(div){
   // TASK-0019: transport selection has no chan_sip/IAX2/etc. equivalent.
   document.getElementById("trunk_transport_group").className = isPjsip ? "visible" : "invisible";
 
-  if(div == 'sip' || div == 'iax2' || div == 'pjsip'){
+  if(div == 'pjsip'){
 
-    if(div == 'iax2'){
-      document.getElementById("iax2").className = "visible";
-    }
     document.getElementById("codecs").className = "visible";
     div = 'ip';
 
     document.getElementById("disabled").className = "visible";
 
-  }else if(div == 'khomp' || div == 'virtual'){
+  }else if(div == 'pjsip_external'){
     document.getElementById("dtmfmode").className = "invisible";
     document.getElementById("host").className = "invisible";
     document.getElementById("nat").className = "invisible";
+    document.getElementById("codecs").className = "invisible";
+    document.getElementById("pjsip_external").className = "visible";
   }
 
   if(div == 'snepsip'){

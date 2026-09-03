@@ -1,0 +1,26 @@
+version: 1
+workflows:
+  - id: full
+    name: Full method
+    summary: Planning through review, the whole long path, stopping for you to accept.
+    steps: [planning, specs, dev, tests, review]
+    origin: full
+    stops: [review]
+  - id: build
+    name: Spec and build
+    summary: "For an issue whose planning is already written: spec, build, test, review."
+    steps: [specs, dev, tests, review]
+    origin: full
+    stops: [review]
+  - id: quick
+    name: Quick path
+    summary: Barry writes a short spec and builds it, reviewing as he goes.
+    steps: [specs, dev]
+    origin: quick
+    stops: []
+  - id: manual
+    name: By hand
+    summary: No chain. Every stage is handed over by you, one at a time.
+    steps: []
+    origin: full
+    stops: []
