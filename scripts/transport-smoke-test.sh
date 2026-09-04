@@ -1505,18 +1505,52 @@ else
     bad "dependent regeneration cascades to the new name (configured state)" "ext:\n${EXT_SECTION_AFTER}\ntrunk ep:\n${TRUNK_EP_AFTER}\ntrunk reg:\n${TRUNK_REG_AFTER}"
 fi
 
+# TASK-0028V: the original assumption here -- "a same-port rename can
+# NEVER become live without a restart, zero exceptions" (TASK-0020's own
+# investigation) -- is disproven. Live, reproducible evidence (raw CLI
+# ground truth, persistent across 58s of follow-up polling, not a
+# transient blip) shows regenerateAll()'s three sequential, redundant
+# "module reload res_pjsip.so" calls per single edit (transport conf,
+# then pjsip conf, then trunk conf -- all three fire even though only
+# the transport actually changed) occasionally give Asterisk's own
+# internal old-socket-teardown/new-socket-bind sequence enough chances to
+# complete entirely server-side, before this script's HTTP response is
+# even returned. No client-side wait/retry can observe a "before" state
+# that has already resolved server side -- see
+# docs/tasks/0028v-transport-smoke-t20-restart-race.md for the full
+# reproduction. The real, always-true contract is not "it can never
+# apply early" but "Asterisk's own runtime and the app's derived badge
+# must always AGREE, whichever of the two legitimate outcomes occurred" --
+# asserted below by checking coherence against ground truth (queried
+# once, synchronously, exactly as before) rather than a single hardcoded
+# expected value. This still fails on the original bug this check exists
+# to catch (badge/reality mismatch in either direction) and on any
+# incoherent/wrong-identity runtime state; it does not degrade into a
+# generic "something succeeded" check.
 RUNTIME_NEW_BEFORE_RESTART="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show transport ${T20_RENAME_NEW}" 2>&1)"
 if echo "$RUNTIME_NEW_BEFORE_RESTART" | grep -qi "Unable to find"; then
-    ok "runtime NOT falsely reported active before restart" "pjsip show transport ${T20_RENAME_NEW} correctly still 'Unable to find object' -- matches the investigation's proven rename behavior"
+    RUNTIME_NEW_CONVERGED=0
+elif echo "$RUNTIME_NEW_BEFORE_RESTART" | grep -qE "bind[[:space:]]*:[[:space:]]*0\.0\.0\.0:5212([[:space:]]|$)"; then
+    RUNTIME_NEW_CONVERGED=1
 else
-    bad "runtime NOT falsely reported active before restart" "expected 'Unable to find', got:\n${RUNTIME_NEW_BEFORE_RESTART}"
+    RUNTIME_NEW_CONVERGED=-1
+fi
+
+if [ "$RUNTIME_NEW_CONVERGED" = "0" ]; then
+    ok "runtime state before restart is coherent (not yet applied)" "pjsip show transport ${T20_RENAME_NEW} correctly reports 'Unable to find object' -- restart still required, the common case"
+elif [ "$RUNTIME_NEW_CONVERGED" = "1" ]; then
+    ok "runtime state before restart is coherent (self-applied early)" "pjsip show transport ${T20_RENAME_NEW} already shows the correct bind 0.0.0.0:5212 -- Asterisk's own reload occasionally completes the rebind before any restart (confirmed, non-deterministic -- see docs/tasks/0028v-transport-smoke-t20-restart-race.md), not a false report"
+else
+    bad "runtime state before restart is coherent" "neither 'Unable to find' nor the correct bind 0.0.0.0:5212 -- got:\n${RUNTIME_NEW_BEFORE_RESTART}"
 fi
 
 BADGE_NEW_BEFORE="$(t20_runtime_badge "$LIST_HTML" "$T20_RENAME_NEW")"
-if [ "$BADGE_NEW_BEFORE" = "restart_required" ]; then
-    ok "list-page badge shows restart_required, not active, before restart" "the list page never lies about runtime state -- badge=$BADGE_NEW_BEFORE"
+EXPECTED_BADGE_NEW="restart_required"
+[ "$RUNTIME_NEW_CONVERGED" = "1" ] && EXPECTED_BADGE_NEW="active"
+if [ "$BADGE_NEW_BEFORE" = "$EXPECTED_BADGE_NEW" ]; then
+    ok "list-page badge matches Asterisk's real runtime state" "the list page never lies about runtime state -- badge=$BADGE_NEW_BEFORE, matching the raw runtime check above"
 else
-    bad "list-page badge shows restart_required, not active, before restart" "badge=$BADGE_NEW_BEFORE"
+    bad "list-page badge matches Asterisk's real runtime state" "badge=$BADGE_NEW_BEFORE expected=$EXPECTED_BADGE_NEW (raw runtime check reported converged=$RUNTIME_NEW_CONVERGED)"
 fi
 rm -f "$LIST_HTML"
 
@@ -1540,12 +1574,40 @@ rm -f "$LIST_HTML"
 log "==> [T20] attempting to reuse the just-deleted socket under a new name (${T20_REUSE}, udp 0.0.0.0:5213)"
 save_transport add "" "$T20_REUSE" udp 5213 1
 T20_REUSE_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='${T20_REUSE}';")"
+if [ "$SAVE_TRANSPORT_HTTPCODE" != "302" ]; then
+    bad "socket reuse is accepted at the DB level (no collision)" "HTTP=$SAVE_TRANSPORT_HTTPCODE -- expected 302, the deleted row's socket must not DB-collide"
+else
+    ok "socket reuse is accepted at the DB level (no collision)" "HTTP 302, no DB-level collision -- ${T20_DELDIS_ID:-the deleted row} is gone"
+fi
+
+# TASK-0028V: same non-deterministic-early-convergence class as the
+# rename checks above -- a delete+reuse on the same port can also
+# occasionally self-apply within the create request itself, before any
+# restart. Ground truth (raw CLI) decides which of the two legitimate
+# outcomes applies; badge and apply-failed banner must both agree with it.
+RUNTIME_REUSE_BEFORE_RESTART="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show transport ${T20_REUSE}" 2>&1)"
+if echo "$RUNTIME_REUSE_BEFORE_RESTART" | grep -qi "Unable to find"; then
+    REUSE_CONVERGED=0
+elif echo "$RUNTIME_REUSE_BEFORE_RESTART" | grep -qE "bind[[:space:]]*:[[:space:]]*0\.0\.0\.0:5213([[:space:]]|$)"; then
+    REUSE_CONVERGED=1
+else
+    REUSE_CONVERGED=-1
+fi
+
 LIST_HTML="$(t20_list_html)"
 BADGE_REUSE_BEFORE="$(t20_runtime_badge "$LIST_HTML" "$T20_REUSE")"
-if [ "$SAVE_TRANSPORT_HTTPCODE" = "302" ] && grep -qi "could not apply\|previous configuration may still be active" "$LIST_HTML" && [ "$BADGE_REUSE_BEFORE" != "active" ]; then
-    ok "socket reuse before restart is never claimed active" "HTTP 302 (DB save succeeded, no DB-level collision -- ${T20_DELDIS_ID:-the deleted row} is gone), but the apply-failed banner appears and the runtime badge is '$BADGE_REUSE_BEFORE', not 'active'"
+if grep -qi "could not apply\|previous configuration may still be active" "$LIST_HTML"; then
+    HAS_APPLY_FAILED_BANNER=1
 else
-    bad "socket reuse before restart is never claimed active" "HTTP=$SAVE_TRANSPORT_HTTPCODE badge=$BADGE_REUSE_BEFORE banner=$(grep -ci "could not apply" "$LIST_HTML")"
+    HAS_APPLY_FAILED_BANNER=0
+fi
+
+if [ "$REUSE_CONVERGED" = "0" ] && [ "$BADGE_REUSE_BEFORE" != "active" ] && [ "$HAS_APPLY_FAILED_BANNER" = "1" ]; then
+    ok "socket reuse before restart is coherent (still stuck, the common case)" "runtime not found, apply-failed banner present, badge='$BADGE_REUSE_BEFORE'"
+elif [ "$REUSE_CONVERGED" = "1" ] && [ "$BADGE_REUSE_BEFORE" = "active" ]; then
+    ok "socket reuse before restart is coherent (self-applied early)" "pjsip show transport ${T20_REUSE} already shows the correct bind 0.0.0.0:5213 -- Asterisk freed and rebound the socket within the create request itself (confirmed, non-deterministic -- see docs/tasks/0028v-transport-smoke-t20-restart-race.md); badge correctly says active"
+else
+    bad "socket reuse before restart is coherent" "converged=$REUSE_CONVERGED badge=$BADGE_REUSE_BEFORE banner=$HAS_APPLY_FAILED_BANNER raw:\n${RUNTIME_REUSE_BEFORE_RESTART}"
 fi
 rm -f "$LIST_HTML"
 
@@ -1557,6 +1619,20 @@ if t20_wait_for_asterisk; then
     ok "controlled restart completes" "Asterisk answering the CLI again within 20s"
 else
     stop "Asterisk did not come back within 20s after the controlled restart -- environment needs manual attention"
+fi
+
+# TASK-0028V: a genuinely distinct, harness-side race found during this
+# investigation -- "core show uptime" answering (above) proves Asterisk's
+# CLI/AMI is up, NOT that every module has finished loading. res_pjsip.so
+# is one of the heavier modules to initialize after a full restart
+# (reloads every sorcery-backed endpoint/aor/auth/registration object),
+# and a "pjsip show transport ..." query issued too early after the
+# restart can hit "No such command 'pjsip show transport ...'" -- observed
+# live during reproduction. Same bounded-retry pattern already used for
+# this exact module at this script's own startup check (pjsip_module_running
+# + harness_retry), just never applied after a REAL restart before.
+if ! harness_retry 15 1 -- pjsip_module_running; then
+    stop "res_pjsip.so did not report Running within 15s after the controlled restart"
 fi
 
 # --- 50. Post-restart: renamed transport active, old name gone -------------
