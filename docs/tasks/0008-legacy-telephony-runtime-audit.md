@@ -44,7 +44,7 @@ audit:
 | `[transferencias]` context | same file | call-transfer re-entry into `snep.php -x` | No | Yes, for transfers |
 | `[ramais-agentes]` / `[macro-dialpeer]` | same file | uses `Macro()` (see §6) | No | **No evidence it's reachable** — nothing in SENMA's DB-writing code (`Snep_InterfaceConf`) ever sets a peer's `context` to `ramais-agentes`; would require manual out-of-band DB editing |
 | `[monitor]` context | same file | `AGI(snep/monitor.php)` for recording control | No | Feature-specific (call recording toggle) |
-| `snep/snep-features.conf`, `custom/{preagi,posagi,eof}.conf` | vendored/empty hook files, `#include`d by `extensions.conf` | parking/local customization hooks | No (custom/*.conf are intentionally-empty extension points) | Parking feature only |
+| `snep/snep-features.conf`, `custom/{preagi,posagi,eof}.conf` | vendored hook files, `#include`d by `extensions.conf` | parking/local customization hooks | No (`posagi.conf`/`eof.conf` are comment-only; `preagi.conf` is **not** empty — see correction below | Parking feature only |
 | `snep/snep-conferences.conf`, `snep/snep-parkedcalls.conf` | `#include`d; **written by `ConferenceRoomsController.php`** | conference room / parked-call dialplan stanzas | **Yes** — the one real exception to "no generated dialplan" | Yes, for the Conference Rooms feature specifically |
 | `snep/lib/Snep/Locale.php` (`setExtensionsLanguage()`) | rewrites (sed) `extensions.conf`'s `SNEP_LANGUAGE` global | same file | Yes (language switch in Settings) | Yes, for the language-switch feature |
 | Realtime/DB-driven dialplan | **none** | — | — | Confirmed: no `extensions`/`ael`-family realtime mapping exists anywhere (`extconfig.conf` never mapped it, legacy or current) |
@@ -420,3 +420,20 @@ filesystem gaps (real, but not P0 for a basic call — MixMonitor isn't
 exercised by this milestone).
 
 Stopping here for approval. No runtime code was edited.
+
+## Correction (TASK-0028, 2026-09-03 / TASK-0028C, 2026-09-04)
+
+§1's table row for `custom/{preagi,posagi,eof}.conf` described all three
+as "intentionally-empty extension points." That is factually wrong for
+`preagi.conf` specifically: direct inspection (TASK-0028's own audit, then
+confirmed again live in TASK-0028C) shows it has always shipped a real,
+concrete, dialable extension (`1234`, originally `Dial(SIP/1003,60,twg)`)
+— forgotten SNEP-upstream example/test content, not a placeholder.
+`posagi.conf`/`eof.conf` are correctly comment-only, as originally stated.
+This also means the reachability claim for `[ramais-agentes]`/
+`macro-dialpeer` in the same table stands independently and is unaffected.
+See `docs/tasks/0028-pjsip-only-architecture-audit.md` §14.5 for the full
+provenance investigation and
+`docs/tasks/0028c-pjsip-legacy-runtime-closure.md` for the runtime fix
+(a separate context-bleed bug had, until TASK-0028C, coincidentally kept
+this extension unreachable anyway).

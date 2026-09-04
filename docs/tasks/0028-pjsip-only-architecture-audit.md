@@ -774,3 +774,43 @@ Nenhum desses cinco pontos é alcançável a partir de UI, API ou dado
 persistido atual — por isso a arquitetura já é "efetivamente" PJSIP-only no
 produto — mas nenhum foi removido, então "PJSIP-only" como propriedade da
 arquitetura (não do produto) ainda depende do fechamento do TASK-0028C.
+
+## 15. Atualização — fechamento do TASK-0028C (2026-09-04)
+
+TASK-0028C implementou o fechamento descrito acima como dependência.
+Registro objetivo, sem reescrever a análise original: ver
+`docs/tasks/0028c-pjsip-legacy-runtime-closure.md` para evidência completa.
+
+- Item (b) do §14.6 — **fechado**: o vazamento de contexto do §14.2 foi
+  corrigido (reabertura explícita de `[default]` em `extensions.conf`
+  antes do include de `custom/preagi.conf`); `snep-sip-hints.conf`
+  continua incluído (mantido — caminho de compatibilidade real para hints
+  BLF), mas seu efeito colateral de vazamento foi isolado.
+- Item (c) do §14.6 — **fechado**: `custom/preagi.conf`'s `1234` agora
+  discia `PJSIP/1003` (não mais `SIP/1003`); o gerador `*33XXXX` agora
+  escreve `Channel: PJSIP/${EXTEN:3}` no `.call` gerado — provado ao vivo,
+  ponta a ponta, com dois endpoints PJSIP reais (originação, toque e
+  atendimento confirmados no log do Asterisk).
+- Item (e) do §14.6 — **parcialmente fechado**: o token de tecnologia do
+  exemplo em `custom/preagi.conf` foi corrigido para PJSIP; a decisão
+  tomada foi preservar o exemplo (agora funcional) em vez de substituí-lo
+  por um placeholder vazio, já que corrigir o vazamento do item (b) o
+  tornou alcançável pela primeira vez e um `Dial()` quebrado ali seria
+  pior que o exemplo original. `docs/tasks/0008-legacy-telephony-runtime-audit.md:47`
+  continua com a afirmação factualmente incorreta ("vazio") pendente de
+  correção — não alterada nesta tarefa (fora do escopo do TASK-0028C).
+- Itens (a) e (d) do §14.6 — **não alterados**, permanecem como dívida:
+  `InterfaceConf`/classes de interface SIP/IAX2 seguem ativas como
+  caminho de compatibilidade (decisão explícita, não regressão); a
+  confirmação por execução do BLOCKER A (TASK-0026J) não foi revisitada
+  nesta tarefa.
+- Achados adicionais do TASK-0028C, fora do escopo original deste
+  documento: `SIPAddHeader` incondicional em `[ramais-agentes]`
+  (convertido para `PJSIP_HEADER`, contexto ainda órfão); duas chamadas
+  AMI mortas (`sip reload`/`iax2 reload`) removidas de
+  `Snep_InterfaceConf::loadConfFromDb()`, confirmadas ao vivo como no-ops
+  neste runtime.
+
+A conclusão `APPLICATION_EFFECTIVELY_PJSIP_ONLY` permanece válida e não
+muda — esta atualização fecha parte da dívida que a separava de
+"PJSIP-only" como propriedade de arquitetura, não revisa o diagnóstico.

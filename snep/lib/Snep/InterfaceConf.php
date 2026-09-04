@@ -247,11 +247,17 @@ class Snep_InterfaceConf {
             file_put_contents($hintFileConf, $peers_hint);
         }
 
-        // Forcing asterisk to reload the configs
+        // TASK-0028C: "sip reload"/"iax2 reload" removed -- confirmed
+        // live on this runtime that both return "No such command"
+        // (chan_sip.so is absent from the image entirely; chan_iax2.so
+        // is present but Not Running, so its CLI commands are also
+        // unregistered). Silent no-ops on every extension/trunk mutation,
+        // not a functional dependency -- this class's own hints file
+        // generation (still consumed, see snep-sip-hints.conf's live
+        // include chain) only ever needed "dialplan reload" to take
+        // effect. See docs/tasks/0028c-pjsip-legacy-runtime-closure.md.
         $asteriskAmi = PBX_Asterisk_AMI::getInstance();
-        $asteriskAmi->Command("sip reload");
         $asteriskAmi->Command("dialplan reload");
-        $asteriskAmi->Command("iax2 reload");
     }
 
 }
