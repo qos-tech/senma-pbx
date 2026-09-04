@@ -10,3 +10,10 @@ snep/includes/setup.conf
 .phases/
 
 .qos-harness/reports/
+
+.vscode
+
+.claude/cache/
+.claude/tmp/
+.claude/local/
+*.log
