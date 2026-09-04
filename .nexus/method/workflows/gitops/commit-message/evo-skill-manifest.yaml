@@ -1,3 +1,0 @@
-canonicalId: evo-commit-message
-type: workflow
-description: "Write a commit message from the staged selection and its diff, as a draft for a person to edit"

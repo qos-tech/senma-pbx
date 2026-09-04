@@ -1,3 +1,0 @@
-canonicalId: evo-read-history
-type: workflow
-description: "Read a range of history and say what actually happened in it, for a release note or a catch-up"

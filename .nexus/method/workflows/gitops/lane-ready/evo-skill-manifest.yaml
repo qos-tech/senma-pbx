@@ -1,3 +1,0 @@
-canonicalId: evo-lane-ready
-type: workflow
-description: "Judge whether a lane is ready to leave: complete against its issue, nothing uncommitted, nothing out of scope"

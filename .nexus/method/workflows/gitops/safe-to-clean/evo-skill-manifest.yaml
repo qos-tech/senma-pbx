@@ -1,3 +1,0 @@
-canonicalId: evo-branch-cleanup
-type: workflow
-description: "Judge which branches are safe to clean up, stating the criterion per branch, as words for a person to act on"
