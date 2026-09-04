@@ -627,7 +627,41 @@ if [ -z "$ADMIN_CSRF" ]; then stop "could not read the admin session's CSRF toke
 log "==> checking for pre-existing fixtures"
 EXISTING_TRANSPORT="$(db_query "SELECT id FROM pjsip_transports WHERE name='${TRANSPORT_NAME}';")"
 if [ -n "$EXISTING_TRANSPORT" ]; then
-    stop "a transport named '${TRANSPORT_NAME}' already exists (id=${EXISTING_TRANSPORT}) from a prior run that did not clean up. Remove it manually first."
+    # TASK-0028U: an interrupted prior run (SIGKILL, host/container
+    # teardown mid-run -- anything that skips harness_install_traps' own
+    # INT/TERM/EXIT cleanup) can leave this transport row behind. A bare
+    # "name already exists" collision can't tell that apart from a real
+    # or unrelated transport that independently happens to be named
+    # "sercomtel-smoke", so the name alone is never enough. Ownership is
+    # only accepted when every field this suite's own create_transport()
+    # sets -- and that no check anywhere else in this script ever mutates
+    # (unlike external_media_address, rewritten by the edit-transport
+    # check right below) -- still matches verbatim: protocol,
+    # bind_address, bind_port, domain, external_signaling_address/port,
+    # and is_seed=0 (a real seeded transport is never is_seed=0).
+    EXISTING_TRANSPORT_SHAPE="$(db_query "SELECT protocol, bind_address, bind_port, domain, external_signaling_address, external_signaling_port, is_seed FROM pjsip_transports WHERE id=${EXISTING_TRANSPORT};")"
+    IFS=$'\t' read -r et_protocol et_bind_address et_bind_port et_domain et_ext_sig et_ext_sig_port et_is_seed <<< "$EXISTING_TRANSPORT_SHAPE"
+    if [ "$et_protocol" = "udp" ] && [ "$et_bind_address" = "$TRANSPORT_BIND_ADDRESS" ] \
+        && [ "$et_bind_port" = "$TRANSPORT_BIND_PORT" ] && [ "$et_domain" = "$TRANSPORT_DOMAIN" ] \
+        && [ "$et_ext_sig" = "$TRANSPORT_EXT_SIGNALING" ] && [ "$et_ext_sig_port" = "$TRANSPORT_EXT_SIGNALING_PORT" ] \
+        && [ "$et_is_seed" = "0" ]; then
+        # Never delete a still-referenced transport out from under an
+        # extension/trunk this preflight hasn't itself verified -- the FK
+        # is ON DELETE RESTRICT for peers, and an unproven dependent could
+        # just as easily be real data as another leftover fixture.
+        DEP_PEERS="$(db_query "SELECT COUNT(*) FROM peers WHERE transport_id=${EXISTING_TRANSPORT};")"
+        DEP_TRUNKS="$(db_query "SELECT COUNT(*) FROM trunks WHERE transport_id=${EXISTING_TRANSPORT};")"
+        if [ "$DEP_PEERS" != "0" ] || [ "$DEP_TRUNKS" != "0" ]; then
+            stop "transport '${TRANSPORT_NAME}' (id=${EXISTING_TRANSPORT}) is a leftover transport-smoke fixture but is still referenced by ${DEP_PEERS} extension(s)/${DEP_TRUNKS} trunk(s) of unproven ownership -- refusing to guess. Remove the references manually first."
+        fi
+        log "transport '${TRANSPORT_NAME}' (id=${EXISTING_TRANSPORT}) is a leftover transport-smoke fixture (protocol/bind/domain/signaling/is_seed all match this suite's own known fixture shape, unreferenced) -- removing via HTTP before re-creating"
+        delete_transport "$EXISTING_TRANSPORT"
+        if [ "$DELETE_HTTPCODE" != "302" ]; then
+            stop "found a leftover transport-smoke fixture '${TRANSPORT_NAME}' (id=${EXISTING_TRANSPORT}) but the HTTP delete flow did not return 302"
+        fi
+    else
+        stop "a transport named '${TRANSPORT_NAME}' already exists (id=${EXISTING_TRANSPORT}) and its stored fields do NOT match this suite's own known fixture shape -- refusing to overwrite real/unknown data. Remove it manually first."
+    fi
 fi
 EXISTING_EXT_CANAL="$(db_query "SELECT canal FROM peers WHERE name='${REF_EXT}';")"
 EXISTING_EXT_SECRET="$(db_query "SELECT secret FROM peers WHERE name='${REF_EXT}';")"

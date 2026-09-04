@@ -153,13 +153,6 @@ EXT_F7_SECRET="${FIXTURE_MARKER}-f7"
 EXT_F7_CANARY=1084
 EXT_F7_CANARY_SECRET="${FIXTURE_MARKER}-f7-canary"
 
-for ext in "$EXT_F7" "$EXT_F7_CANARY"; do
-    existing="$(db_query "SELECT canal FROM peers WHERE name='${ext}';")"
-    if [ -n "$existing" ]; then
-        harness_blocked "peers row for extension '${ext}' already exists -- refusing to overwrite. Remove it manually first."
-    fi
-done
-
 create_extension() {
     local ext="$1" secret="$2" name="$3"
     curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$BODY" -w '%{http_code}' \
@@ -192,6 +185,38 @@ delete_extension() {
         "${BASE_URL}/index.php/default/extensions/remove")"
     [ "$httpcode" = "302" ]
 }
+
+# TASK-0028U: an interrupted prior run (SIGKILL, host/container teardown
+# mid-run -- anything that skips harness_install_traps' own INT/TERM/EXIT
+# cleanup) can leave one of these two fixtures behind. A bare "row
+# already exists" collision can't tell that apart from unrelated
+# real/unknown data that happens to use the same extension number, so it
+# must not be deleted on sight. Ownership is only accepted when BOTH
+# independent fields this script itself set on creation are still
+# present verbatim: canal (technology/number, never touched again after
+# creation) and secret (this script's own deterministic per-fixture
+# marker -- the SQLi edit test below only ever rewrites callerid, never
+# secret). This mirrors transport-smoke-test.sh's own established
+# REF_EXT ownership check (canal + FIXTURE_MARKER-prefixed secret).
+# Cleanup reuses the same HTTP removeAction() flow as every other
+# fixture teardown in this script -- never a raw DELETE -- so it
+# regenerates PJSIP config exactly like a normal run's own cleanup does.
+for ext_secret in "$EXT_F7:$EXT_F7_SECRET" "$EXT_F7_CANARY:$EXT_F7_CANARY_SECRET"; do
+    ext="${ext_secret%%:*}"
+    secret="${ext_secret#*:}"
+    existing_canal="$(db_query "SELECT canal FROM peers WHERE name='${ext}';")"
+    if [ -n "$existing_canal" ]; then
+        existing_secret="$(db_query "SELECT secret FROM peers WHERE name='${ext}';")"
+        if [ "$existing_canal" = "PJSIP/${ext}" ] && [ "$existing_secret" = "$secret" ]; then
+            log "extension ${ext} is a leftover sql-security fixture from an interrupted prior run (canal + secret both match this suite's own fixture) -- removing via HTTP before re-creating"
+            if ! delete_extension "$ext"; then
+                harness_blocked "found a leftover sql-security fixture for extension ${ext} but the HTTP delete flow did not return 302"
+            fi
+        else
+            harness_blocked "peers row for extension '${ext}' already exists (canal='${existing_canal}') and is NOT provably a sql-security fixture -- refusing to overwrite real/unknown data. Remove it manually first."
+        fi
+    fi
+done
 
 # 1. Valid request works.
 httpcode="$(create_extension "$EXT_F7" "$EXT_F7_SECRET" "SENMA sql-smoke ${EXT_F7}")"
