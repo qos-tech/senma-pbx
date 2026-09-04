@@ -409,22 +409,72 @@ harness_register_cleanup "orphaned trunk-type peers row sweep (BLOCKER A fixture
 
 # 1. Normal supported lookup: a legitimate technology=sip trunk (CANARY)
 # creates and renders correctly, carrying its own distinguishing context.
+#
+# TASK-0028T: technology=sip is no longer a reachable value for
+# /trunks/add -- TrunksController::preparePost() rejects any technology
+# other than pjsip/pjsip_external before persistence (TASK-0028B, commit
+# 0943794). That is an intentional product boundary, not a regression:
+# see docs/tasks/0028-pjsip-only-architecture-audit.md. The code this
+# proof actually targets, Snep_InterfaceConf::loadConfFromDb()'s
+# trunk-name lookup, is untouched by that gate and still processes
+# whatever legacy-shaped peers/trunks rows exist however they got there
+# (a compatibility/read boundary the supported UI can no longer create) --
+# so the fixture is established directly against the database instead,
+# matching this file's own established precedent for exactly this
+# situation (the TASK-0026O canary route fixture above: "the real
+# addAction() HTTP flow adds unrelated form-validation complexity not
+# needed here"). Field-for-field this mirrors what
+# TrunksController::preparePost()'s still-present (but now unreachable)
+# technology=sip branch would itself have inserted for these same values
+# (TrunksController.php:754-765 for trunks, :850-905 for peers) --
+# including the same NOT-NULL/strict-mode-driven defaults documented
+# there (dtmf_dial as 1/0, time_initial_date/telco as NULL,
+# password/trunk/lastms on the peers row).
 CANARY_CALLERID="Task0026j Canary"
 CANARY_CONTEXT="${MARKER}-canary-ctx"
-code="$(post_fields "$RESTRICTED_JAR" /index.php/default/trunks/add \
-    "technology=sip" "peer_type=friend" "domain=" "callerid=${CANARY_CALLERID}" "username=task0026jcanary" "secret=Sup3rSecret" \
-    "host=sip.example.test" "dtmfmode=rfc2833" "dialmethod=INVITE" "context=${CANARY_CONTEXT}" "reverse_auth=" "map_extensions=" \
-    "dtmf_dial=" "codec=ulaw" "codec1=alaw" "codec2=gsm" "qualify=yes" "transport_id=" "snep_csrf_token=${RESTRICTED_CSRF}")"
-CANARY_ID="$(db_query "SELECT id FROM trunks WHERE callerid='${CANARY_CALLERID}' ORDER BY id DESC LIMIT 1;")"
-if [ "$code" = 302 ] && [ -n "$CANARY_ID" ]; then
-    harness_ok "InterfaceConf: create a legitimate technology=sip trunk (CANARY)" "HTTP $code, trunk id=${CANARY_ID}"
+BLOCKERA_CANARY_OUT="$(run_manager_php "
+\$db = Zend_Registry::get('db');
+\$row = \$db->query('SELECT name FROM trunks ORDER BY CAST(name as DECIMAL) DESC LIMIT 1')->fetch();
+\$name = trim((\$row ? \$row['name'] : 0) + 1);
+\$db->insert('trunks', array(
+    'name' => \$name, 'context' => '${CANARY_CONTEXT}', 'trunktype' => 'I', 'type' => 'SIP',
+    'technology' => 'SIP', 'callerid' => '${CANARY_CALLERID}', 'username' => 'task0026jcanary',
+    'secret' => 'Sup3rSecret', 'host' => 'sip.example.test', 'dtmfmode' => 'rfc2833',
+    'reverse_auth' => 0, 'domain' => '', 'map_extensions' => 0, 'dtmf_dial' => 0,
+    'dtmf_dial_number' => '', 'time_total' => null, 'time_chargeby' => '', 'time_initial_date' => null,
+    'dialmethod' => 'INVITE', 'allow' => 'ulaw;alaw;gsm', 'id_regex' => 'SIP/task0026jcanary',
+    'channel' => 'SIP/task0026jcanary', 'transport_id' => null, 'telco' => null,
+));
+\$trunkId = \$db->lastInsertId('trunks');
+\$db->insert('peers', array(
+    'name' => \$name, 'canal' => 'SIP/task0026jcanary', 'type' => 'friend', 'callerid' => '${CANARY_CALLERID}',
+    'context' => '${CANARY_CONTEXT}', 'secret' => 'Sup3rSecret', 'allow' => 'ulaw;alaw;gsm',
+    'dtmfmode' => 'rfc2833', 'host' => 'sip.example.test', 'qualify' => 'yes',
+    'defaultuser' => 'task0026jcanary', 'peer_type' => 'T', 'nat' => 'no',
+    'password' => '', 'trunk' => 'no', 'lastms' => 0,
+));
+Snep_InterfaceConf::loadConfFromDb();
+echo 'BLOCKERA_CANARY_TRUNK_ID:' . \$trunkId . PHP_EOL;
+")"
+BLOCKERA_CANARY_ID="$(echo "$BLOCKERA_CANARY_OUT" | grep '^BLOCKERA_CANARY_TRUNK_ID:' | sed 's/BLOCKERA_CANARY_TRUNK_ID://' | tr -d '\r')"
+if [ -n "$BLOCKERA_CANARY_ID" ]; then
+    harness_ok "InterfaceConf: establish a legacy technology=sip trunk fixture (CANARY)" "trunk id=${BLOCKERA_CANARY_ID} -- direct DB fixture (technology=sip is no longer reachable via /trunks/add, TASK-0028B); see note above"
 else
-    harness_bad "InterfaceConf: create a legitimate technology=sip trunk (CANARY)" "HTTP $code, trunk id present='${CANARY_ID}'"
+    harness_bad "InterfaceConf: establish a legacy technology=sip trunk fixture (CANARY)" "output: $BLOCKERA_CANARY_OUT"
 fi
-harness_register_cleanup "trunk id=${CANARY_ID:-none} (BLOCKER A CANARY fixture)" \
-    "[ -n '${CANARY_ID}' ] && request \"\$RESTRICTED_JAR\" POST /index.php/default/trunks/remove \"id=${CANARY_ID}&delete=1&snep_csrf_token=${RESTRICTED_CSRF}\" >/dev/null; true"
+cleanup_blockera_canary() {
+    [ -n "${BLOCKERA_CANARY_ID:-}" ] || return 0
+    run_manager_php "
+\$db = Zend_Registry::get('db');
+\$db->delete('trunks', \$db->quoteInto('id = ?', ${BLOCKERA_CANARY_ID}));
+\$db->delete('peers', \$db->quoteInto('defaultuser = ?', 'task0026jcanary'));
+Snep_InterfaceConf::loadConfFromDb();
+echo 'cleaned';
+" | grep -q cleaned
+}
+harness_register_cleanup "trunk id=${BLOCKERA_CANARY_ID:-none} (BLOCKER A CANARY fixture)" "cleanup_blockera_canary"
 
-if [ -n "$CANARY_ID" ]; then
+if [ -n "$BLOCKERA_CANARY_ID" ]; then
     GENERATED_SIP="$(app_exec "cat '$LEGACY_SIP_CONF' 2>/dev/null")"
     if echo "$GENERATED_SIP" | grep -qF "[task0026jcanary]" && echo "$GENERATED_SIP" | grep -qF "context=${CANARY_CONTEXT}"; then
         harness_ok "InterfaceConf: generated legacy config has expected section/context" "snep-sip.conf contains [task0026jcanary] with context=${CANARY_CONTEXT}"
@@ -433,34 +483,63 @@ if [ -n "$CANARY_ID" ]; then
     fi
 fi
 
-if [ -z "${CANARY_ID:-}" ]; then
-    harness_blocked "could not create the CANARY trunk fixture -- cannot proceed with the injection proof"
+if [ -z "${BLOCKERA_CANARY_ID:-}" ]; then
+    harness_blocked "could not establish the CANARY trunk fixture -- cannot proceed with the injection proof"
 fi
 
 # 2. SQL-shaped value cannot alter lookup semantics: MALICIOUS's own
-# `name` field is mass-assigned (TrunksController::preparePost() merges
-# the whole POST body; `name` is in both $trunk_fields and $ip_fields,
-# and is NOT covered by validateConfigFields()) to an unquoted-numeric-
-# context boolean-always-true payload that, if the fix were absent,
-# would make the vulnerable `where("name = {$peer['name']}")` lookup
-# match CANARY's row by primary key regardless of table contents/order.
+# `name` column (both trunks.name and peers.name -- TASK-0026J's original
+# mass-assignment payload set both identically via
+# TrunksController::preparePost(), reproduced directly here for the same
+# reason as CANARY above) is set to an unquoted-numeric-context
+# boolean-always-true payload that, if the fix were absent, would make
+# the vulnerable `where("name = {$peer['name']}")` lookup match CANARY's
+# row by primary key regardless of table contents/order.
 MAL_CALLERID="Task0026j Malicious"
 MAL_CONTEXT="${MARKER}-malicious-ctx"
-INJECTED_NAME="0 OR id=${CANARY_ID}"
-code="$(post_fields "$RESTRICTED_JAR" /index.php/default/trunks/add \
-    "technology=sip" "peer_type=friend" "domain=" "callerid=${MAL_CALLERID}" "username=task0026jmalicious" "secret=Sup3rSecret2" \
-    "host=sip2.example.test" "dtmfmode=rfc2833" "dialmethod=INVITE" "context=${MAL_CONTEXT}" "name=${INJECTED_NAME}" "reverse_auth=" "map_extensions=" \
-    "dtmf_dial=" "codec=ulaw" "codec1=alaw" "codec2=gsm" "qualify=yes" "transport_id=" "snep_csrf_token=${RESTRICTED_CSRF}")"
-MAL_ID="$(db_query "SELECT id FROM trunks WHERE callerid='${MAL_CALLERID}' ORDER BY id DESC LIMIT 1;")"
-MAL_PEER_NAME="$(db_query "SELECT name FROM peers WHERE defaultuser='task0026jmalicious' ORDER BY id DESC LIMIT 1;")"
-if [ "$code" = 302 ] && [ -n "$MAL_ID" ] && [ "$MAL_PEER_NAME" = "$INJECTED_NAME" ]; then
-    harness_ok "InterfaceConf: mass-assigned SQL-shaped 'name' is stored as literal data" "peers.name='${MAL_PEER_NAME}', trunk id=${MAL_ID}"
+INJECTED_NAME="0 OR id=${BLOCKERA_CANARY_ID}"
+BLOCKERA_MAL_OUT="$(run_manager_php "
+\$db = Zend_Registry::get('db');
+\$name = '${INJECTED_NAME}';
+\$db->insert('trunks', array(
+    'name' => \$name, 'context' => '${MAL_CONTEXT}', 'trunktype' => 'I', 'type' => 'SIP',
+    'technology' => 'SIP', 'callerid' => '${MAL_CALLERID}', 'username' => 'task0026jmalicious',
+    'secret' => 'Sup3rSecret2', 'host' => 'sip2.example.test', 'dtmfmode' => 'rfc2833',
+    'reverse_auth' => 0, 'domain' => '', 'map_extensions' => 0, 'dtmf_dial' => 0,
+    'dtmf_dial_number' => '', 'time_total' => null, 'time_chargeby' => '', 'time_initial_date' => null,
+    'dialmethod' => 'INVITE', 'allow' => 'ulaw;alaw;gsm', 'id_regex' => 'SIP/task0026jmalicious',
+    'channel' => 'SIP/task0026jmalicious', 'transport_id' => null, 'telco' => null,
+));
+\$malId = \$db->lastInsertId('trunks');
+\$db->insert('peers', array(
+    'name' => \$name, 'canal' => 'SIP/task0026jmalicious', 'type' => 'friend', 'callerid' => '${MAL_CALLERID}',
+    'context' => '${MAL_CONTEXT}', 'secret' => 'Sup3rSecret2', 'allow' => 'ulaw;alaw;gsm',
+    'dtmfmode' => 'rfc2833', 'host' => 'sip2.example.test', 'qualify' => 'yes',
+    'defaultuser' => 'task0026jmalicious', 'peer_type' => 'T', 'nat' => 'no',
+    'password' => '', 'trunk' => 'no', 'lastms' => 0,
+));
+Snep_InterfaceConf::loadConfFromDb();
+echo 'BLOCKERA_MAL_TRUNK_ID:' . \$malId . PHP_EOL;
+")"
+BLOCKERA_MAL_ID="$(echo "$BLOCKERA_MAL_OUT" | grep '^BLOCKERA_MAL_TRUNK_ID:' | sed 's/BLOCKERA_MAL_TRUNK_ID://' | tr -d '\r')"
+BLOCKERA_MAL_PEER_NAME="$(db_query "SELECT name FROM peers WHERE defaultuser='task0026jmalicious' ORDER BY id DESC LIMIT 1;")"
+if [ -n "$BLOCKERA_MAL_ID" ] && [ "$BLOCKERA_MAL_PEER_NAME" = "$INJECTED_NAME" ]; then
+    harness_ok "InterfaceConf: establish malicious trunk fixture with SQL-shaped 'name'" "trunk id=${BLOCKERA_MAL_ID}, peers.name='${BLOCKERA_MAL_PEER_NAME}' -- direct DB fixture; see note above"
 else
-    harness_bad "InterfaceConf: mass-assigned SQL-shaped 'name' is stored as literal data" "HTTP $code, trunk id='${MAL_ID}', peers.name='${MAL_PEER_NAME}'"
+    harness_bad "InterfaceConf: establish malicious trunk fixture with SQL-shaped 'name'" "trunk id='${BLOCKERA_MAL_ID}', peers.name='${BLOCKERA_MAL_PEER_NAME}'"
 fi
-if [ -n "$MAL_ID" ]; then
-    harness_register_cleanup "trunk id=${MAL_ID} (BLOCKER A MALICIOUS fixture)" \
-        "request \"\$RESTRICTED_JAR\" POST /index.php/default/trunks/remove \"id=${MAL_ID}&delete=1&snep_csrf_token=${RESTRICTED_CSRF}\" >/dev/null; true"
+cleanup_blockera_malicious() {
+    [ -n "${BLOCKERA_MAL_ID:-}" ] || return 0
+    run_manager_php "
+\$db = Zend_Registry::get('db');
+\$db->delete('trunks', \$db->quoteInto('id = ?', ${BLOCKERA_MAL_ID}));
+\$db->delete('peers', \$db->quoteInto('defaultuser = ?', 'task0026jmalicious'));
+Snep_InterfaceConf::loadConfFromDb();
+echo 'cleaned';
+" | grep -q cleaned
+}
+if [ -n "$BLOCKERA_MAL_ID" ]; then
+    harness_register_cleanup "trunk id=${BLOCKERA_MAL_ID} (BLOCKER A MALICIOUS fixture)" "cleanup_blockera_malicious"
 fi
 
 # 3. The core proof: MALICIOUS's own generated block must reflect only

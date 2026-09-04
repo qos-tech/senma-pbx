@@ -110,6 +110,66 @@ marker_absent_in_config() {
     ! $COMPOSE exec -T "$container" sh -c "grep -qE '${MARKER_SECTION}|${MARKER_DIRECTIVE}' '$file' 2>/dev/null"
 }
 
+# run_manager_php <php-code> / run_manager_php_file <local-file> --
+# TASK-0028T: identical bootstrap to residual-sql-security-smoke-test.sh's
+# own helper of the same name (replicates snep/index.php's registry setup
+# -- Snep_Config, Zend_Application, Zend_Registry 'config'/'db' -- without
+# dispatching a controller). Used only for the F15 legacy-technology
+# fixture below, whose real HTTP entry point (technology=sip via
+# /extensions/add) is intentionally blocked by TASK-0028A -- every other
+# check in this file drives the real controller over HTTP.
+CLI_BOOTSTRAP_REMOTE="/tmp/task0028t_cli_bootstrap.php"
+CLI_BOOTSTRAP_LOCAL="$(mktemp)"
+cat > "$CLI_BOOTSTRAP_LOCAL" <<'BOOTSTRAP_EOF'
+<?php
+error_reporting(0);
+ini_set('display_errors', '0');
+defined('APPLICATION_PATH') || define('APPLICATION_PATH', '/var/www/html/snep');
+set_include_path(implode(PATH_SEPARATOR, array(APPLICATION_PATH . '/lib', get_include_path())));
+require_once 'Snep/Config.php';
+Snep_Config::setConfigFile(APPLICATION_PATH . '/includes/setup.conf');
+$config = Snep_Config::getConfig();
+defined('SNEP_VENDOR') || define('SNEP_VENDOR', $config->ambiente->emp_nome);
+defined('SNEP_VERSION') || define('SNEP_VERSION', trim(file_get_contents(APPLICATION_PATH . '/configs/snep_version')));
+defined('APPLICATION_ENV') || define('APPLICATION_ENV', 'production');
+require_once 'Snep/Modules.php';
+Snep_Modules::getInstance()->addPath(APPLICATION_PATH . '/modules');
+require_once 'Zend/Application.php';
+require_once 'Zend/Config/Ini.php';
+$application = new Zend_Application(APPLICATION_ENV, APPLICATION_PATH . '/application.ini');
+$application->setAutoloaderNamespaces(array('Asterisk_', 'PBX_', 'Snep_'));
+require_once 'Zend/Registry.php';
+Zend_Registry::set('config', $config);
+Zend_Registry::set('db', Snep_Db::getInstance());
+require_once 'Zend/Log.php';
+Zend_Registry::set('log', new Zend_Log());
+$application->bootstrap();
+error_reporting(0);
+ini_set('display_errors', '0');
+BOOTSTRAP_EOF
+$COMPOSE cp "$CLI_BOOTSTRAP_LOCAL" app:"$CLI_BOOTSTRAP_REMOTE" >/dev/null 2>&1
+harness_register_best_effort_cleanup "local CLI bootstrap temp file" "rm -f '$CLI_BOOTSTRAP_LOCAL'"
+harness_register_best_effort_cleanup "CLI bootstrap file in app container" "$COMPOSE exec -T app rm -f '$CLI_BOOTSTRAP_REMOTE'"
+harness_register_best_effort_cleanup "run_manager_php scratch file in app container" "$COMPOSE exec -T app rm -f /tmp/task0028t_run.php"
+
+run_manager_php() {
+    local code="$1" f
+    f="$(mktemp)"
+    { printf '<?php\n'; printf "require '%s';\n" "$CLI_BOOTSTRAP_REMOTE"; printf '%s\n' "$code"; } > "$f"
+    $COMPOSE cp "$f" app:/tmp/task0028t_run.php >/dev/null 2>&1
+    rm -f "$f"
+    app_exec "php -d display_errors=0 /tmp/task0028t_run.php"
+}
+
+run_manager_php_file() {
+    local local_file="$1" f
+    f="$(mktemp)"
+    { printf '<?php\n'; printf "require '%s';\n" "$CLI_BOOTSTRAP_REMOTE"; cat "$local_file"; } > "$f"
+    $COMPOSE cp "$f" app:/tmp/task0028t_run.php >/dev/null 2>&1
+    rm -f "$f"
+    app_exec "php -d display_errors=0 /tmp/task0028t_run.php"
+}
+
 # --- 0. Preflight --------------------------------------------------------
 
 harness_require_containers app asterisk db
@@ -402,18 +462,59 @@ fi
 
 log "==> F15: legacy chan_sip boundary (technology=sip, confirmed reachable via the current UI)"
 
+# TASK-0028T: technology=sip is no longer reachable via /extensions/add --
+# ExtensionsController::execAdd() rejects any technology other than pjsip
+# before persistence (TASK-0028A, commit 0943794; see
+# docs/tasks/0028-pjsip-only-architecture-audit.md). That is the intended
+# product boundary, not a regression. The code this proof actually
+# targets -- Snep_InterfaceConf::loadConfFromDb()'s legacy generator,
+# still active and still processing whatever legacy-shaped peers rows
+# exist however they got there -- is unaffected, so the fixture is
+# established directly against the database instead (a compatibility/read
+# boundary the supported UI can no longer create), field-for-field
+# matching what execAdd()'s still-present (but now unreachable)
+# technology=sip branch would itself have inserted for these same values
+# (ExtensionsController.php:760-796 for the fixed defaults, :822-869 for
+# the insert) -- including the fact that this exact POST never supplied
+# codec/codec1/codec2, so `allow` is faithfully reproduced as ";;", not
+# "cleaned up" to something the original fixture never actually produced.
 EXT_SIP="10973"
-code="$(post_fields "$RESTRICTED_JAR" /index.php/default/extensions/add \
-    "exten=${EXT_SIP}" "name=Task0026e Sip" "password=" "passwordpadlock=" "technology=sip" "type=friend" "exten_group=" \
-    "dtmf=rfc2833" "directmedia=no" "calllimit=1" "pickup_group=" "gsm=0" "snep_csrf_token=${RESTRICTED_CSRF}")"
+BLOCKERF15_PHP="$(mktemp)"
+cat > "$BLOCKERF15_PHP" <<PHPEOF
+\$db = Zend_Registry::get('db');
+\$db->insert('peers', array(
+    'name' => '${EXT_SIP}', 'password' => '', 'callerid' => 'Task0026e Sip', 'context' => 'default',
+    'mailbox' => '${EXT_SIP}', 'qualify' => 'no', 'secret' => '', 'type' => 'friend', 'allow' => ';;',
+    'defaultuser' => '${EXT_SIP}', 'fullcontact' => '', 'dtmfmode' => 'rfc2833', 'email' => '',
+    'call-limit' => 1, 'outgoinglimit' => 1, 'incominglimit' => 1, 'usa_vc' => 'no',
+    'pickupgroup' => null, 'callgroup' => null, 'nat' => 'no', 'canal' => 'SIP/${EXT_SIP}',
+    'authenticate' => 0, 'directmedia' => 'no', 'time_total' => null, 'time_chargeby' => 'N',
+    'cancallforward' => 'no', 'blf' => '', 'transport_id' => null, 'peer_type' => 'R', 'trunk' => 'no',
+    'accountcode' => '', 'amaflags' => '', 'defaultip' => '', 'host' => 'dynamic', 'insecure' => '',
+    'language' => 'br', 'deny' => '', 'permit' => '', 'mask' => '', 'port' => '', 'restrictcid' => '',
+    'rtptimeout' => '', 'rtpholdtimeout' => '', 'musiconhold' => 'cliente', 'regseconds' => 0,
+    'ipaddr' => '', 'regexten' => '', 'setvar' => '', 'disallow' => 'all', 'lastms' => 0,
+));
+Snep_InterfaceConf::loadConfFromDb();
+echo 'F15_FIXTURE:OK' . PHP_EOL;
+PHPEOF
+F15_OUT="$(run_manager_php_file "$BLOCKERF15_PHP")"
+rm -f "$BLOCKERF15_PHP"
 EXT_SIP_EXISTS="$(db_query "SELECT name FROM peers WHERE name='${EXT_SIP}';")"
-if [ "$code" = 302 ] && [ -n "$EXT_SIP_EXISTS" ]; then
-    harness_ok "F15 valid: create a legitimate technology=sip extension" "HTTP $code, stored via the same shared execAdd() HTTP flow"
+if echo "$F15_OUT" | grep -q '^F15_FIXTURE:OK' && [ -n "$EXT_SIP_EXISTS" ]; then
+    harness_ok "F15 valid: establish a legacy technology=sip extension fixture" "direct DB fixture (technology=sip is no longer reachable via /extensions/add, TASK-0028A); see note above"
 else
-    harness_bad "F15 valid: create a legitimate technology=sip extension" "HTTP $code, db row present='${EXT_SIP_EXISTS}'"
+    harness_bad "F15 valid: establish a legacy technology=sip extension fixture" "output: $F15_OUT, db row present='${EXT_SIP_EXISTS}'"
 fi
-harness_register_cleanup "extension ${EXT_SIP} (F15 fixture)" \
-    "request \"\$RESTRICTED_JAR\" POST /index.php/default/extensions/remove \"id=${EXT_SIP}&snep_csrf_token=${RESTRICTED_CSRF}\" >/dev/null; true"
+cleanup_f15_fixture() {
+    run_manager_php "
+\$db = Zend_Registry::get('db');
+\$db->delete('peers', \$db->quoteInto('name = ?', '${EXT_SIP}'));
+Snep_InterfaceConf::loadConfFromDb();
+echo 'cleaned';
+" | grep -q cleaned
+}
+harness_register_cleanup "extension ${EXT_SIP} (F15 fixture)" "cleanup_f15_fixture"
 
 if [ -n "$EXT_SIP_EXISTS" ]; then
     GENERATED_LEGACY="$(app_exec "cat '$LEGACY_SIP_CONF' 2>/dev/null")"
