@@ -103,7 +103,19 @@ class ExtensionsController extends Zend_Controller_Action {
         if(!$passwordValidate){
           $this->view->alert_message = $this->view->translate("You have extensions with weak passwords. For security measures it is important to update them.")."(".$passwordValidateExten.")";
         }
-        
+
+        // TASK-0029B: one bulk AMI query for every PJSIP extension on
+        // this page, never one query per row (Phase 17) -- see
+        // Snep_PjsipStatus_Manager. Legacy chan_sip/IAX extensions
+        // (still shown by this same list) get no runtime_status at all;
+        // this service is PJSIP-only by design (see
+        // docs/tasks/0029b-pjsip-runtime-status-visibility.md).
+        $runtimeStatus = Snep_PjsipStatus_Manager::getExtensionStatuses();
+        foreach ($extensions as &$extension) {
+          $extension['runtime_status'] = isset($runtimeStatus[$extension['id']]) ? $runtimeStatus[$extension['id']] : null;
+        }
+        unset($extension);
+
         $this->view->extensions = $extensions;
 
       }

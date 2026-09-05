@@ -161,6 +161,10 @@ run_suite "wss-platform-smoke"     "wss-platform-smoke-test.sh"
 # wss-platform-smoke (the closest-related existing suite: both restart
 # the asterisk container) and before transport-smoke.
 run_suite "tls-cert-management-smoke" "tls-cert-management-smoke-test.sh"
+# TASK-0029B: PJSIP runtime status visibility -- placed right after
+# tls-cert-management-smoke (the closest-related existing suite) and
+# before transport-smoke.
+run_suite "pjsip-runtime-status-smoke" "pjsip-runtime-status-smoke-test.sh"
 run_suite "transport-smoke"        "transport-smoke-test.sh"
 run_suite "dialplan-legacy-closure" "dialplan-legacy-closure-smoke-test.sh"
 run_suite "restart-smoke"          "restart-smoke-test.sh"

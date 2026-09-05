@@ -154,6 +154,15 @@ class TrunksController extends Zend_Controller_Action {
       }
     }
 
+    // TASK-0029B: one bulk AMI query for every PJSIP/PJSIP_EXTERNAL
+    // trunk on this page (Phase 17) -- see Snep_PjsipStatus_Manager.
+    // Legacy chan_sip/IAX trunks get no runtime_status; that technology
+    // is IpStatusController's own separate, pre-existing scope.
+    $runtimeStatus = Snep_PjsipStatus_Manager::getTrunkStatuses();
+    foreach ($trunks as $idx => $val) {
+      $trunks[$idx]['runtime_status'] = isset($runtimeStatus[$val['id']]) ? $runtimeStatus[$val['id']] : null;
+    }
+
     $this->view->trunks = $trunks;
 
   }

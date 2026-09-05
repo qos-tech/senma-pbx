@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -215,6 +215,14 @@ wss-platform-smoke: up
 # isolation" reasoning as wss-platform-smoke above).
 tls-cert-management-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/tls-cert-management-smoke-test.sh
+
+# TASK-0029B: PJSIP runtime status visibility -- extension/trunk
+# CONFIGURED-vs-LIVE status, real reachable/unreachable/rejected proof,
+# pjsip_external existence proof, and the AMI-down-never-fabricates-
+# Offline contract. Stops/restarts the asterisk container (Part C) --
+# same "run in isolation" reasoning as the other restart-using suites.
+pjsip-runtime-status-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/pjsip-runtime-status-smoke-test.sh
 
 # TASK-0028C: proves the reachable SIP/IAX-era dialplan/config constructs
 # closed by that task stay closed (context bleed, SIPAddHeader, callback

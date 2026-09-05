@@ -28,6 +28,7 @@
                 <th class="text-center"><?php echo $this->translate('Caller ID');?></th>
                 <th class="text-center"><?php echo $this->translate('Channel');?></th>
                 <th class="text-center"><?php echo $this->translate('Extension Group');?></th>
+                <th class="text-center"><?php echo $this->translate('Status');?></th>
                 <th class="text-center"><?php echo $this->translate('Actions');?></th>
               </tr>
             </thead>  
@@ -42,6 +43,23 @@
                   </td>
                   <td class="text-center"> <?php echo $val['channel'] ?> </td>
                   <td class="text-center"> <?php echo $val['groups'] ?> </td>
+                  <?php // TASK-0029B: PJSIP runtime status -- see
+                        // Snep_PjsipStatus_Manager. Legacy chan_sip/IAX
+                        // extensions get no runtime_status (null); shown
+                        // as a plain dash, not a fabricated state. ?>
+                  <td class="text-center" data-runtime-status="<?php echo $val['runtime_status'] ? $this->escape($val['runtime_status']['state']) : ''; ?>">
+                    <?php if ($val['runtime_status'] === null): ?>
+                      <span class="text-muted">&mdash;</span>
+                    <?php else:
+                      $st = $val['runtime_status'];
+                      $badgeClass = array('ACTIVE' => 'label-success', 'PENDING' => 'label-warning', 'DEGRADED' => 'label-warning', 'INACTIVE' => 'label-default', 'DISABLED' => 'label-default', 'ERROR' => 'label-danger', 'UNKNOWN' => 'label-default');
+                      $stateText = array('ACTIVE' => 'Active', 'PENDING' => 'Pending', 'DEGRADED' => 'Degraded', 'INACTIVE' => 'Inactive', 'DISABLED' => 'Disabled', 'ERROR' => 'Error', 'UNKNOWN' => 'Unknown');
+                      $cls = isset($badgeClass[$st['state']]) ? $badgeClass[$st['state']] : 'label-default';
+                      $txt = isset($stateText[$st['state']]) ? $stateText[$st['state']] : $st['state'];
+                    ?>
+                      <span class="label <?php echo $cls; ?>" title="<?php echo $this->escape($st['detail']); ?>"><?php echo $this->translate($txt); ?></span>
+                    <?php endif; ?>
+                  </td>
                   <td class="text-center">
                     <a class="btn btn-edit btn-sm" href='<?php echo $this->url ?>/edit/id/<?php echo $val['exten'] ?>' role="button"><?php echo $this->translate('Edit')?></a>
                     <a class="btn btn-danger btn-sm"  href='<?php echo $this->url ?>/remove/id/<?php echo $val['exten'] ?>'><?php echo $this->translate('Delete')?></a>
