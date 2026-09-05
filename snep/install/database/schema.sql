@@ -191,6 +191,24 @@ CREATE TABLE IF NOT EXISTS `pjsip_transports` (
   `is_default` BOOLEAN NOT NULL default false,
   `enabled` BOOLEAN NOT NULL default true,
   `is_seed` BOOLEAN NOT NULL default false,
+  -- TASK-0029A: TLS/WSS certificate reference fields, anticipated (but
+  -- deliberately not added) by TASK-0018 -- see
+  -- docs/tasks/0018-pjsip-transports.md §1's own "trivial ALTER TABLE
+  -- for whichever future task implements real TLS/WSS behavior" note.
+  -- Filesystem PATH REFERENCES only (Model B: externally-managed
+  -- certificate paths) -- SENMA never stores certificate/private key
+  -- BYTES in the database. Narrower than TASK-0017 §2's original
+  -- speculative field list (`ca_list_path`, `require_client_cert`, and
+  -- a repeatable `cipher` child table were all considered and
+  -- deliberately dropped -- see
+  -- docs/tasks/0029a-tls-transport-certificate-management.md's DATA
+  -- MODEL section for why each one was cut).
+  `cert_file` varchar(255) default NULL,
+  `priv_key_file` varchar(255) default NULL,
+  `ca_list_file` varchar(255) default NULL,
+  `verify_client` BOOLEAN NOT NULL default false,
+  `verify_server` BOOLEAN NOT NULL default false,
+  `method` varchar(20) default NULL,
   `created_at` timestamp NOT NULL default CURRENT_TIMESTAMP,
   `updated_at` timestamp NOT NULL default CURRENT_TIMESTAMP on update CURRENT_TIMESTAMP,
   PRIMARY KEY (`id`),

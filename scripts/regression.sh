@@ -157,6 +157,10 @@ run_suite "pjsip-lifecycle-smoke"  "pjsip-lifecycle-smoke-test.sh"
 # the task); running suites strictly serially (this file's own header
 # comment) is exactly what makes that safe here.
 run_suite "wss-platform-smoke"     "wss-platform-smoke-test.sh"
+# TASK-0029A: TLS/WSS certificate management -- placed right after
+# wss-platform-smoke (the closest-related existing suite: both restart
+# the asterisk container) and before transport-smoke.
+run_suite "tls-cert-management-smoke" "tls-cert-management-smoke-test.sh"
 run_suite "transport-smoke"        "transport-smoke-test.sh"
 run_suite "dialplan-legacy-closure" "dialplan-legacy-closure-smoke-test.sh"
 run_suite "restart-smoke"          "restart-smoke-test.sh"

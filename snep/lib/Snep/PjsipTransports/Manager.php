@@ -27,6 +27,24 @@ class Snep_PjsipTransports_Manager {
 
     public static $protocols = array('udp', 'tcp', 'tls', 'wss', 'ws');
 
+    // TASK-0029A: which protocols the cert_file/priv_key_file/
+    // ca_list_file/verify_client/verify_server/method columns apply to
+    // at all. `udp`/`tcp` carry no TLS concept -- these fields must be
+    // empty for them (validatePost() rejects otherwise, matching this
+    // project's "explicit failure over silent ignore" rule rather than
+    // silently dropping user input).
+    public static $tlsCapableProtocols = array('tls', 'wss', 'ws');
+
+    // Modern, secure-by-default choices only -- deliberately narrower
+    // than pjproject's full accepted `method` value set (sslv2, sslv3,
+    // tlsv1, tlsv1_1 all excluded: this product does not support
+    // configuring a known-insecure TLS version). '' means "let
+    // Asterisk/pjproject pick" (pjsip show transport's own "unspecified"
+    // default) -- see docs/tasks/0029a-tls-transport-certificate-management.md's
+    // RUNTIME APPLY section for why 'tlsv1_2' is the recommended
+    // explicit default rather than leaving this blank.
+    public static $tlsMethods = array('', 'tlsv1_2', 'tlsv1_3');
+
     /**
      * getAll - every transport, with its usage count.
      */
@@ -404,6 +422,249 @@ class Snep_PjsipTransports_Manager {
         $prefix = (int) $prefix;
         $max = filter_var($address, FILTER_VALIDATE_IP, FILTER_FLAG_IPV4) ? 32 : 128;
         return $prefix >= 0 && $prefix <= $max;
+    }
+
+    /**
+     * validateCertPath - TASK-0029A. This is a Model B (externally-
+     * managed certificate paths) field: an absolute, in-CONTAINER
+     * filesystem path an admin has already placed real certificate/key
+     * material at (see docs/tasks/0029a-tls-transport-certificate-management.md
+     * CONFIG OWNERSHIP) -- never PEM content pasted into the form. Only
+     * validates syntax (absolute, no NUL bytes, reasonable length); real
+     * filesystem existence/readability is checked separately by
+     * inspectCertificateFile()/keyFileExists() since that needs a
+     * filesystem call, not a pure string check.
+     */
+    public static function validateCertPath($path) {
+        if ($path === '' || $path === null) {
+            return true; // optional field
+        }
+        if (!is_string($path) || strlen($path) > 255 || strpos($path, "\0") !== false) {
+            return false;
+        }
+        return $path[0] === '/';
+    }
+
+    public static function validateMethod($method) {
+        return in_array((string) $method, self::$tlsMethods, true);
+    }
+
+    /**
+     * inspectCertificateFile - TASK-0029A Phase 8 validation: does this
+     * path exist, is it readable, does it parse as a real X.509 PEM
+     * certificate? Certificate files are deliberately world-readable
+     * (0644, see docker/asterisk-entrypoint.sh) -- a public certificate
+     * is meant to be handed to every TLS client anyway -- so the app
+     * container (a different UID than the asterisk container's own
+     * asterisk user) can always read and parse it here. This is the
+     * ONLY half of the cert/key pair SENMA validates directly; see
+     * keyFileExists()'s own docblock for why the private key half
+     * cannot be (and must not be) parsed the same way.
+     *
+     * @param string $path absolute in-container path
+     * @return array('exists' => bool, 'readable' => bool, 'valid' => bool,
+     *               'subject' => string|null, 'not_after' => string|null,
+     *               'error' => string|null)
+     */
+    public static function inspectCertificateFile($path) {
+        $result = array('exists' => false, 'readable' => false, 'valid' => false,
+            'subject' => null, 'not_after' => null, 'error' => null);
+        if ($path === '' || $path === null) {
+            $result['error'] = 'empty path';
+            return $result;
+        }
+        if (!file_exists($path)) {
+            $result['error'] = 'file does not exist';
+            return $result;
+        }
+        $result['exists'] = true;
+        if (!is_readable($path)) {
+            $result['error'] = 'file exists but is not readable by the web application process';
+            return $result;
+        }
+        $result['readable'] = true;
+        $pem = file_get_contents($path);
+        $cert = $pem !== false ? @openssl_x509_read($pem) : false;
+        if ($cert === false) {
+            $result['error'] = 'file is not a valid PEM X.509 certificate';
+            return $result;
+        }
+        $parsed = openssl_x509_parse($cert);
+        if ($parsed === false) {
+            $result['error'] = 'certificate could not be parsed';
+            return $result;
+        }
+        $result['valid'] = true;
+        $result['subject'] = isset($parsed['name']) ? $parsed['name'] : null;
+        $result['not_after'] = isset($parsed['validTo_time_t']) ? date('Y-m-d H:i:s', $parsed['validTo_time_t']) : null;
+        return $result;
+    }
+
+    /**
+     * keyFileExists - TASK-0029A. Deliberately existence-only, NOT
+     * content validation. The private key file is 0600, owned by the
+     * asterisk container's own `asterisk` user (docker/asterisk-entrypoint.sh)
+     * -- the app container's www-data user (a DIFFERENT uid, even though
+     * both share the senma-config GROUP for unrelated, non-secret files)
+     * cannot and must not read its bytes. `file_exists()` only needs
+     * directory-traversal (execute) permission on parent directories,
+     * which it always has, so this can still catch the single most
+     * common real mistake (typo'd/wrong path) without ever touching key
+     * material. Whether the key is valid/matches its certificate is
+     * proven by Asterisk's own runtime apply instead -- see
+     * docs/tasks/0029a-tls-transport-certificate-management.md's
+     * VALIDATION and RUNTIME APPLY sections for why this split is the
+     * deliberate, secure design, not a shortcut.
+     *
+     * @return array('exists' => bool, 'mode_warning' => string|null)
+     */
+    public static function keyFileExists($path) {
+        $result = array('exists' => false, 'mode_warning' => null);
+        if ($path === '' || $path === null || !file_exists($path)) {
+            return $result;
+        }
+        $result['exists'] = true;
+        $perms = @fileperms($path);
+        if ($perms !== false && ($perms & 0077) !== 0) {
+            // Readable/writable by group and/or other -- stat() alone
+            // (no read access needed) is enough to see this. Advisory
+            // only: never block a save over it, an admin fixing urgent
+            // TLS connectivity should not be locked out by a permission
+            // warning, but they must be told.
+            $result['mode_warning'] = sprintf('private key file mode is %o (expected 0600 -- readable by more than its owner)', $perms & 0777);
+        }
+        return $result;
+    }
+
+    /**
+     * findActiveWssCertConflict - TASK-0029A. Asterisk's built-in HTTP
+     * server has exactly ONE TLS listener (http.conf's global
+     * tlscertfile/tlsprivatekey) -- there is no per-PJSIP-transport TLS
+     * context for ws/wss (confirmed live: setting cert_file/priv_key_file
+     * directly on a protocol=wss transport object is silently ignored by
+     * Asterisk's res_pjsip_transport_websocket, see
+     * docs/tasks/0029a-tls-transport-certificate-management.md FINDINGS).
+     * So at most ONE enabled ws/wss row may carry certificate material at
+     * any time -- a second, different one would silently overwrite the
+     * first's certificate in the generated http.conf-level config with
+     * no indication anything is wrong. Checked BEFORE save, same
+     * "explicit failure over silently broken" principle
+     * findCollision() already applies to bind-address collisions.
+     *
+     * @param string   $certFile   the value being saved (already
+     *                 validated non-empty by the caller)
+     * @param int|null $excludeId  the row being saved, excluded from
+     *                 the comparison
+     * @return array|false the conflicting row, or false if none
+     */
+    public static function findActiveWssCertConflict($certFile, $excludeId = null) {
+        $db = Zend_Registry::get('db');
+        $select = $db->select()->from('pjsip_transports')
+            ->where('protocol IN (?)', array('wss', 'ws'))
+            ->where('enabled = 1')
+            ->where("cert_file IS NOT NULL AND cert_file != ''")
+            ->where('cert_file != ?', $certFile);
+        if ($excludeId !== null && $excludeId !== '') {
+            $select->where('id != ?', (int) $excludeId);
+        }
+        return $db->query($select)->fetch();
+    }
+
+    /**
+     * verifyTlsHandshake - TASK-0029A Phase 9/12: `pjsip show transport
+     * <name>` reporting a bind address is proof the OBJECT loaded, not
+     * proof its TLS context actually works -- confirmed live: a
+     * transport with a broken/mismatched cert_file/priv_key_file still
+     * showed up fully "loaded" via that CLI command while a real TLS
+     * client got a protocol-level handshake failure (see
+     * docs/tasks/0029a-tls-transport-certificate-management.md
+     * FINDINGS). This performs one real TLS connection (from the app
+     * container, over the shared Docker network) and compares the
+     * certificate Asterisk actually PRESENTS against the one this
+     * transport is configured to use -- the same "ask the runtime
+     * directly, never trust a config-accepted response" principle
+     * isRuntimeActive() already applies, one layer deeper.
+     *
+     * A bind_address of 127.0.0.1 is intentionally unreachable from the
+     * app container's own network namespace by design (this project's
+     * plain HTTP/WS listener -- docs/tasks/0028z-wss-asterisk-http-enablement.md
+     * SECURITY BOUNDARY); that specific, expected case is reported as
+     * 'skipped', not 'failed'.
+     *
+     * @param string $bindAddress the transport's configured bind_address
+     * @param int    $bindPort
+     * @param string $expectedCertFile absolute in-container path to the
+     *               certificate this transport is configured to present
+     * @return array('status' => 'match'|'mismatch'|'unreachable'|'skipped',
+     *               'detail' => string)
+     */
+    public static function verifyTlsHandshake($bindAddress, $bindPort, $expectedCertFile) {
+        if ($bindAddress === '127.0.0.1') {
+            return array('status' => 'skipped', 'detail' => 'bind address is loopback-only by design, not reachable from the application container');
+        }
+        $expected = @file_get_contents($expectedCertFile);
+        if ($expected === false) {
+            return array('status' => 'unreachable', 'detail' => 'expected certificate file could not be read for comparison');
+        }
+        $expectedParsed = openssl_x509_parse($expected);
+        if ($expectedParsed === false) {
+            return array('status' => 'unreachable', 'detail' => 'expected certificate file did not parse');
+        }
+
+        // Connect via the Docker Compose service DNS name, never a raw
+        // container IP (project convention, see docker-platform-engineer
+        // skill guidance) -- correct for any bind_address that includes
+        // the docker-network-facing interface (0.0.0.0 or that interface's
+        // own address), which is the only realistic production case.
+        $context = stream_context_create(array('ssl' => array(
+            'verify_peer' => false,
+            'verify_peer_name' => false,
+            'capture_peer_cert' => true,
+        )));
+        $client = @stream_socket_client(
+            "ssl://asterisk:" . (int) $bindPort, $errno, $errstr, 5,
+            STREAM_CLIENT_CONNECT, $context
+        );
+        if (!$client) {
+            return array('status' => 'unreachable', 'detail' => "TLS connection to asterisk:$bindPort failed: $errstr");
+        }
+        $params = stream_context_get_params($client);
+        fclose($client);
+        if (!isset($params['options']['ssl']['peer_certificate'])) {
+            return array('status' => 'unreachable', 'detail' => 'connected, but no certificate was presented');
+        }
+        $presentedParsed = openssl_x509_parse($params['options']['ssl']['peer_certificate']);
+
+        if ($presentedParsed !== false
+            && isset($presentedParsed['serialNumber'], $expectedParsed['serialNumber'])
+            && $presentedParsed['serialNumber'] === $expectedParsed['serialNumber']
+            && $presentedParsed['name'] === $expectedParsed['name']) {
+            return array('status' => 'match', 'detail' => "presented certificate matches (subject: {$presentedParsed['name']})");
+        }
+        $presentedName = $presentedParsed !== false ? $presentedParsed['name'] : 'unparseable';
+        return array('status' => 'mismatch', 'detail' => "expected {$expectedParsed['name']}, Asterisk presented $presentedName");
+    }
+
+    /**
+     * getActiveWssCertTransport - TASK-0029A. The one enabled ws/wss
+     * transport (if any) whose certificate should currently drive
+     * http.conf's global TLS block. Guaranteed unique by
+     * findActiveWssCertConflict() being enforced at save time; `id ASC
+     * LIMIT 1` is just a deterministic tie-breaker, never expected to
+     * matter in practice.
+     *
+     * @return array|false
+     */
+    public static function getActiveWssCertTransport() {
+        $db = Zend_Registry::get('db');
+        $select = $db->select()->from('pjsip_transports')
+            ->where('protocol IN (?)', array('wss', 'ws'))
+            ->where('enabled = 1')
+            ->where("cert_file IS NOT NULL AND cert_file != ''")
+            ->where("priv_key_file IS NOT NULL AND priv_key_file != ''")
+            ->order('id ASC')
+            ->limit(1);
+        return $db->query($select)->fetch();
     }
 
 }

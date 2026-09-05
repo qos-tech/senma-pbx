@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -207,6 +207,14 @@ pjsip-lifecycle-smoke: up
 # stateful suites, same as every other suite in this list.
 wss-platform-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/wss-platform-smoke-test.sh
+
+# TASK-0029A: TLS/WSS transport certificate management -- validation,
+# generated-config correctness, live TLS handshake/fingerprint proof,
+# rotation, mismatched cert/key runtime-apply failure behavior, and
+# restart persistence. Restarts the asterisk container (same "run in
+# isolation" reasoning as wss-platform-smoke above).
+tls-cert-management-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/tls-cert-management-smoke-test.sh
 
 # TASK-0028C: proves the reachable SIP/IAX-era dialplan/config constructs
 # closed by that task stay closed (context bleed, SIPAddHeader, callback

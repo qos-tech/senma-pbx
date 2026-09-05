@@ -134,6 +134,12 @@ class PjsipTransportsController extends Zend_Controller_Action {
             'allow_reload' => 1,
             'is_default' => 0,
             'enabled' => 1,
+            'cert_file' => '',
+            'priv_key_file' => '',
+            'ca_list_file' => '',
+            'verify_client' => 0,
+            'verify_server' => 0,
+            'method' => '',
         );
         $this->view->networksText = '';
 
@@ -181,6 +187,15 @@ class PjsipTransportsController extends Zend_Controller_Action {
         $this->view->transport = $transport;
         $this->view->networksText = implode("\n", Snep_PjsipTransports_Manager::getNetworks($id));
         $this->view->usageCount = Snep_PjsipTransports_Manager::getUsageCount($id);
+        // TASK-0029A: shown read-only next to the cert_file field so an
+        // admin can see subject/expiry of whatever is CURRENTLY
+        // configured without needing shell access to the container.
+        $this->view->certInspection = !empty($transport['cert_file'])
+            ? Snep_PjsipTransports_Manager::inspectCertificateFile($transport['cert_file'])
+            : null;
+        $this->view->keyCheck = !empty($transport['priv_key_file'])
+            ? Snep_PjsipTransports_Manager::keyFileExists($transport['priv_key_file'])
+            : null;
 
         if ($this->getRequest()->isPost()) {
             $error = $this->validatePost($_POST, $id);
@@ -324,12 +339,63 @@ class PjsipTransportsController extends Zend_Controller_Action {
         // TASK-0020 item 4: never trust HTTP 302 / config generation /
         // AMI command submission / "reloaded successfully" as proof of
         // anything -- ask Asterisk directly, by name.
-        if (Snep_PjsipTransportConf::isRuntimeActive($after['name'], $after['bind_address'], $after['bind_port'])) {
-            return; // ACTIVE -- matches the existing, already-correct silent-redirect behavior
+        if (!Snep_PjsipTransportConf::isRuntimeActive($after['name'], $after['bind_address'], $after['bind_port'])) {
+            $flash->setNamespace('apply_failed');
+            $flash->addMessage($this->view->translate("Configuration saved, but Asterisk could not apply it (the address/port may already be in use by another transport). The previous configuration may still be active."));
+            return;
         }
 
-        $flash->setNamespace('apply_failed');
-        $flash->addMessage($this->view->translate("Configuration saved, but Asterisk could not apply it (the address/port may already be in use by another transport). The previous configuration may still be active."));
+        // TASK-0029A: the object loading is NOT proof its TLS context is
+        // sound -- confirmed live, a transport with a broken cert/key
+        // pair still shows fully "loaded" via the check above while a
+        // real TLS client gets a handshake failure. Only meaningful for
+        // a transport that is actually supposed to be presenting a
+        // certificate right now.
+        if ($after['protocol'] === 'tls' && !empty($after['cert_file'])) {
+            $tls = Snep_PjsipTransports_Manager::verifyTlsHandshake($after['bind_address'], $after['bind_port'], $after['cert_file']);
+            // 'unreachable' (not just 'mismatch') must also surface --
+            // confirmed live: changing an EXISTING tls transport's
+            // cert/key in place on an already-bound address:port (as
+            // opposed to a brand-new bind) can leave Asterisk's TLS
+            // context unable to complete ANY handshake at all (a
+            // connection-level failure, not a wrong-but-valid
+            // certificate) -- see docs/tasks/0029a-tls-transport-certificate-management.md
+            // FINDINGS/ROTATION. 'skipped' (loopback-only bind) is the
+            // one deliberate non-failure case.
+            if ($tls['status'] === 'mismatch' || $tls['status'] === 'unreachable') {
+                $flash->setNamespace('apply_failed');
+                $flash->addMessage($this->view->translate("Configuration saved and the transport object loaded, but its live TLS certificate could not be confirmed: %s. If this transport already existed on the same address/port, an Asterisk restart is required for a certificate change to apply safely -- see docs/tasks/0029a-tls-transport-certificate-management.md.", $tls['detail']));
+            }
+            return;
+        }
+
+        if (in_array($after['protocol'], array('wss', 'ws'), true) && !empty($after['cert_file'])) {
+            // The PJSIP transport object never carries the real TLS
+            // context for ws/wss (see writeHttpTlsConf()'s docblock) --
+            // verify against http.conf's own listener instead.
+            $httpStatus = $this->httpShowStatus();
+            if (stripos($httpStatus, 'HTTPS Server Enabled') === false) {
+                $flash->setNamespace('apply_failed');
+                $flash->addMessage($this->view->translate("Configuration saved, but Asterisk's HTTP/WSS TLS listener did not come up. Check the certificate/private key paths."));
+                return;
+            }
+            $tls = Snep_PjsipTransports_Manager::verifyTlsHandshake($after['bind_address'], $after['bind_port'], $after['cert_file']);
+            if ($tls['status'] === 'mismatch' || $tls['status'] === 'unreachable') {
+                $flash->setNamespace('apply_failed');
+                $flash->addMessage($this->view->translate("Configuration saved, but the live WSS certificate could not be confirmed: %s.", $tls['detail']));
+            }
+        }
+    }
+
+    /**
+     * httpShowStatus - TASK-0029A: thin AMI wrapper, same pattern as
+     * every other direct Asterisk CLI query already used throughout this
+     * controller's runtime-verification helpers.
+     */
+    protected function httpShowStatus() {
+        $asteriskAmi = PBX_Asterisk_AMI::getInstance();
+        $result = $asteriskAmi->Command('http show status');
+        return isset($result['data']) ? $result['data'] : '';
     }
 
     /**
@@ -388,6 +454,98 @@ class PjsipTransportsController extends Zend_Controller_Action {
                 return $this->view->translate("Invalid local network: %s", htmlspecialchars($network, ENT_QUOTES));
             }
         }
+
+        return $this->validateTlsFields($post, $editingId);
+    }
+
+    /**
+     * validateTlsFields - TASK-0029A. Model B (externally-managed
+     * certificate paths): these fields are absolute in-container
+     * filesystem paths an admin has already placed real material at
+     * (docs/tasks/0029a-tls-transport-certificate-management.md
+     * CONFIG OWNERSHIP), never raw PEM content -- there is no upload
+     * here by design.
+     */
+    protected function validateTlsFields(array $post, $editingId = null) {
+        $protocol = $post['protocol'];
+        $certFile = trim((string) $post['cert_file']);
+        $privKeyFile = trim((string) $post['priv_key_file']);
+        $caListFile = trim((string) $post['ca_list_file']);
+        $verifyClient = !empty($post['verify_client']);
+        $verifyServer = !empty($post['verify_server']);
+        $method = trim((string) $post['method']);
+
+        $tlsFieldsSet = ($certFile !== '' || $privKeyFile !== '' || $caListFile !== ''
+            || $verifyClient || $verifyServer || $method !== '');
+
+        // udp/tcp have no TLS concept at all -- reject rather than
+        // silently drop (this project's "explicit failure over silent
+        // ignore" rule; Snep_PjsipTransportConf never emits these
+        // fields for udp/tcp, so silently accepting them here would
+        // save a value the generator then always ignores).
+        if (!in_array($protocol, Snep_PjsipTransports_Manager::$tlsCapableProtocols, true)) {
+            if ($tlsFieldsSet) {
+                return $this->view->translate("Certificate/TLS fields only apply to TLS-capable protocols (TLS, WSS, WS). Clear them, or choose a TLS-capable protocol.");
+            }
+            return null;
+        }
+
+        foreach (array('cert_file' => $certFile, 'priv_key_file' => $privKeyFile, 'ca_list_file' => $caListFile) as $label => $value) {
+            if (!Snep_PjsipTransports_Manager::validateCertPath($value)) {
+                return $this->view->translate("%s must be an absolute path.", $label);
+            }
+        }
+        if (!Snep_PjsipTransports_Manager::validateMethod($method)) {
+            return $this->view->translate("Invalid TLS method.");
+        }
+        if (($verifyClient || $verifyServer) && $caListFile === '') {
+            return $this->view->translate("A CA bundle file is required to verify client or server certificates.");
+        }
+
+        // protocol=tls: Asterisk's native PJSIP TLS transport genuinely
+        // needs both to load at all (confirmed live) -- required
+        // whenever the transport is being saved enabled, matching the
+        // "a UI-exposed + persisted control must be functionally
+        // represented in runtime, never silently inert" architecture
+        // rule.
+        if ($protocol === 'tls' && !empty($post['enabled'])) {
+            if ($certFile === '' || $privKeyFile === '') {
+                return $this->view->translate("Certificate file and private key file are both required for a TLS transport.");
+            }
+        }
+
+        // wss/ws: cert_file/priv_key_file are optional (an admin may
+        // leave WSS without a certificate, which simply keeps it
+        // inert -- see writeHttpTlsConf()), but if EITHER is set, BOTH
+        // must be, and Asterisk's built-in HTTP server allows only one
+        // active TLS identity process-wide.
+        if (in_array($protocol, array('wss', 'ws'), true)) {
+            if (($certFile !== '') !== ($privKeyFile !== '')) {
+                return $this->view->translate("Certificate file and private key file must both be set, or both left empty.");
+            }
+            if ($certFile !== '' && !empty($post['enabled'])) {
+                $conflict = Snep_PjsipTransports_Manager::findActiveWssCertConflict($certFile, $editingId);
+                if ($conflict) {
+                    return $this->view->translate("Transport '%s' already provides the active WSS/WS certificate. Asterisk's built-in HTTP server supports only one at a time -- disable or align it first.", $conflict['name']);
+                }
+            }
+        }
+
+        if ($certFile !== '') {
+            $inspection = Snep_PjsipTransports_Manager::inspectCertificateFile($certFile);
+            if (!$inspection['valid']) {
+                return $this->view->translate("Certificate file problem: %s", $inspection['error']);
+            }
+        }
+        if ($privKeyFile !== '') {
+            $keyCheck = Snep_PjsipTransports_Manager::keyFileExists($privKeyFile);
+            if (!$keyCheck['exists']) {
+                return $this->view->translate("Private key file does not exist at the given path (checked from inside the application container).");
+            }
+            // mode_warning is advisory-only (see keyFileExists()'s own
+            // docblock) -- never rejected here.
+        }
+
         return null;
     }
 
@@ -412,6 +570,15 @@ class PjsipTransportsController extends Zend_Controller_Action {
             'allow_reload' => isset($post['allow_reload']) ? 1 : 0,
             'is_default' => isset($post['is_default']) ? 1 : 0,
             'enabled' => isset($post['enabled']) ? 1 : 0,
+            // TASK-0029A: validateTlsFields() has already rejected these
+            // for udp/tcp, so a non-empty value here only ever reaches a
+            // TLS-capable protocol row.
+            'cert_file' => trim((string) $post['cert_file']) !== '' ? trim($post['cert_file']) : null,
+            'priv_key_file' => trim((string) $post['priv_key_file']) !== '' ? trim($post['priv_key_file']) : null,
+            'ca_list_file' => trim((string) $post['ca_list_file']) !== '' ? trim($post['ca_list_file']) : null,
+            'verify_client' => isset($post['verify_client']) ? 1 : 0,
+            'verify_server' => isset($post['verify_server']) ? 1 : 0,
+            'method' => trim((string) $post['method']) !== '' ? trim($post['method']) : null,
         );
     }
 

@@ -180,6 +180,13 @@ if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
     touch "$ASTERISK_ETC/snep/senma-pjsip-transports.conf"
     chmod 664 "$ASTERISK_ETC/snep/senma-pjsip-transports.conf"
 
+    # TASK-0029A: Snep_PjsipTransportConf::writeHttpTlsConf() writes
+    # here -- same pre-create-and-chmod reasoning as senma-pjsip.conf
+    # above. #include'd from docker/asterisk-config/http.conf's
+    # [general] section.
+    touch "$ASTERISK_ETC/snep/senma-http-tls.conf"
+    chmod 664 "$ASTERISK_ETC/snep/senma-http-tls.conf"
+
     : "${AMI_USER:?AMI_USER must be set}"
     : "${AMI_PASSWORD:?AMI_PASSWORD must be set}"
     : "${ASTERISK_AMI_ACL_SUBNET:?ASTERISK_AMI_ACL_SUBNET must be set}"
