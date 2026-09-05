@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -187,6 +187,17 @@ pjsip-external-trunk-smoke: up
 
 transport-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/transport-smoke-test.sh
+
+# TASK-0028Y: registrationless PJSIP trunk (reverse_auth=0), qualify
+# "specify"/NAT auto_* runtime proof, trunk update (reverse_auth),
+# extension update beyond transport_id, and full delete-cleanup proof
+# (generated config + live Asterisk + DB, not just HTTP 302) for both
+# trunk and extension. See
+# docs/tasks/0028y-pjsip-parameter-regression-closure.md. Deliberately
+# separate from trunk-smoke/call-smoke -- a different fixture profile
+# (no live call, no baresip/provider dependency).
+pjsip-lifecycle-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/pjsip-lifecycle-smoke-test.sh
 
 # TASK-0028C: proves the reachable SIP/IAX-era dialplan/config constructs
 # closed by that task stay closed (context bleed, SIPAddHeader, callback

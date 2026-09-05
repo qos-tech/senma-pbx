@@ -146,6 +146,11 @@ run_suite "trunk-smoke"            "trunk-smoke-test.sh"
 # after trunk-smoke (native registered PJSIP trunk, both directions),
 # the closest-related existing suite, and before transport-smoke.
 run_suite "pjsip-external-trunk-smoke" "pjsip-external-trunk-smoke-test.sh"
+# TASK-0028Y: registrationless trunk lifecycle, qualify/NAT auto_*
+# runtime proof, extension update-beyond-transport_id, and delete-
+# cleanup proof for both trunk and extension -- placed right after the
+# other trunk suites, before transport-smoke.
+run_suite "pjsip-lifecycle-smoke"  "pjsip-lifecycle-smoke-test.sh"
 run_suite "transport-smoke"        "transport-smoke-test.sh"
 run_suite "dialplan-legacy-closure" "dialplan-legacy-closure-smoke-test.sh"
 run_suite "restart-smoke"          "restart-smoke-test.sh"

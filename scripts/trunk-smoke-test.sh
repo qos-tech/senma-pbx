@@ -400,6 +400,19 @@ else
     harness_bad "generated endpoint/auth/aor/registration sections exist" "expected sections not found in senma-pjsip-trunks.conf"
 fi
 
+# TASK-0028Y (confirmed gap #1, PJSIP Completeness Architecture Review
+# TASK-0028W): this fixture already posts qualify=yes -- previously
+# Snep_PjsipTrunkConf::renderTrunk() never consumed peers.qualify at
+# all, so no qualify_frequency= line was ever emitted here regardless.
+# The "specify" (custom-ms) case is covered separately by
+# pjsip-lifecycle-smoke-test.sh; this is the plain "yes" case, on the
+# same fixture the rest of this suite already exercises end to end.
+if echo "$GENERATED_CONF" | grep -q "^qualify_frequency=60$"; then
+    harness_ok "generated qualify_frequency (trunk, qualify=yes)" "aor stanza has qualify_frequency=60 (TASK-0028Y gap #1)"
+else
+    harness_bad "generated qualify_frequency (trunk, qualify=yes)" "expected qualify_frequency=60 not found in senma-pjsip-trunks.conf"
+fi
+
 # TASK-0027 finding: see call-smoke-test.sh's identical comment -- a
 # PJSIP reload is not atomic from a freshly-spawned `docker compose
 # exec`'s perspective; bounded retry, not a weakened assertion.
@@ -408,6 +421,12 @@ if harness_retry 5 1 -- trunk_endpoint_visible; then
     harness_ok "pjsip show endpoint ${TRUNK_OBJ}" "endpoint exists in the live Asterisk PJSIP config (reload succeeded)"
 else
     harness_bad "pjsip show endpoint ${TRUNK_OBJ}" "endpoint not found after 5 attempts over ~4s -- reload may have failed"
+fi
+
+if $COMPOSE exec -T asterisk asterisk -rx "pjsip show aor ${TRUNK_OBJ}" 2>&1 | grep -qE 'qualify_frequency[[:space:]]*:[[:space:]]*60$'; then
+    harness_ok "live qualify_frequency (trunk, qualify=yes)" "pjsip show aor ${TRUNK_OBJ}: qualify_frequency=60"
+else
+    harness_bad "live qualify_frequency (trunk, qualify=yes)" "expected qualify_frequency=60 not found in live aor detail"
 fi
 
 if [ "$_HARNESS_FAIL_COUNT" -gt 0 ]; then
