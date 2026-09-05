@@ -165,6 +165,11 @@ run_suite "tls-cert-management-smoke" "tls-cert-management-smoke-test.sh"
 # tls-cert-management-smoke (the closest-related existing suite) and
 # before transport-smoke.
 run_suite "pjsip-runtime-status-smoke" "pjsip-runtime-status-smoke-test.sh"
+# TASK-0031: Extensions + Trunks administration experience -- placed
+# right after pjsip-runtime-status-smoke (the closest-related existing
+# suite: both exercise ExtensionsController/TrunksController's real add/
+# edit/delete flows) and before transport-smoke.
+run_suite "extensions-trunks-admin-experience-smoke" "extensions-trunks-admin-experience-smoke-test.sh"
 run_suite "transport-smoke"        "transport-smoke-test.sh"
 run_suite "dialplan-legacy-closure" "dialplan-legacy-closure-smoke-test.sh"
 run_suite "restart-smoke"          "restart-smoke-test.sh"

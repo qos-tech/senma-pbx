@@ -334,6 +334,55 @@ class Snep_PjsipStatus_Manager {
     }
 
     // =========================================================================
+    // Save/apply feedback (TASK-0031)
+    // =========================================================================
+
+    /**
+     * checkApplyResult - after ExtensionsController/TrunksController
+     * regenerate+reload PJSIP config for a single just-saved endpoint,
+     * confirm whether it actually loaded (and, for a registered trunk,
+     * whether its registration object exists) -- reusing this class's own
+     * bulk parsers rather than duplicating CLI-parsing regex in two
+     * controllers. This is one extra pair of AMI calls per user-initiated
+     * save action (not a list page), so the bulk-call performance
+     * discipline elsewhere in this class does not apply here.
+     *
+     * Never a bare true/false: 'endpoint_found' is null when the runtime
+     * could not be observed at all (AMI down) -- callers must render that
+     * as SAVED_PENDING, never as a false RUNTIME_APPLY_FAILED (TASK-0029B's
+     * same UNKNOWN-is-not-a-failure discipline applies to a single save's
+     * apply-check exactly as it does to the list-page status columns).
+     *
+     * @param string      $endpointObjectName
+     * @param string|null $registrationObjectName pass null for a
+     *                    non-registered endpoint (extension or
+     *                    registrationless trunk) -- only a registered
+     *                    trunk has a registration object at all.
+     * @return array('endpoint_found' => bool|null, 'registration_state' => string|null)
+     */
+    public static function checkApplyResult($endpointObjectName, $registrationObjectName = null) {
+        $endpointFound = null;
+        $raw = self::amiCommand('pjsip show endpoint ' . $endpointObjectName);
+        if ($raw !== null) {
+            $endpoints = self::parseEndpoints($raw);
+            $endpointFound = isset($endpoints[$endpointObjectName]);
+        }
+
+        $registrationState = null;
+        if ($registrationObjectName !== null) {
+            $regRaw = self::amiCommand('pjsip show registrations outbound');
+            if ($regRaw !== null) {
+                $registrations = self::parseRegistrations($regRaw);
+                $registrationState = isset($registrations[$registrationObjectName])
+                    ? $registrations[$registrationObjectName]['state']
+                    : 'NotFound';
+            }
+        }
+
+        return array('endpoint_found' => $endpointFound, 'registration_state' => $registrationState);
+    }
+
+    // =========================================================================
     // Raw CLI parsing -- isolated here, never leaked to a controller/view
     // =========================================================================
 

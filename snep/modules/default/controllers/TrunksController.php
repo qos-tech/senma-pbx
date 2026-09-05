@@ -165,6 +165,15 @@ class TrunksController extends Zend_Controller_Action {
 
     $this->view->trunks = $trunks;
 
+    // TASK-0031 (Phase 10): surface whatever the last add/edit
+    // determined via reportTrunkSaveResult() -- same FlashMessenger
+    // convention PjsipTransportsController/ExtensionsController already
+    // use (TASK-0020/0031).
+    $flash = $this->_helper->FlashMessenger;
+    $this->view->saved_active_messages = $flash->getMessages('saved_active');
+    $this->view->saved_pending_messages = $flash->getMessages('saved_pending');
+    $this->view->apply_failed_messages = $flash->getMessages('apply_failed');
+
   }
 
   /**
@@ -196,6 +205,14 @@ class TrunksController extends Zend_Controller_Action {
     $this->view->nat_no = 'checked';
 
     $this->view->type_friend = 'checked';
+
+    // TASK-0031 (Phase 6): "Provider with registration" is the single
+    // most common real-world trunk model -- a safe, predictable default
+    // for the new Connection Type chooser (Phase 6's own "safe defaults"
+    // requirement), rather than leaving the group with nothing selected.
+    $this->view->connectionType = 'registered';
+    $this->view->reverse_auth = 'checked';
+    $this->view->qualify_yes = 'checked';
 
     // Informações de placas khomp
     $boards = "";
@@ -242,10 +259,17 @@ class TrunksController extends Zend_Controller_Action {
       // found). A plain truthiness check preserves the exact original
       // intent (a row was found vs. not) without relying on that
       // coincidence. See docs/tasks/0015a-trunk-crud-php84-strict-sql.md.
+      // TASK-0031 (Phase 11): snapshot before any redirect-vs-re-render
+      // decision below, so a validation failure can re-render the form
+      // with exactly what was typed.
+      $submitted = $_POST;
+
       if ($newId) {
         $form_isValid = false;
-        $message = $this->view->translate("Name already exists.");
-        $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
+        $this->view->trunk = $this->buildTrunkViewFromPost($submitted);
+        $this->applyTrunkCheckedState($submitted);
+        $this->view->error_message = $this->view->translate("Name already exists.");
+        $this->renderScript($this->getRequest()->getControllerName().'/addedit.phtml');
       }
 
       if ($form_isValid) {
@@ -257,7 +281,13 @@ class TrunksController extends Zend_Controller_Action {
         // string-on-failure convention) when the posted transport_id is
         // invalid -- must not fall through to the transaction below.
         if (is_string($trunk_data)) {
-          $this->_helper->redirector('sneperror','error',null,array('error_message'=>$trunk_data));
+          // TASK-0031 (Phase 11): re-render, don't redirect -- a
+          // server-authoritative validation rejection is not a runtime
+          // failure, and the admin's input is still valid to show back.
+          $this->view->trunk = $this->buildTrunkViewFromPost($submitted);
+          $this->applyTrunkCheckedState($submitted);
+          $this->view->error_message = $trunk_data;
+          $this->renderScript($this->getRequest()->getControllerName().'/addedit.phtml');
           return;
         }
         if(isset($_POST['trunk_disabled'])){
@@ -290,10 +320,10 @@ class TrunksController extends Zend_Controller_Action {
           $db->rollBack();
           throw $ex;
         }
-        
+
         // audit
         Snep_Audit_Manager::SaveLog("Added", 'trunks', $id, $this->view->translate("Trunk") . " {$id} ". $_POST['callerid']);
-        
+
         if(!isset($_POST['trunk_disabled'])){
           Snep_InterfaceConf::loadConfFromDb();
           // TASK-0015: called additively, mirroring ExtensionsController's
@@ -305,6 +335,10 @@ class TrunksController extends Zend_Controller_Action {
           // exist before Snep_PjsipTrunkConf renders a transport=<name> reference.
           Snep_PjsipTransportConf::loadConfFromDb();
           Snep_PjsipTrunkConf::loadConfFromDb();
+          // TASK-0031 (Phase 10): confirm the just-saved trunk actually
+          // loaded (and, for a registered trunk, whether the provider
+          // accepted it) before the redirect implies success.
+          $this->reportTrunkSaveResult($id, $trunk_data['trunk']['technology'], !empty($trunk_data['trunk']['reverse_auth']), isset($trunk_data['trunk']['username']) ? $trunk_data['trunk']['username'] : null);
         }
 
         $this->_redirect("trunks");
@@ -417,6 +451,30 @@ class TrunksController extends Zend_Controller_Action {
       $this->view->techType   = $technologyTrunk; //"selected";
       $this->view->technology = $technologyTrunk;
 
+      // TASK-0031 (Phase 6): derive which of the 4 product-level
+      // connection types this trunk currently represents, so the edit
+      // form's radio group opens on the option matching what is actually
+      // persisted rather than an arbitrary default. Technology itself
+      // stays fixed on edit (unchanged invariant); only the choice among
+      // registered/unregistered/ip_authenticated is derived here, from
+      // reverse_auth + whether a username is on file.
+      if ($technologyTrunk === 'pjsip_external') {
+        $this->view->connectionType = 'external';
+      } elseif (!empty($trunk['reverse_auth'])) {
+        $this->view->connectionType = 'registered';
+      } elseif (!empty($trunk['username'])) {
+        $this->view->connectionType = 'unregistered';
+      } else {
+        $this->view->connectionType = 'ip_authenticated';
+      }
+
+      // TASK-0031 (Phase 8, Diagnostics): the edit page's own read-only
+      // runtime detail -- one extra single-trunk status query for an
+      // admin-initiated single-row page load, not a list (Phase 17's
+      // bulk-call discipline is about list pages).
+      $allStatuses = Snep_PjsipStatus_Manager::getTrunkStatuses();
+      $this->view->runtimeStatus = isset($allStatuses[$trunk['id']]) ? $allStatuses[$trunk['id']] : null;
+
       $this->view->dtmf_dial = ($trunk['dtmf_dial'] == '0') ? "" : "checked" ;
       $this->view->reverse_auth = ($trunk['reverse_auth'] == '0') ? "" : "checked" ;
       $this->view->map_extensions = ($trunk['map_extensions'] == '0') ? "" : "checked" ;
@@ -488,13 +546,20 @@ class TrunksController extends Zend_Controller_Action {
 
         $newId = Snep_Trunks_Manager::getName($_POST['callerid']);
 
+        // TASK-0031 (Phase 11): snapshot before any redirect-vs-re-render
+        // decision below, so a validation failure can re-render the form
+        // with exactly what was typed.
+        $submitted = $_POST;
+
         // TASK-0015A: same count()-on-false fatal as addAction() above,
         // same fix -- see the comment there and
         // docs/tasks/0015a-trunk-crud-php84-strict-sql.md.
         if ($newId && $_POST['callerid'] != $trunk['callerid']) {
           $form_isValid = false;
-          $message = $this->view->translate("Name already exists.");
-          $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
+          $this->view->trunk = $this->buildTrunkViewFromPost($submitted);
+          $this->applyTrunkCheckedState($submitted);
+          $this->view->error_message = $this->view->translate("Name already exists.");
+          $this->renderScript($this->getRequest()->getControllerName().'/addedit.phtml');
         }
 
         if ($form_isValid) {
@@ -510,8 +575,25 @@ class TrunksController extends Zend_Controller_Action {
           // transport rule.
           $trunk_data = $this->preparePost(null, $idTrunk, $trunk['transport_id']);
           if (is_string($trunk_data)) {
-            $this->_helper->redirector('sneperror','error',null,array('error_message'=>$trunk_data));
+            // TASK-0031 (Phase 11): re-render, don't redirect -- see
+            // addAction()'s identical rationale above.
+            $this->view->trunk = $this->buildTrunkViewFromPost($submitted);
+            $this->applyTrunkCheckedState($submitted);
+            $this->view->error_message = $trunk_data;
+            $this->renderScript($this->getRequest()->getControllerName().'/addedit.phtml');
             return;
+          }
+
+          // TASK-0031 (Phase 3): a blank submitted password means "keep
+          // the current one" -- the secret is never echoed back into the
+          // rendered form, so a literal empty submission is the ONLY way
+          // "unchanged" is expressed. Only pjsip (trunktype 'I') trunks
+          // have a secret at all; pjsip_external never does.
+          if (isset($trunk_data['ip']['secret']) && $trunk_data['ip']['secret'] === '' && isset($ip_info['secret'])) {
+            $trunk_data['ip']['secret'] = $ip_info['secret'];
+            if (isset($trunk_data['trunk']['secret'])) {
+              $trunk_data['trunk']['secret'] = $ip_info['secret'];
+            }
           }
 
           $db = Snep_Db::getInstance();
@@ -534,7 +616,7 @@ class TrunksController extends Zend_Controller_Action {
           }
           //audit
           Snep_Audit_Manager::SaveLog("Updated", 'trunks', $idTrunk, $this->view->translate("Trunk") . " {$idTrunk} ". $_POST['callerid']);
-          
+
           if(!isset($_POST['trunk_disabled'])){
             Snep_InterfaceConf::loadConfFromDb();
             // TASK-0015: see the identical comment in addAction() above.
@@ -542,8 +624,11 @@ class TrunksController extends Zend_Controller_Action {
             // exist before Snep_PjsipTrunkConf renders a transport=<name> reference.
             Snep_PjsipTransportConf::loadConfFromDb();
             Snep_PjsipTrunkConf::loadConfFromDb();
+            // TASK-0031 (Phase 10): confirm the just-saved trunk actually
+            // loaded before the redirect implies success.
+            $this->reportTrunkSaveResult($idTrunk, $trunk_data['trunk']['technology'], !empty($trunk_data['trunk']['reverse_auth']), isset($trunk_data['trunk']['username']) ? $trunk_data['trunk']['username'] : null);
           }
-          
+
           $this->_redirect("trunks");
         }
       }
@@ -616,6 +701,145 @@ class TrunksController extends Zend_Controller_Action {
       }
     }
 
+
+    /**
+    * buildTrunkViewFromPost - TASK-0031 (Phase 11): reconstruct the
+    * trunk-shaped view array a rejected POST would otherwise discard, so
+    * a validation failure can re-render the same form with what the
+    * admin already typed instead of a redirect to a generic error page.
+    * Never carries a password/secret value forward (Phase 3) -- that
+    * field always redisplays blank.
+    * @param array $post
+    * @return array
+    */
+    private function buildTrunkViewFromPost(array $post) {
+      return array(
+        'callerid' => isset($post['callerid']) ? $post['callerid'] : '',
+        'host' => isset($post['host']) ? $post['host'] : '',
+        'username' => isset($post['username']) ? $post['username'] : '',
+        'secret' => '',
+        'domain' => isset($post['domain']) ? $post['domain'] : '',
+        'qualify_value' => isset($post['qualify_value']) ? $post['qualify_value'] : '',
+        'dtmf_dial_number' => isset($post['dtmf_dial_number']) ? $post['dtmf_dial_number'] : '',
+        'time_total' => isset($post['time_total']) ? $post['time_total'] : '',
+        'time_initial_date' => isset($post['time_initial_date']) ? $post['time_initial_date'] : '',
+        'transport_id' => isset($post['transport_id']) ? $post['transport_id'] : '',
+        'telco' => (isset($post['telco']) && $post['telco'] !== '') ? $post['telco'] : null,
+      );
+    }
+
+    /**
+    * applyTrunkCheckedState - the NAT/DTMF/qualify/connection-type
+    * "checked"-flag view derivation this controller already performs
+    * for a loaded DB row (see editAction()), extracted so a
+    * validation-failure re-render can compute the identical view state
+    * from a rejected POST instead.
+    * @param array $post
+    */
+    private function applyTrunkCheckedState(array $post) {
+      $dtmf = isset($post['dtmfmode']) ? $post['dtmfmode'] : 'rfc2833';
+      $this->view->dtmf_rfc2833 = ($dtmf === 'rfc2833') ? 'checked' : '';
+      $this->view->dtmf_inband = ($dtmf === 'inband') ? 'checked' : '';
+      $this->view->dtmf_info = ($dtmf === 'info') ? 'checked' : '';
+
+      foreach (array('no', 'force_rport', 'comedia', 'auto_force_rport', 'auto_comedia') as $val) {
+        $label = 'nat_' . $val;
+        $this->view->$label = isset($post['nat_' . $val]) ? 'checked' : '';
+      }
+
+      $qualify = isset($post['qualify']) ? $post['qualify'] : 'yes';
+      $this->view->qualify_yes = ($qualify === 'yes') ? 'checked' : '';
+      $this->view->qualify_no = ($qualify === 'no') ? 'checked' : '';
+      $this->view->qualify_specify = ($qualify === 'specify') ? 'checked' : '';
+
+      $this->view->reverse_auth = (isset($post['reverse_auth']) && $post['reverse_auth'] === 'reverse_auth') ? 'checked' : '';
+      $this->view->map_extensions = isset($post['map_extensions']) ? 'checked' : '';
+      $this->view->dtmf_dial = isset($post['dtmf_dial']) ? 'checked' : '';
+      $this->view->tempo = isset($post['tempo']) ? 'checked' : '';
+      $chargeby = isset($post['time_chargeby']) ? $post['time_chargeby'] : '';
+      $this->view->chargeby_Y = ($chargeby === 'Y') ? 'checked' : '';
+      $this->view->chargeby_M = ($chargeby === 'M') ? 'checked' : '';
+      $this->view->chargeby_D = ($chargeby === 'D') ? 'checked' : '';
+      $this->view->trunk_disabled = isset($post['trunk_disabled']) ? 'checked' : '';
+
+      $tech = isset($post['technology']) ? strtolower($post['technology']) : 'pjsip';
+      if ($tech === 'pjsip_external') {
+        $this->view->connectionType = 'external';
+      } elseif (isset($post['reverse_auth']) && $post['reverse_auth'] === 'reverse_auth') {
+        $this->view->connectionType = 'registered';
+      } elseif (!empty($post['username'])) {
+        $this->view->connectionType = 'unregistered';
+      } else {
+        $this->view->connectionType = 'ip_authenticated';
+      }
+    }
+
+    /**
+    * reportTrunkSaveResult - TASK-0031 (Phase 10): confirm the just-saved
+    * trunk actually loaded in Asterisk (and, for a registered trunk,
+    * whether the provider actually accepted the registration) before
+    * letting the redirect imply success. Mirrors
+    * ExtensionsController::reportSaveResult()'s use of the same shared
+    * Snep_PjsipStatus_Manager::checkApplyResult() helper. Explicitly does
+    * NOT confuse "configuration applied" with "provider registration
+    * successful" for a registered trunk (Phase 10's own requirement).
+    * @param int    $trunkId
+    * @param string $technology
+    * @param bool   $reverseAuth
+    * @param string|null $externalEndpointName only for PJSIP_EXTERNAL
+    */
+    private function reportTrunkSaveResult($trunkId, $technology, $reverseAuth, $externalEndpointName = null) {
+      $flash = $this->_helper->FlashMessenger;
+
+      if (strtoupper($technology) === 'PJSIP_EXTERNAL') {
+        $check = Snep_PjsipStatus_Manager::checkApplyResult($externalEndpointName);
+        if ($check['endpoint_found'] === true) {
+          $flash->setNamespace('saved_active');
+          $flash->addMessage($this->view->translate("Trunk saved. Referenced external endpoint '%s' confirmed.", $externalEndpointName));
+        } elseif ($check['endpoint_found'] === null) {
+          $flash->setNamespace('saved_pending');
+          $flash->addMessage($this->view->translate("Trunk saved. Could not confirm the referenced endpoint right now -- check the Status column shortly."));
+        } else {
+          $flash->setNamespace('apply_failed');
+          $flash->addMessage($this->view->translate("Trunk saved, but the referenced external endpoint '%s' was not found in Asterisk.", $externalEndpointName));
+        }
+        return;
+      }
+
+      $endpointObject = 'trunk-' . $trunkId;
+      $registrationObject = $reverseAuth ? $endpointObject . '-registration' : null;
+      $check = Snep_PjsipStatus_Manager::checkApplyResult($endpointObject, $registrationObject);
+
+      if ($check['endpoint_found'] === null) {
+        $flash->setNamespace('saved_pending');
+        $flash->addMessage($this->view->translate("Trunk saved. Could not confirm Asterisk applied it right now -- check the Status column shortly."));
+        return;
+      }
+      if ($check['endpoint_found'] === false) {
+        $flash->setNamespace('apply_failed');
+        $flash->addMessage($this->view->translate("Trunk saved, but Asterisk did not load it. Check the Status column or contact an administrator."));
+        return;
+      }
+      if (!$reverseAuth) {
+        $flash->setNamespace('saved_active');
+        $flash->addMessage($this->view->translate("Trunk saved and active."));
+        return;
+      }
+      switch ($check['registration_state']) {
+        case 'Registered':
+          $flash->setNamespace('saved_active');
+          $flash->addMessage($this->view->translate("Trunk saved and registered with the provider."));
+          break;
+        case 'Rejected':
+          $flash->setNamespace('apply_failed');
+          $flash->addMessage($this->view->translate("Trunk saved, but the provider rejected the registration -- check the username/password."));
+          break;
+        default:
+          $flash->setNamespace('saved_pending');
+          $flash->addMessage($this->view->translate("Trunk saved. Registration with the provider is still in progress -- check the Status column shortly."));
+          break;
+      }
+    }
 
     /**
     * preparePost

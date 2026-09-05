@@ -12,14 +12,31 @@
             </div>
           </div>
         </div><br>
+        <?php // TASK-0031 (Phase 10, save/apply feedback): one-shot
+              // messages set by TrunksController::reportTrunkSaveResult()
+              // after the add/edit that led to this redirect -- never a
+              // bare 302 implying success. ?>
+        <?php foreach ($this->saved_active_messages as $msg): ?>
+          <div class="alert alert-success"><?php echo $this->escape($msg); ?></div>
+        <?php endforeach; ?>
+        <?php foreach ($this->saved_pending_messages as $msg): ?>
+          <div class="alert alert-info"><?php echo $this->escape($msg); ?></div>
+        <?php endforeach; ?>
+        <?php foreach ($this->apply_failed_messages as $msg): ?>
+          <div class="alert alert-danger"><?php echo $this->escape($msg); ?></div>
+        <?php endforeach; ?>
         <table class="table table-striped" id="listtable">
           <thead>
             <tr>
-              <th class="text-center"><?php echo $this->translate('Code');?></th>
+              <!-- TASK-0031 (Phase 14): Code/Type/Interface Type/Time
+                   Credit are the lowest-priority columns -- collapsed
+                   first at narrow widths rather than forcing horizontal
+                   scroll for every column. -->
+              <th class="text-center hidden-xs"><?php echo $this->translate('Code');?></th>
               <th class="text-center"><?php echo $this->translate('Name');?></th>
-              <th class="text-center"><?php echo $this->translate('Type');?></th>
-              <th class="text-center"><?php echo $this->translate('Interface Type');?></th>
-              <th class="text-center"><?php echo $this->translate('Time Credit (minutes)');?></th>
+              <th class="text-center hidden-xs hidden-sm"><?php echo $this->translate('Type');?></th>
+              <th class="text-center hidden-xs hidden-sm"><?php echo $this->translate('Interface Type');?></th>
+              <th class="text-center hidden-xs hidden-sm"><?php echo $this->translate('Time Credit (minutes)');?></th>
               <th class="text-center"><?php echo $this->translate('Status');?></th>
 
               <th class="text-center"><?php echo $this->translate('Actions');?></th>
@@ -28,13 +45,13 @@
           <tbody>
             <?php foreach($this->trunks as $id => $trunk ): ?>
               <tr>
-                <td class="text-center"><?php echo $trunk['name'] ?> </td>
+                <td class="text-center hidden-xs"><?php echo $trunk['name'] ?> </td>
                 <td class="text-center"> <?php echo $trunk['callerid'] ?> </td>
-                <td class="text-center">
+                <td class="text-center hidden-xs hidden-sm">
                   <?php echo ( $trunk['trunktype'] == "T" ?  $this->translate("TDM") : $this->translate("IP") )  ?>
                 </td>
-                <td class="text-center"> <?php echo $trunk['technology'] ?> </td>
-                <td class="text-center">
+                <td class="text-center hidden-xs hidden-sm"> <?php echo $trunk['technology'] ?> </td>
+                <td class="text-center hidden-xs hidden-sm">
                   <?php if ($trunk['saldo']) : ?>
                     <span style='color:#888'><?php echo $trunk['saldo']  ?> <?php echo $this->translate('minutes') ?></span>
                   <?php else :  ?>

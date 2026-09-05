@@ -18,33 +18,45 @@
 */
 $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/password.js");
 ?>
-<!-- <script src="/snep/includes/javascript/password.js"></script> -->
 <div class="row">
   <section>
   <div class="col-sm-12">
+    <?php if ($this->error_message): ?>
+      <div class="alert alert-danger"><?php echo $this->error_message; ?></div>
+    <?php endif; ?>
+
     <form id="defaultForm" method="post" class="form-horizontal" style="margin-top: 20px;" action="<?php echo $this->url(array("controller" => "extensions", "action" => $this->action), null, false); ?>"  autocomplete="off">
 
+      <!-- TASK-0031: Basic -- the fields every extension needs, always
+           visible, no navigation required to reach them (Phase 2/4). -->
       <fieldset>
         <legend><?php echo $this->translate('Extension');?></legend>
 
+        <!-- TASK-0028A: extensions are always PJSIP-only -- there is
+             nothing for an admin to choose here, so this stays an
+             internal, non-rendered field rather than a visible "Type"
+             control with one fixed option (Phase 2: no supported form
+             should expose an INTERNAL_ONLY concept as an input). -->
+        <input type="hidden" name="technology" id="technology" value="pjsip" />
+
         <div class="form-group">
-          <label class="col-sm-3 control-label"><?php echo $this->translate("Extension");?></label>
+          <label for="exten" class="col-sm-3 control-label"><?php echo $this->translate("Extension");?> <span class="text-danger" aria-hidden="true">*</span></label>
           <div class="col-sm-6">
-            <input type="number" class="form-control" name="exten" placeholder='<?php echo $this->translate("Only numbers")?>' value="<?php echo $this->extension['name']?>" <?php echo $this->disabled;?>>
+            <input type="number" id="exten" class="form-control" name="exten" placeholder='<?php echo $this->translate("Only numbers")?>' value="<?php echo $this->extension['name']?>" aria-required="true" <?php echo $this->disabled;?>>
           </div>
         </div>
 
         <div class="form-group">
-          <label class="col-sm-3 control-label"><?php echo $this->translate("Name");?></label>
+          <label for="name" class="col-sm-3 control-label"><?php echo $this->translate("Name");?> <span class="text-danger" aria-hidden="true">*</span></label>
           <div class="col-sm-6">
-            <input type="text" class="form-control" name="name" placeholder='<?php echo $this->translate("Name")?>' value="<?php echo $this->extension['callerid'];?>" />
+            <input type="text" id="name" class="form-control" name="name" placeholder='<?php echo $this->translate("Name")?>' value="<?php echo $this->extension['callerid'];?>" aria-required="true" />
           </div>
         </div>
 
         <div class="form-group">
-          <label class="col-sm-3 control-label"><?php echo $this->translate("Extensions Group");?></label>
+          <label for="exten_group" class="col-sm-3 control-label"><?php echo $this->translate("Extensions Group");?> <span class="text-danger" aria-hidden="true">*</span></label>
           <div class="col-sm-6">
-            <select multiple size=3 class="form-control" name="exten_group[]" id="exten_group">
+            <select multiple size=3 class="form-control" name="exten_group[]" id="exten_group" aria-required="true">
               <?php foreach($this->extenGroups as $key => $val){
                 if(array_key_exists($val['id'], $this->extenInGroup)){?>
                   <option value="<?php echo $val['id'];?>" selected><?php echo $val['name'];?></option>
@@ -57,7 +69,7 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
         </div>
 
         <div class="form-group">
-          <label class="col-sm-3 control-label"><?php echo $this->translate("Pickup Group");?></label>
+          <label for="pickup_group" class="col-sm-3 control-label"><?php echo $this->translate("Pickup Group");?></label>
           <div class="col-sm-6">
             <select class="form-control" name="pickup_group" id="pickup_group">
               <?php foreach($this->pickupGroups as $key => $pickupGroup){ ?>
@@ -70,168 +82,32 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
             </select>
           </div>
         </div>
-      </fieldset>
 
-      <fieldset>
-        <legend><?php echo $this->translate('Interface Technology');?></legend>
         <div class="form-group">
-          <label class="col-sm-3 control-label"><?php echo $this->translate("Type");?></label>
-          <div class="col-sm-6">
-	            <input type="hidden" name="technology" id="technology" value="pjsip" />
-	            <p class="form-control-static"><?php echo $this->translate("PJSIP");?></p>
+          <label for="password" class="col-sm-3 control-label"><?php echo $this->translate("Password");?> <span class="text-danger" aria-hidden="true">*</span></label>
+          <div class="col-sm-4">
+            <?php
+              // TASK-0031 (Phase 3, credential safety): the stored SIP
+              // secret is NEVER echoed back into this field -- doing so
+              // put the live password in the page's HTML source on every
+              // edit load. The value is always blank; only a non-blank
+              // submission changes it (see ExtensionsController::execAdd()).
+              $passwordPlaceholder = $this->action === 'edit'
+                ? $this->translate("Leave blank to keep the current password")
+                : $this->translate("For your safety, create a strong password");
+            ?>
+            <input type="password" class="form-control" name="password" id="password" placeholder="<?php echo $passwordPlaceholder; ?>" value="" aria-required="<?php echo $this->action === 'edit' ? 'false' : 'true'; ?>"/>
+            <div id="passwordBar" class="progress" style="display: none;">
+              <div id="passForce" class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100" style="width: 100%;"></div>
+            </div>
+          </div>
+          <div class="col-sm-2">
+            <button type="button" class="btn btn-add" onclick="generatePass()"><?php echo $this->translate("Generate Password");?></button>
           </div>
         </div>
 
-        <!-- Parâmetros do endpoint PJSIP -->
-        <div id="sipiax" >
-          <div class="form-group">
-            <label class="col-sm-3 control-label"><?php echo $this->translate("Password");?></label>
-            <div class="col-sm-4">
-              <input type="password" class="form-control" name="password" id="password" placeholder="<?php echo $this->translate("For your safety, create a strong password")?>" value="<?php echo $this->extension['secret'];?>"/>
-              <div id="passwordBar" class="progress" style="display: none;">
-                <div id="passForce" class="progress-bar progress-bar-success" role="progressbar" aria-valuenow="60" aria-valuemin="0" aria-valuemax="100" style="width: 100%;"></div>
-              </div>
-            </div>
-            <div class="col-sm-2">
-              <button type="button" class="btn btn-add" onclick="generatePass()"><?php echo $this->translate("Generate Password");?></button>
-            </div>
-          </div>
-
-          <!-- TASK-0028Y: removed -- peers.call-limit has no PJSIP
-               endpoint-level equivalent (confirmed gap #3, PJSIP
-               Completeness Architecture Review TASK-0028W): chan_sip's
-               native per-peer concurrent-call cap has no res_pjsip
-               counterpart, and building one via dialplan GROUP()
-               counting would be a new telephony capability, out of this
-               task's explicit scope. Every reachable extension is
-               PJSIP-only (technology is a fixed hidden field above, and
-               a legacy extension cannot be edited until migrated), so
-               this control was unconditionally dead in every state the
-               real UI could reach. senma-product-designer review
-               (TASK-0028Y): remove from the presented product surface
-               rather than leave a control that visibly accepts a value
-               Asterisk never enforces. peers.call-limit itself is not
-               dropped (no schema change) and continues to be written as
-               a fixed placeholder (ExtensionsController::execAdd()),
-               matching the multi-extension add flow's own
-               already-established convention of never exposing this
-               field at all. -->
-          <div id="siponly">
-            <div class="form-group">
-              <label class="col-sm-3 control-label"><?php echo $this->translate("NAT")?></label>
-              <div class="col-sm-7">
-                <div class="checkbox">
-                  <label><input type="checkbox" name="nat_no" <?php echo $this->nat_no;?>/> no</label>&nbsp;&nbsp;
-                  <label><input type="checkbox" name="nat_force_rport" <?php echo $this->nat_force_rport;?>/> force-rport</label>&nbsp;&nbsp;
-                  <label><input type="checkbox" name="nat_comedia" <?php echo $this->nat_comedia;?>/> comedia</label>&nbsp;&nbsp;
-                  <label><input type="checkbox" name="nat_auto_force_rport" <?php echo $this->nat_auto_force_rport;?>/> auto-force-rport</label>&nbsp;&nbsp;
-                  <label><input type="checkbox" name="nat_auto_comedia" <?php echo $this->nat_auto_comedia;?>/> auto-comedia</label>
-                </div>
-              </div>
-            </div>
-            <div class="form-group">
-              <label class="col-sm-3 control-label"><?php echo $this->translate("Direct Media")?></label>
-              <div class="col-sm-6">
-                <label class="radio-inline"><input type="radio" name="directmedia" id="yes" value="yes" <?php echo $this->directmediayes;?>> yes</label>
-                <label class="radio-inline"><input type="radio" name="directmedia" id="no" value="no" <?php echo $this->directmedianonat;?>> no</label>
-                <label class="radio-inline"><input type="radio" name="directmedia" id="update" value="update" <?php echo $this->directmediaupdate;?>> update</label>
-                <label class="radio-inline"><input type="radio" name="directmedia" id="outgoing" value="outgoing" <?php echo $this->directmediaoutgoing;?>> outgoing</label>
-              </div>
-            </div>
-          </div>
-          <div class="form-group">
-            <label class="col-sm-3 control-label"><?php echo $this->translate("Qualify")?></label>
-            <div class="col-sm-6">
-              <div class="checkbox">
-                <?php if($this->extension['qualify'] === 'yes'){?>
-                  <label><input type="checkbox" name="qualify" id="qualify" checked/><?php echo $this->translate("Enable delay qualification")?></label>
-                <?php }else{?>
-                  <label><input type="checkbox" name="qualify" id="qualify"/><?php echo $this->translate("Enable delay qualification")?></label>
-                <?php } ?>
-              </div>
-            </div>
-          </div>
-
-          <!-- Seleção de transporte PJSIP (Automático ou transporte ativo). -->
-          <div id="pjsipTransport">
-            <div class="form-group">
-              <label class="col-sm-3 control-label"><?php echo $this->translate("PJSIP Transport");?></label>
-              <div class="col-sm-6">
-                <select class="form-control" name="transport_id">
-                  <option value="" <?php echo ($this->extension['transport_id'] === '' || $this->extension['transport_id'] === null) ? "selected" : ""; ?>><?php echo $this->translate("Automatic (Asterisk selects a compatible transport)");?></option>
-                  <?php foreach ($this->transports as $transport): ?>
-                    <option value="<?php echo $transport['id']; ?>" <?php echo ((string) $transport['id'] === (string) $this->extension['transport_id']) ? "selected" : ""; ?>>
-                      <?php echo $this->escape($transport['name']); ?><?php echo $transport['is_default'] ? ' (' . $this->translate('default') . ')' : ''; ?><?php echo !empty($transport['stale_disabled']) ? ' -- ' . $this->translate('disabled, please pick another option') : ''; ?>
-                    </option>
-                  <?php endforeach; ?>
-                </select>
-                <span class="help-block"><?php echo $this->translate("Automatic lets Asterisk pick a compatible transport on its own. Selecting a specific transport pins this extension to it -- this is NOT the same as the 'default' transport shown on the Transports page.");?></span>
-              </div>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="col-sm-3 control-label"><?php echo $this->translate("DTMF Mode")?></label>
-            <div class="col-sm-6">
-              <label class="radio-inline"></label><input type="radio" name="dtmf" id="rfc2833" value="rfc2833" <?php echo $this->dtmfrf; ?>><?php echo $this->translate("RFC-2833");?></label>
-              <label class="radio-inline"><input type="radio" name="dtmf" id="inband" value="inband" <?php echo $this->dtmfinband; ?>><?php echo $this->translate("Inband");?></label>
-              <label class="radio-inline"><input type="radio" name="dtmf" id="info" value="info" <?php echo $this->dtmfinfo; ?>><?php echo $this->translate("Info");?></label>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="col-sm-3 control-label"><?php echo $this->translate("Codec 1");?></label>
-            <div class="col-sm-6">
-              <select class="form-control" name="codec" id="codec">
-                <?php echo $this->codec1;?>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="col-sm-3 control-label"><?php echo $this->translate("Codec 2");?></label>
-            <div class="col-sm-6">
-              <select class="form-control" name="codec1" id="codec1">
-                <?php echo $this->codec2;?>
-              </select>
-            </div>
-          </div>
-
-          <div class="form-group">
-            <label class="col-sm-3 control-label"><?php echo $this->translate("Codec 3");?></label>
-            <div class="col-sm-6">
-              <select class="form-control" name="codec2" id="codec2">
-                <?php echo $this->codec3;?>
-              </select>
-            </div>
-          </div>
-        </div>
-        <!-- /Parâmetros do endpoint PJSIP -->
-
-        <!-- Khomp -->
-        <div id="khomp" class="invisible">
-          <div class="form-group">
-            <label class="col-sm-3 control-label"><?php echo $this->translate("Channel");?></label>
-            <div class="col-sm-6">
-              <select class="form-control" name="channel" id="channel">
-                <?php foreach($this->boardData as $key => $channel){
-                  if($key == $this->khompChecked){?>
-                    <option value="<?php echo $key?>" selected><?php echo $channel;?></option>
-                  <?php }else ?>
-                    <option value="<?php echo $key?>"><?php echo $channel;?></option>
-                <?php }?>
-              </select>
-            </div>
-          </div>
-        </div>
-        <!-- /Khomp -->
-
-      </fieldset>
-
-      <fieldset>
-        <legend><?php echo $this->translate('Advanced');?></legend>
         <div class="form-group">
-          <label class="col-sm-3 control-label"><?php echo $this->translate("Voicemail");?></label>
+          <label for="voicemail" class="col-sm-3 control-label"><?php echo $this->translate("Voicemail");?></label>
           <div class="col-sm-6">
             <div class="checkbox">
               <?php if($this->extension['usa_vc'] === 'yes'){?>
@@ -244,14 +120,115 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
         </div>
 
         <div class="form-group">
-          <label class="col-sm-3 control-label"><?php echo $this->translate("Email");?></label>
+          <label for="email" class="col-sm-3 control-label"><?php echo $this->translate("Email");?> <span class="text-danger" aria-hidden="true">*</span></label>
           <div class="col-sm-6">
-            <input type="text" class="form-control" name="email" id="email" placeholder='<?php echo $this->translate("Email")?>' value="<?php echo $this->extension['email']?>"/>
+            <input type="text" class="form-control" name="email" id="email" placeholder='<?php echo $this->translate("Email")?>' value="<?php echo $this->extension['email']?>" aria-describedby="email-help"/>
+            <span id="email-help" class="help-block"><?php echo $this->translate("Required only when Voicemail is enabled above.");?></span>
+          </div>
+        </div>
+      </fieldset>
+
+      <!-- TASK-0031: Advanced -- PJSIP tuning most admins never need to
+           touch on the common path (Phase 2/4), collapsed by default. A
+           native <details> element gives keyboard/screen-reader
+           disclosure semantics for free, no custom JS/ARIA needed. -->
+      <details id="advancedSection" <?php echo $this->error_message ? 'open' : ''; ?>>
+        <summary style="cursor:pointer;"><h4 style="display:inline;"><?php echo $this->translate('Advanced');?></h4></summary>
+
+        <fieldset>
+          <legend class="sr-only"><?php echo $this->translate("NAT");?></legend>
+          <div class="form-group">
+            <label class="col-sm-3 control-label" id="nat-label"><?php echo $this->translate("NAT")?></label>
+            <div class="col-sm-7">
+              <div class="checkbox" role="group" aria-labelledby="nat-label">
+                <label><input type="checkbox" name="nat_no" <?php echo $this->nat_no;?>/> no</label>&nbsp;&nbsp;
+                <label><input type="checkbox" name="nat_force_rport" <?php echo $this->nat_force_rport;?>/> force-rport</label>&nbsp;&nbsp;
+                <label><input type="checkbox" name="nat_comedia" <?php echo $this->nat_comedia;?>/> comedia</label>&nbsp;&nbsp;
+                <label><input type="checkbox" name="nat_auto_force_rport" <?php echo $this->nat_auto_force_rport;?>/> auto-force-rport</label>&nbsp;&nbsp;
+                <label><input type="checkbox" name="nat_auto_comedia" <?php echo $this->nat_auto_comedia;?>/> auto-comedia</label>
+              </div>
+              <span class="help-block"><?php echo $this->translate("Enable if this device is behind a router doing network address translation (most residential/office connections).");?></span>
+            </div>
+          </div>
+        </fieldset>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" id="directmedia-label"><?php echo $this->translate("Direct Media")?></label>
+          <div class="col-sm-6" role="radiogroup" aria-labelledby="directmedia-label">
+            <label class="radio-inline"><input type="radio" name="directmedia" id="yes" value="yes" <?php echo $this->directmediayes;?>> yes</label>
+            <label class="radio-inline"><input type="radio" name="directmedia" id="no" value="no" <?php echo $this->directmedianonat;?>> no</label>
+            <label class="radio-inline"><input type="radio" name="directmedia" id="update" value="update" <?php echo $this->directmediaupdate;?>> update</label>
+            <label class="radio-inline"><input type="radio" name="directmedia" id="outgoing" value="outgoing" <?php echo $this->directmediaoutgoing;?>> outgoing</label>
           </div>
         </div>
 
         <div class="form-group">
-          <label class="col-sm-3 control-label"><?php echo $this->translate("Padlock");?></label>
+          <label class="col-sm-3 control-label" for="qualify"><?php echo $this->translate("Monitor reachability")?></label>
+          <div class="col-sm-6">
+            <div class="checkbox">
+              <?php if($this->extension['qualify'] === 'yes'){?>
+                <label><input type="checkbox" name="qualify" id="qualify" checked/><?php echo $this->translate("Enabled")?></label>
+              <?php }else{?>
+                <label><input type="checkbox" name="qualify" id="qualify"/><?php echo $this->translate("Enabled")?></label>
+              <?php } ?>
+            </div>
+            <span class="help-block"><?php echo $this->translate("When enabled, SENMA periodically checks whether this device is reachable and reflects that in the Status column. When disabled, Status shows as configured but is not monitored.");?></span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="transport_id"><?php echo $this->translate("PJSIP Transport");?></label>
+          <div class="col-sm-6">
+            <select class="form-control" name="transport_id" id="transport_id">
+              <option value="" <?php echo ($this->extension['transport_id'] === '' || $this->extension['transport_id'] === null) ? "selected" : ""; ?>><?php echo $this->translate("Automatic (Asterisk selects a compatible transport)");?></option>
+              <?php foreach ($this->transports as $transport): ?>
+                <option value="<?php echo $transport['id']; ?>" <?php echo ((string) $transport['id'] === (string) $this->extension['transport_id']) ? "selected" : ""; ?>>
+                  <?php echo $this->escape($transport['name']); ?><?php echo $transport['is_default'] ? ' (' . $this->translate('default') . ')' : ''; ?><?php echo !empty($transport['stale_disabled']) ? ' -- ' . $this->translate('disabled, please pick another option') : ''; ?>
+                </option>
+              <?php endforeach; ?>
+            </select>
+            <span class="help-block"><?php echo $this->translate("Automatic lets Asterisk pick a compatible transport on its own. Selecting a specific transport pins this extension to it -- this is NOT the same as the 'default' transport shown on the Transports page.");?></span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" id="dtmf-label"><?php echo $this->translate("DTMF Mode")?></label>
+          <div class="col-sm-6" role="radiogroup" aria-labelledby="dtmf-label">
+            <label class="radio-inline"><input type="radio" name="dtmf" id="rfc2833" value="rfc2833" <?php echo $this->dtmfrf; ?>><?php echo $this->translate("RFC-2833");?></label>
+            <label class="radio-inline"><input type="radio" name="dtmf" id="inband" value="inband" <?php echo $this->dtmfinband; ?>><?php echo $this->translate("Inband");?></label>
+            <label class="radio-inline"><input type="radio" name="dtmf" id="info" value="info" <?php echo $this->dtmfinfo; ?>><?php echo $this->translate("Info");?></label>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="codec"><?php echo $this->translate("Codec 1");?></label>
+          <div class="col-sm-6">
+            <select class="form-control" name="codec" id="codec">
+              <?php echo $this->codec1;?>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="codec1"><?php echo $this->translate("Codec 2");?></label>
+          <div class="col-sm-6">
+            <select class="form-control" name="codec1" id="codec1">
+              <?php echo $this->codec2;?>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="codec2"><?php echo $this->translate("Codec 3");?></label>
+          <div class="col-sm-6">
+            <select class="form-control" name="codec2" id="codec2">
+              <?php echo $this->codec3;?>
+            </select>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="authenticate"><?php echo $this->translate("Padlock");?></label>
           <div class="col-sm-6">
             <div class="checkbox">
               <label>
@@ -262,29 +239,33 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
                 <?php }?>
               </label>
             </div>
+            <span class="help-block"><?php echo $this->translate("Adds a numeric PIN check before this extension can place external calls -- unrelated to the SIP password above.");?></span>
           </div>
         </div>
 
         <div class="form-group">
-          <label class="col-sm-3 control-label"><?php echo $this->translate("Password Padlock");?></label>
+          <label for="passwordpadlock" class="col-sm-3 control-label"><?php echo $this->translate("Padlock PIN");?></label>
           <div class="col-sm-6">
-            <?php if($this->extension['password'] != ''){?>
-              <input type="password" class="form-control" name="passwordpadlock" id="passwordpadlock" placeholder='<?php echo $this->translate("Only numbers")?>' value="<?php echo $this->extension['password']?>"/>
-            <?php }else{?>
-              <input type="password" class="form-control" name="passwordpadlock" id="passwordpadlock" placeholder='<?php echo $this->translate("Only numbers")?>' />
-            <?php } ?>
+            <?php
+              // TASK-0031 (Phase 3): same non-disclosure contract as the
+              // SIP password above -- never echo the stored PIN back.
+              $padlockPlaceholder = ($this->action === 'edit' && $this->extension['password'] !== '')
+                ? $this->translate("Leave blank to keep the current PIN")
+                : $this->translate("Only numbers");
+            ?>
+            <input type="password" class="form-control" name="passwordpadlock" id="passwordpadlock" placeholder='<?php echo $padlockPlaceholder; ?>' value=""/>
           </div>
         </div>
 
         <div class="form-group">
-          <label class="col-sm-3 control-label"><?php echo $this->translate("Enable follow-me");?></label>
+          <label class="col-sm-3 control-label" for="cancallforward"><?php echo $this->translate("Enable follow-me");?></label>
           <div class="col-sm-6">
             <div class="checkbox">
               <label>
                 <?php if($this->extension['cancallforward'] == 'yes'){?>
-                  <input type="checkbox" name="cancallforward" value="cancallforward" checked/> <?php echo $this->translate("Enabled");?>
+                  <input type="checkbox" name="cancallforward" id="cancallforward" value="cancallforward" checked/> <?php echo $this->translate("Enabled");?>
                 <?php }else{ ?>
-                  <input type="checkbox" name="cancallforward" value="cancallforward" /> <?php echo $this->translate("Enabled");?>
+                  <input type="checkbox" name="cancallforward" id="cancallforward" value="cancallforward" /> <?php echo $this->translate("Enabled");?>
                 <?php } ?>
               </label>
             </div>
@@ -292,53 +273,39 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
         </div>
 
         <div class="form-group">
-          <label class="col-sm-3 control-label"><?php echo $this->translate("Enable Busy Notification(BLF)");?></label>
+          <label class="col-sm-3 control-label" for="blf"><?php echo $this->translate("Enable Busy Notification(BLF)");?></label>
           <div class="col-sm-6">
             <div class="checkbox">
-              <label><input type="checkbox" name="blf" value="yes" <?php echo $this->blf;?>/> <?php echo $this->translate("Enabled");?></label>
+              <label><input type="checkbox" name="blf" id="blf" value="yes" <?php echo $this->blf;?>/> <?php echo $this->translate("Enabled");?></label>
             </div>
           </div>
         </div>
+      </details>
 
-        <!-- <div class="form-group">
-          <label class="col-sm-3 control-label"><?php //echo $this->translate("Minute Control");?></label>
+      <?php if ($this->action === 'edit'): ?>
+      <!-- TASK-0031: Diagnostics -- read-only runtime detail, never part
+           of the input form itself (Phase 2/8). -->
+      <details id="diagnosticsSection">
+        <summary style="cursor:pointer;"><h4 style="display:inline;"><?php echo $this->translate('Diagnostics');?></h4></summary>
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Runtime status");?></label>
           <div class="col-sm-6">
-            <div class="checkbox">
-              <label>
-                <?php if (!empty($this->extension["time_total"])) { ?>
-                  <input type="checkbox" name="minute_control" id="minute_control" value="minute_control" checked /> <?php //echo $this->translate("Enabled");?>
-                <?php }else{ ?>
-                  <input type="checkbox" name="minute_control" value="minute_control" id="minute_control" /> <?php //echo $this->translate("Enabled");?>
-                <?php }
-                //echo "<i> - (" . $this->translate("Only for external calls") . ")</i>";
-                ?>
-              </label>
-            </div>
-          </div>
-        </div> -->
-
-        <!-- <div class="form-group">
-          <label class="col-sm-3 control-label"><?php //echo $this->translate("Time total");?></label>
-          <div class="col-sm-6">
-            <input type="text" class="form-control" name="timetotal" id="timetotal" placeholder='<?php //echo $this->translate("Minutes")?>' value="<?php echo $this->timetotal;?>" />
+            <?php $st = $this->extension['runtime_status']; ?>
+            <?php if ($st === null): ?>
+              <span class="text-muted">&mdash; <?php echo $this->translate("not available for this extension's technology");?></span>
+            <?php else:
+              $badgeClass = array('ACTIVE' => 'label-success', 'PENDING' => 'label-warning', 'DEGRADED' => 'label-warning', 'INACTIVE' => 'label-default', 'DISABLED' => 'label-default', 'ERROR' => 'label-danger', 'UNKNOWN' => 'label-default');
+              $stateText = array('ACTIVE' => 'Active', 'PENDING' => 'Pending', 'DEGRADED' => 'Degraded', 'INACTIVE' => 'Inactive', 'DISABLED' => 'Disabled', 'ERROR' => 'Error', 'UNKNOWN' => 'Unknown');
+              $cls = isset($badgeClass[$st['state']]) ? $badgeClass[$st['state']] : 'label-default';
+              $txt = isset($stateText[$st['state']]) ? $stateText[$st['state']] : $st['state'];
+            ?>
+              <span class="label <?php echo $cls; ?>"><?php echo $this->translate($txt); ?></span>
+              <p class="help-block"><?php echo $this->escape($st['detail']); ?></p>
+            <?php endif; ?>
           </div>
         </div>
-
-        <div>
-          <label class="col-sm-3 control-label"><?php // echo $this->translate("Control Type")?></label>
-          <label class="radio-inline">
-            <input type="radio" name="controltype" id="Y" value="Y" <?php //echo $this->Y;?>><?php //echo $this->translate("Anually");?>
-          </label>
-
-          <label class="radio-inline">
-            <input type="radio" name="controltype" id="M" value="M" <?php //echo $this->M;?>><?php //echo $this->translate("Monthly");?>
-          </label>
-
-          <label class="radio-inline">
-            <input type="radio" name="controltype" id="D" value="D" <?php //echo $this->D;?>><?php //echo $this->translate("Daily");?>
-          </label>
-        </div> -->
-      </fieldset>
+      </details>
+      <?php endif; ?>
 
       <div class="snep-body-footer-buttons">
         <button type="submit" class="btn btn-add" name="signup" value="Sign up"><?php echo $this->translate("Save");?></button>
@@ -374,10 +341,12 @@ jQuery(document).ready(function(){
         minlength: 5,
         maxlength: 30
       },
-
+      password: {
+        required: <?php echo $this->action === 'edit' ? 'false' : 'true'; ?>
+      },
       passwordpadlock: {
         required: function() {
-          return jQuery("#authenticate").is(":checked");
+          return jQuery("#authenticate").is(":checked") && "<?php echo $this->action; ?>" !== "edit";
         },
         minlength: 4,
         maxlength: 32,
@@ -388,12 +357,6 @@ jQuery(document).ready(function(){
           return jQuery("#voicemail").is(":checked");
         },
         email: true
-      },
-      timetotal: {
-        required: function() {
-          return jQuery("#minute_control").is(":checked");
-        },
-        numbersOnly: true
       }
     },
     messages: {
@@ -405,6 +368,9 @@ jQuery(document).ready(function(){
         minlength: "<?php echo $this->translate('Please enter at least {0} characters.'); ?>",
         maxlength: "<?php echo $this->translate('Please enter no more than {0} characters.'); ?>",
         numbersOnly: "<?php echo $this->translate('Numbers only please'); ?>"
+      },
+      password: {
+        required: "<?php echo $this->translate('The password is required'); ?>"
       },
       passwordpadlock: {
         required: "<?php echo $this->translate('The password is required'); ?>",
@@ -457,11 +423,6 @@ jQuery(function() {
   });
 });
 
-window.onload = function(){
-  var div = '<?php echo $this->techType;?>';
-  showDiv(div) ;
-}
-
 function generatePass(){
 
   var password = "";
@@ -470,14 +431,6 @@ function generatePass(){
   password += possible.charAt(Math.floor(Math.random() * possible.length));
   jQuery('#password').val(password);
   passForce(password);
-}
-
-function showDiv(div){
-
-  document.getElementById("sipiax").className = "invisible";
-  document.getElementById("sipiax").className = "visible";
-  document.getElementById("siponly").className = "visible";
-  document.getElementById("pjsipTransport").className = "visible";
 }
 
 //force verify password

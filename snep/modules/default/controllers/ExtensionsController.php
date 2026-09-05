@@ -118,6 +118,15 @@ class ExtensionsController extends Zend_Controller_Action {
 
         $this->view->extensions = $extensions;
 
+        // TASK-0031 (Phase 5): surface whatever the last add/edit
+        // determined via reportSaveResult() -- same FlashMessenger
+        // convention PjsipTransportsController already established
+        // (TASK-0020).
+        $flash = $this->_helper->FlashMessenger;
+        $this->view->saved_active_messages = $flash->getMessages('saved_active');
+        $this->view->saved_pending_messages = $flash->getMessages('saved_pending');
+        $this->view->apply_failed_messages = $flash->getMessages('apply_failed');
+
       }
 
       /**
@@ -179,6 +188,132 @@ class ExtensionsController extends Zend_Controller_Action {
           $retorno .= $caracteres[$rand-1];
         }
         return $retorno;
+      }
+
+      /**
+      * buildFormViewFromPost - TASK-0031 (Phase 11): reconstruct a
+      * peers-row-shaped array from a rejected POST submission, so a
+      * validation failure can re-render the same form with what the
+      * admin already typed instead of discarding it behind a redirect to
+      * a generic error page. Never carries a password/secret value
+      * forward (Phase 3) -- those fields always redisplay blank,
+      * regardless of what was submitted.
+      * @param array $post
+      * @return array
+      */
+      private function buildFormViewFromPost(array $post) {
+        $natTypes = array('no', 'comedia', 'force_rport', 'auto_comedia', 'auto_force_rport');
+        $nat = '';
+        foreach ($natTypes as $val) {
+          if (isset($post['nat_' . $val])) {
+            $nat = $nat === '' ? $val : $nat . ',' . $val;
+          }
+        }
+        return array(
+          'name' => isset($post['exten']) ? $post['exten'] : '',
+          'callerid' => isset($post['name']) ? $post['name'] : '',
+          'secret' => '',
+          'password' => '',
+          'email' => isset($post['email']) ? $post['email'] : '',
+          'usa_vc' => isset($post['voicemail']) ? 'yes' : '',
+          'cancallforward' => isset($post['cancallforward']) ? 'yes' : '',
+          'authenticate' => isset($post['authenticate']) ? 1 : 0,
+          'qualify' => isset($post['qualify']) ? 'yes' : 'no',
+          'transport_id' => isset($post['transport_id']) ? $post['transport_id'] : '',
+          'pickupgroup' => isset($post['pickup_group']) ? $post['pickup_group'] : '',
+          'directmedia' => isset($post['directmedia']) ? $post['directmedia'] : 'no',
+          'dtmfmode' => isset($post['dtmf']) ? $post['dtmf'] : 'rfc2833',
+          'nat' => $nat === '' ? 'no' : $nat,
+          'blf' => isset($post['blf']) ? 'yes' : '',
+          'allow' => (isset($post['codec']) ? $post['codec'] : '') . ';' . (isset($post['codec1']) ? $post['codec1'] : '') . ';' . (isset($post['codec2']) ? $post['codec2'] : ''),
+        );
+      }
+
+      /**
+      * applyPjsipFormState - the same NAT/direct-media/DTMF/codec
+      * "checked"-flag view derivation editAction() already performs for
+      * a loaded DB row (see its "pjsip" switch branch), extracted so
+      * TASK-0031's validation-failure re-render path can compute the
+      * identical view state from a peers-row-shaped array without
+      * duplicating this logic a second time.
+      * @param array $data peers-row-shaped: directmedia, dtmfmode, blf, nat, allow
+      */
+      private function applyPjsipFormState(array $data) {
+        $this->view->directmediayes = '';
+        $this->view->directmedianonat = '';
+        $this->view->directmediaupdate = '';
+        $this->view->directmediaoutgoing = '';
+        switch (isset($data['directmedia']) ? $data['directmedia'] : 'no') {
+          case 'yes': $this->view->directmediayes = 'checked'; break;
+          case 'update': $this->view->directmediaupdate = 'checked'; break;
+          case 'outgoing': $this->view->directmediaoutgoing = 'checked'; break;
+          default: $this->view->directmedianonat = 'checked'; break;
+        }
+
+        $this->view->dtmfrf = '';
+        $this->view->dtmfinband = '';
+        $this->view->dtmfinfo = '';
+        $dtmf = isset($data['dtmfmode']) ? $data['dtmfmode'] : 'rfc2833';
+        if ($dtmf === 'inband') {
+          $this->view->dtmfinband = 'checked';
+        } elseif ($dtmf === 'info') {
+          $this->view->dtmfinfo = 'checked';
+        } else {
+          $this->view->dtmfrf = 'checked';
+        }
+
+        $this->view->blf = (isset($data['blf']) && $data['blf'] === 'yes') ? 'checked' : '';
+
+        $this->view->nat_no = '';
+        $this->view->nat_force_rport = '';
+        $this->view->nat_comedia = '';
+        $this->view->nat_auto_force_rport = '';
+        $this->view->nat_auto_comedia = '';
+        foreach (explode(',', isset($data['nat']) ? $data['nat'] : 'no') as $val) {
+          $label = 'nat_' . trim($val);
+          $this->view->$label = 'checked';
+        }
+
+        $codecsDefault = PBX_Interfaces::getCodecs();
+        $codecs = explode(';', isset($data['allow']) ? $data['allow'] : '');
+        $codec1 = '';
+        $codec2 = '';
+        $codec3 = '';
+        foreach ($codecsDefault as $value) {
+          $codec1 .= ($value['format'] == (isset($codecs[0]) ? $codecs[0] : '')) ? '<option value="' . $value['format'] . '" selected>' . $value['type'] . ' - ' . $value['format'] . '</option>\n' : '<option value="' . $value['format'] . '">' . $value['type'] . ' - ' . $value['format'] . '</option>\n';
+          $codec2 .= ($value['format'] == (isset($codecs[1]) ? $codecs[1] : '')) ? '<option value="' . $value['format'] . '" selected>' . $value['type'] . ' - ' . $value['format'] . '</option>\n' : '<option value="' . $value['format'] . '">' . $value['type'] . ' - ' . $value['format'] . '</option>\n';
+          $codec3 .= ($value['format'] == (isset($codecs[2]) ? $codecs[2] : '')) ? '<option value="' . $value['format'] . '" selected>' . $value['type'] . ' - ' . $value['format'] . '</option>\n' : '<option value="' . $value['format'] . '">' . $value['type'] . ' - ' . $value['format'] . '</option>\n';
+        }
+        $this->view->codec1 = $codec1;
+        $this->view->codec2 = $codec2;
+        $this->view->codec3 = $codec3;
+      }
+
+      /**
+      * reportSaveResult - TASK-0031 (Phase 5): confirm the just-saved
+      * extension actually loaded in Asterisk before letting the redirect
+      * imply success -- mirrors PjsipTransportsController::reportApplyResult()'s
+      * own "never trust config generation/AMI submission as proof"
+      * discipline (TASK-0020), applied here to a single extension save
+      * instead of a transport. Extensions never need a restart -- PJSIP
+      * endpoint reload is dynamic (TASK-0029B); the only real outcomes
+      * are active, unconfirmed (AMI unreachable), or genuinely not
+      * loaded.
+      * @param string $exten
+      */
+      private function reportSaveResult($exten) {
+        $flash = $this->_helper->FlashMessenger;
+        $check = Snep_PjsipStatus_Manager::checkApplyResult($exten);
+        if ($check['endpoint_found'] === true) {
+          $flash->setNamespace('saved_active');
+          $flash->addMessage($this->view->translate("Extension %s saved and active.", $exten));
+        } elseif ($check['endpoint_found'] === null) {
+          $flash->setNamespace('saved_pending');
+          $flash->addMessage($this->view->translate("Extension %s saved. Could not confirm Asterisk applied it right now -- check the Status column shortly.", $exten));
+        } else {
+          $flash->setNamespace('apply_failed');
+          $flash->addMessage($this->view->translate("Extension %s was saved, but Asterisk did not load it. Check the Status column or contact an administrator.", $exten));
+        }
       }
 
       /**
@@ -267,17 +402,30 @@ class ExtensionsController extends Zend_Controller_Action {
               $this->renderScript('error/sneperror.phtml');
             }
 
+            // TASK-0031 (Phase 11): snapshot before the "name <exten>"
+            // mutation below, so a validation failure can re-render the
+            // form with exactly what was typed.
+            $submitted = $data;
+
             $data["name"] = $data["name"] . " <" . $data["exten"].">";
             $ret = $this->execAdd($data);
 
             if (!is_string($ret)) {
               //audit
               Snep_Audit_Manager::SaveLog("Added", 'peers', $data['exten'], $this->view->translate("Extension") . " {$data['name']} " . $data['exten']);
-              
+
+              $this->reportSaveResult($data['exten']);
               $this->_redirect('/extensions/');
             } else {
-              $message = $ret;
-              $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
+              // TASK-0031 (Phase 11): re-render, don't redirect -- a
+              // server-authoritative validation rejection is not a
+              // runtime failure, and the admin's input is still valid to
+              // show back.
+              $this->view->extension = $this->buildFormViewFromPost($submitted);
+              $this->applyPjsipFormState($this->view->extension);
+              $this->view->extenInGroup = isset($submitted['exten_group']) ? array_fill_keys((array) $submitted['exten_group'], '') : array();
+              $this->view->error_message = $ret;
+              $this->renderScript($this->getRequest()->getControllerName().'/addedit.phtml');
             }
 
           }
@@ -311,6 +459,13 @@ class ExtensionsController extends Zend_Controller_Action {
             if(count($nameValue) > 1){
               $exten['callerid'] = $nameValue[0];
             };
+
+            // TASK-0031 (Phase 2, Diagnostics): the edit page's own
+            // read-only runtime detail -- one extra bulk status query for
+            // an admin-initiated single-row page load, not a list (Phase
+            // 17's bulk-call discipline is about list pages).
+            $statuses = Snep_PjsipStatus_Manager::getExtensionStatuses();
+            $exten['runtime_status'] = isset($statuses[$exten['id']]) ? $statuses[$exten['id']] : null;
 
             $this->view->extension = $exten ;
             // TASK-0019: item 3's edit-pre-select requirement -- includes
@@ -558,6 +713,10 @@ class ExtensionsController extends Zend_Controller_Action {
               $postData = $this->_request->getParams();
 
               $postData["exten"] = $this->_request->getParam("id");
+              // TASK-0031 (Phase 11): snapshot before the "name<exten>"
+              // mutation below, so a validation failure can re-render the
+              // form with exactly what was typed.
+              $submitted = $postData;
               $postData['name'] = $postData['name']."<".$postData['exten'].">";
 
 
@@ -567,10 +726,16 @@ class ExtensionsController extends Zend_Controller_Action {
                   //audit
                   Snep_Audit_Manager::SaveLog("Updated", 'peers', $postData['exten'], $this->view->translate("Extension") . " {$postData['name']} " . $postData['exten']);
 
+                $this->reportSaveResult($postData['exten']);
                 $this->_redirect('/extensions/');
               } else {
+                // TASK-0031 (Phase 11): re-render, don't redirect -- see
+                // addAction()'s identical rationale above.
+                $this->view->extension = $this->buildFormViewFromPost($submitted);
+                $this->applyPjsipFormState($this->view->extension);
+                $this->view->extenInGroup = isset($submitted['exten_group']) ? array_fill_keys((array) $submitted['exten_group'], '') : array();
                 $this->view->error_message = $ret;
-                $this->renderScript('error/sneperror.phtml');;
+                $this->renderScript($this->getRequest()->getControllerName().'/addedit.phtml');
               }
 
             }
@@ -625,7 +790,14 @@ class ExtensionsController extends Zend_Controller_Action {
             }
 
             $context = 'default';
-            $extenPass = $formData["passwordpadlock"];
+            // TASK-0031: the padlock PIN is never echoed back into the
+            // rendered form (see addedit.phtml) -- a blank submission on
+            // an update means "keep the current PIN", not "clear it".
+            // Only a non-empty submission, or a fresh add, sets a new
+            // value.
+            $extenPass = (isset($formData["passwordpadlock"]) && $formData["passwordpadlock"] !== "")
+                ? $formData["passwordpadlock"]
+                : ($update ? $resultGetId['password'] : "");
             $extenName = $formData["name"];
             $extenGroup = $formData["exten_group"];
             $pickup_group = Snep_PickupGroups_Manager::getName($formData["pickup_group"]);
@@ -649,7 +821,13 @@ class ExtensionsController extends Zend_Controller_Action {
 	              return $this->view->translate('Este ramal legado deve ser migrado para PJSIP antes de ser editado.');
 	            }
 
-	            $secret = (isset($formData["password"]))? $formData["password"]: "";
+	            // TASK-0031: same "blank on edit means unchanged" contract
+	            // as the padlock PIN above -- the SIP secret is never
+	            // echoed back into the rendered form either (Phase 3,
+	            // credential safety).
+	            $secret = (isset($formData["password"]) && $formData["password"] !== "")
+	              ? $formData["password"]
+	              : ($update ? $resultGetId['secret'] : "");
 
             $blf = (isset($formData["blf"]))? $formData["blf"]: "";
             $dtmfmode = (isset($formData["dtmf"]))? $formData["dtmf"]: "";
@@ -990,7 +1168,13 @@ class ExtensionsController extends Zend_Controller_Action {
 
                   } catch (PDOException $e) {
                     $db->rollBack();
-                    $this->view->error_message = $this->view->translate("DB Delete Error: ") . $e->getMessage();
+                    // TASK-0031 (Phase 4): the raw PDO/SQL message must
+                    // never reach the user -- it can disclose table/column
+                    // names and query shape. Logged in full for an
+                    // administrator to diagnose; the user gets one
+                    // actionable, product-worded sentence.
+                    error_log("ExtensionsController: delete failed for extension {$exten}: " . $e->getMessage());
+                    $this->view->error_message = $this->view->translate("Cannot delete this extension due to an unexpected error. Please try again or contact an administrator.");
                     $this->view->back = $this->view->translate("Back");
                     $this->renderScript('error/sneperror.phtml');;
                   }
@@ -1051,7 +1235,13 @@ class ExtensionsController extends Zend_Controller_Action {
 
                   } catch (PDOException $e) {
                     $db->rollBack();
-                    $this->view->error_message = $this->view->translate("DB Delete Error: ") . $e->getMessage();
+                    // TASK-0031 (Phase 4): the raw PDO/SQL message must
+                    // never reach the user -- it can disclose table/column
+                    // names and query shape. Logged in full for an
+                    // administrator to diagnose; the user gets one
+                    // actionable, product-worded sentence.
+                    error_log("ExtensionsController: delete failed for extension {$exten}: " . $e->getMessage());
+                    $this->view->error_message = $this->view->translate("Cannot delete this extension due to an unexpected error. Please try again or contact an administrator.");
                     $this->view->back = $this->view->translate("Back");
                     $this->renderScript('error/sneperror.phtml');;
                   }
@@ -1175,7 +1365,11 @@ class ExtensionsController extends Zend_Controller_Action {
 
                       } catch (PDOException $e) {
                         $db->rollBack();
-                        $this->view->error_message = $this->view->translate("DB Delete Error: ") . $e->getMessage();
+                        // TASK-0031 (Phase 4): same non-disclosure fix as
+                        // removeAction()/disableAction() above -- the raw
+                        // PDO/SQL message must never reach the user.
+                        error_log("ExtensionsController: bulk delete failed for extension {$exten}: " . $e->getMessage());
+                        $this->view->error_message = $this->view->translate("Cannot delete this extension due to an unexpected error. Please try again or contact an administrator.");
                         $this->view->back = $this->view->translate("Back");
                         $this->renderScript('error/sneperror.phtml');;
                       }

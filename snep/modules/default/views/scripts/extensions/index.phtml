@@ -21,17 +21,35 @@
         <?php if ($this->alert_message) { ?>
           <div class="alert alert-danger"><?php echo $this->alert_message; ?></div>
         <?php }  ?>
+        <?php // TASK-0031 (Phase 5, save/apply feedback): one-shot messages
+              // set by ExtensionsController::reportSaveResult() after the
+              // add/edit that led to this redirect -- never a bare 302
+              // implying success (mirrors PjsipTransportsController's own
+              // FlashMessenger convention, TASK-0020). ?>
+        <?php foreach ($this->saved_active_messages as $msg): ?>
+          <div class="alert alert-success"><?php echo $this->escape($msg); ?></div>
+        <?php endforeach; ?>
+        <?php foreach ($this->saved_pending_messages as $msg): ?>
+          <div class="alert alert-info"><?php echo $this->escape($msg); ?></div>
+        <?php endforeach; ?>
+        <?php foreach ($this->apply_failed_messages as $msg): ?>
+          <div class="alert alert-danger"><?php echo $this->escape($msg); ?></div>
+        <?php endforeach; ?>
           <table class="table table-striped" id="listtable">
             <thead>
               <tr>
                 <th class="text-center"><?php echo $this->translate('Extension');?></th>
                 <th class="text-center"><?php echo $this->translate('Caller ID');?></th>
-                <th class="text-center"><?php echo $this->translate('Channel');?></th>
-                <th class="text-center"><?php echo $this->translate('Extension Group');?></th>
+                <!-- TASK-0031 (Phase 14): Channel/Extension Group are the
+                     lowest-priority columns on this table -- collapsed
+                     first at narrow widths rather than forcing horizontal
+                     scroll for every column. -->
+                <th class="text-center hidden-xs hidden-sm"><?php echo $this->translate('Channel');?></th>
+                <th class="text-center hidden-xs"><?php echo $this->translate('Extension Group');?></th>
                 <th class="text-center"><?php echo $this->translate('Status');?></th>
                 <th class="text-center"><?php echo $this->translate('Actions');?></th>
               </tr>
-            </thead>  
+            </thead>
             <tbody>
               <?php foreach($this->extensions as $cha => $val ): ?>
                 <tr>
@@ -39,10 +57,10 @@
                   <td class="text-center"> <?php
                     $nameValue = explode("<", $val['name']);
                     $callerid = $nameValue[0];
-                    echo $callerid ?> 
+                    echo $callerid ?>
                   </td>
-                  <td class="text-center"> <?php echo $val['channel'] ?> </td>
-                  <td class="text-center"> <?php echo $val['groups'] ?> </td>
+                  <td class="text-center hidden-xs hidden-sm"> <?php echo $val['channel'] ?> </td>
+                  <td class="text-center hidden-xs"> <?php echo $val['groups'] ?> </td>
                   <?php // TASK-0029B: PJSIP runtime status -- see
                         // Snep_PjsipStatus_Manager. Legacy chan_sip/IAX
                         // extensions get no runtime_status (null); shown
