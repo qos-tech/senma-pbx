@@ -142,6 +142,10 @@ run_suite "http-smoke"             "smoke-test.sh"
 run_suite "cdr-window-selftest"    "cdr-window-selftest.sh"
 run_suite "call-smoke"             "call-smoke-test.sh"
 run_suite "trunk-smoke"            "trunk-smoke-test.sh"
+# TASK-0028X: pjsip_external outbound dial-string fix -- placed right
+# after trunk-smoke (native registered PJSIP trunk, both directions),
+# the closest-related existing suite, and before transport-smoke.
+run_suite "pjsip-external-trunk-smoke" "pjsip-external-trunk-smoke-test.sh"
 run_suite "transport-smoke"        "transport-smoke-test.sh"
 run_suite "dialplan-legacy-closure" "dialplan-legacy-closure-smoke-test.sh"
 run_suite "restart-smoke"          "restart-smoke-test.sh"

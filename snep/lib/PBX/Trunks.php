@@ -127,6 +127,44 @@ class PBX_Trunks {
                 "host" => $rawTrunk->host
             );
             $interface = new PBX_Asterisk_Interface_PJSIP($config);
+        } else if ($tech == "PJSIP_EXTERNAL") {
+            // TASK-0028X: pjsip_external (TASK-0028B) never falls into the
+            // "PJSIP" branch above -- trunks.type is persisted as the
+            // literal string "PJSIP_EXTERNAL"
+            // (TrunksController::preparePost()'s pjsip_external branch),
+            // which is a different string than "PJSIP" and previously fell
+            // through, unhandled, to the generic `else` (VIRTUAL) branch
+            // below. VIRTUAL's getDialStringForDestination() is the base
+            // class's default -- chan_sip's "Peer/exten" concatenation
+            // ("PJSIP/<endpoint>/<destination>"), structurally wrong for
+            // chan_pjsip, which requires "exten@endpoint". Reusing
+            // PBX_Asterisk_Interface_PJSIP here (the same class the native
+            // PJSIP branch above already uses) gets the correct
+            // "PJSIP/<destination>@<endpoint>" form for free from its
+            // existing getDialStringForDestination() override -- no new
+            // dial-string formatting logic needed. Unlike a native PJSIP
+            // trunk (whose 'username' is a SENMA-generated "trunk-<id>"
+            // object name), a pjsip_external row's 'username' column
+            // already holds the externally-managed endpoint's own name
+            // exactly as validated by
+            // TrunksController::externalPjsipEndpointExists() at creation
+            // time -- see TrunksController.php's pjsip_external branch
+            // ('username' => $endpoint) and
+            // docs/tasks/0028b-pjsip-external-endpoint-trunks.md. Inbound
+            // matching (PBX_Interfaces::getChannelOwner()) is unaffected:
+            // it regexes trunks.id_regex directly from the DB row and only
+            // calls PBX_Trunks::get() afterward, once a match is already
+            // found -- this branch only changes which interface object is
+            // built, not id_regex or the match itself. See
+            // docs/tasks/0028-pjsip-only-architecture-audit.md ("Discagem
+            // de tronco" finding) and
+            // docs/tasks/0028x-pjsip-external-dialstring-fix.md.
+            $config = array(
+                "username" => $rawTrunk->username,
+                "secret" => $rawTrunk->secret,
+                "host" => $rawTrunk->host
+            );
+            $interface = new PBX_Asterisk_Interface_PJSIP($config);
         } else if ($tech == "KHOMP") {
             $khomp_id = substr($rawTrunk->channel, strpos($rawTrunk->channel, '/') + 1);
             $config = array(

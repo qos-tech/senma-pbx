@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -174,6 +174,16 @@ call-smoke: up
 
 trunk-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/trunk-smoke-test.sh
+
+# TASK-0028X: proves pjsip_external outbound dial-string generation --
+# PBX_Trunks::get() now dispatches PJSIP_EXTERNAL trunks to
+# PBX_Asterisk_Interface_PJSIP (same as native "pjsip"), producing
+# "PJSIP/<destination>@<endpoint>" instead of the previously-generated,
+# structurally-wrong "PJSIP/<endpoint>/<destination>". See
+# docs/tasks/0028x-pjsip-external-dialstring-fix.md. Deliberately
+# separate from trunk-smoke -- a different trunk technology/fixture.
+pjsip-external-trunk-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/pjsip-external-trunk-smoke-test.sh
 
 transport-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/transport-smoke-test.sh
