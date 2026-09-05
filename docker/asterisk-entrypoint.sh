@@ -79,6 +79,40 @@ fi
 mkdir -p /var/lib/asterisk/agi-bin
 ln -sfn /var/www/html/snep/agi /var/lib/asterisk/agi-bin/snep
 
+# TASK-0028Z: self-signed TEST-ONLY TLS certificate for the http.conf
+# WSS listener (docker/asterisk-config/http.conf's tlscertfile/
+# tlsprivatekey). Generated once, at first boot, directly into the
+# persistent asterisk-etc volume -- guarded independently of the
+# asterisk.conf check below so an existing dev volume created before
+# this task also gets a cert on its next start without re-seeding
+# anything else. Never committed to git, never baked into the image.
+# Full certificate lifecycle management (customer-supplied certs, CA
+# config, rotation, an upload UI) is reserved for TASK-0029A; this is
+# only the minimal fixture needed to prove the WSS platform path works.
+ASTERISK_TLS_KEY_DIR="$ASTERISK_ETC/keys"
+if [ ! -f "$ASTERISK_TLS_KEY_DIR/wss-test-cert.pem" ]; then
+    echo "[asterisk-entrypoint] generating self-signed TEST-ONLY TLS certificate for WSS (see TASK-0028Z; TASK-0029A must supply real certificate management)"
+    mkdir -p "$ASTERISK_TLS_KEY_DIR"
+    openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout "$ASTERISK_TLS_KEY_DIR/wss-test-key.pem" \
+        -out "$ASTERISK_TLS_KEY_DIR/wss-test-cert.pem" \
+        -days 3650 \
+        -subj "/CN=senma-wss-test" \
+        -addext "subjectAltName=DNS:asterisk,DNS:localhost"
+    chmod 600 "$ASTERISK_TLS_KEY_DIR/wss-test-key.pem"
+    chmod 644 "$ASTERISK_TLS_KEY_DIR/wss-test-cert.pem"
+fi
+
+# TASK-0028Z: http.conf needs the same independent-guard treatment as
+# the TLS certificate above -- a dev volume created before this task
+# already has asterisk.conf populated, so the first-boot block below
+# (gated on asterisk.conf's own existence) will never run again on it,
+# and it would otherwise never receive http.conf at all.
+if [ ! -f "$ASTERISK_ETC/http.conf" ]; then
+    echo "[asterisk-entrypoint] seeding http.conf (WSS platform enablement, TASK-0028Z)"
+    cp "$ASTERISK_CONFIG_SRC/http.conf" "$ASTERISK_ETC/http.conf"
+fi
+
 if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
     echo "[asterisk-entrypoint] /etc/asterisk not yet populated, assembling from vendored config"
 

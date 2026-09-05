@@ -151,6 +151,12 @@ run_suite "pjsip-external-trunk-smoke" "pjsip-external-trunk-smoke-test.sh"
 # cleanup proof for both trunk and extension -- placed right after the
 # other trunk suites, before transport-smoke.
 run_suite "pjsip-lifecycle-smoke"  "pjsip-lifecycle-smoke-test.sh"
+# TASK-0028Z: Asterisk HTTP/WSS platform enablement -- placed right
+# after the other trunk/extension PJSIP suites and before transport-
+# smoke. Restarts/recreates the asterisk container itself (Phase 9 of
+# the task); running suites strictly serially (this file's own header
+# comment) is exactly what makes that safe here.
+run_suite "wss-platform-smoke"     "wss-platform-smoke-test.sh"
 run_suite "transport-smoke"        "transport-smoke-test.sh"
 run_suite "dialplan-legacy-closure" "dialplan-legacy-closure-smoke-test.sh"
 run_suite "restart-smoke"          "restart-smoke-test.sh"

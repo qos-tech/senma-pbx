@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
 
 COMPOSE ?= docker compose
 
@@ -198,6 +198,15 @@ transport-smoke: up
 # (no live call, no baresip/provider dependency).
 pjsip-lifecycle-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/pjsip-lifecycle-smoke-test.sh
+
+# TASK-0028Z: Asterisk built-in HTTP server + WSS platform enablement --
+# proves http.conf/TLS-cert persistence, a real TLS+WebSocket handshake
+# at /ws, a real SIP REGISTER over that WebSocket, and restart/recreate
+# convergence. Restarts/recreates the asterisk container itself
+# (deliberately, Phase 9 of the task) -- run in isolation from other
+# stateful suites, same as every other suite in this list.
+wss-platform-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/wss-platform-smoke-test.sh
 
 # TASK-0028C: proves the reachable SIP/IAX-era dialplan/config constructs
 # closed by that task stay closed (context bleed, SIPAddHeader, callback
