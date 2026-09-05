@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke
 
 COMPOSE ?= docker compose
 
@@ -305,3 +305,36 @@ reset:
 	@echo "WARNING: this removes MAG development containers and volumes."
 	@printf "Type RESET to continue: "; read answer; test "$$answer" = "RESET"
 	$(COMPOSE) down -v --remove-orphans
+
+# TASK-0033A: bit-identical operational backup -- see docs/tasks/
+# 0033a-backup-restore-disaster-recovery-foundation.md. DEST is optional
+# (defaults to ./backups); an operator never needs to know a Docker
+# volume name to use this.
+backup: up
+	@set -a; . ./.env; set +a; bash scripts/backup.sh $(if $(DEST),--dest "$(DEST)")
+
+# TASK-0033A: REPLACE-semantics restore. FROM is required. CONFIRM=RESTORE
+# is required whenever the target already has existing SENMA state
+# (mirrors `make reset`'s typed-confirmation precedent) -- restore.sh
+# itself reports the exact reason if this is missing/wrong.
+restore:
+	@test -n "$(FROM)" || (echo "Usage: make restore FROM=<path-to-backup.tar.gz> [CONFIRM=RESTORE]" && exit 1)
+	@set -a; . ./.env; set +a; bash scripts/restore.sh "$(FROM)" $(if $(filter RESTORE,$(CONFIRM)),--confirm)
+
+# TASK-0033A: lightweight, non-destructive backup/restore validation --
+# safe to run as part of `make regression` (never stops a container,
+# never touches a volume). See scripts/backup-smoke-test.sh.
+backup-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/backup-smoke-test.sh
+
+# TASK-0033A: the real, destructive disaster-recovery proof -- creates
+# fixtures, backs them up, actually destroys the target (db, asterisk-etc,
+# mag-asterisk-var volumes; setup.conf; arquivos/), restores, and proves
+# a real endpoint re-registers and completes a real call. Deliberately
+# NOT part of `make regression` (see scripts/
+# backup-restore-dr-smoke-test.sh's own header and docs/tasks/
+# 0033a-backup-restore-disaster-recovery-foundation.md's "Regression"
+# section for why) -- run this explicitly, and expect it to take
+# noticeably longer than an ordinary smoke suite.
+backup-restore-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/backup-restore-dr-smoke-test.sh

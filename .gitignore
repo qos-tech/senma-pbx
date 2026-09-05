@@ -17,3 +17,8 @@ snep/includes/setup.conf
 .claude/tmp/
 .claude/local/
 *.log
+
+# TASK-0033A: backup artifacts contain database rows, SIP secrets, and a
+# TLS private key -- never committed. See docs/tasks/
+# 0033a-backup-restore-disaster-recovery-foundation.md SECURITY.
+/backups/

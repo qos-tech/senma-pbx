@@ -1,0 +1,374 @@
+#!/bin/bash
+#
+# SENMA operator-facing restore command (TASK-0033A).
+#
+# Restore contract: REPLACE, not merge (Phase 10 of TASK-0033A -- no
+# proven need for merging exists, and a deterministic replacement is far
+# easier to reason about and prove correct). Restoring onto a target that
+# already has SENMA state destroys and replaces ALL of it: database
+# schema+rows, setup.conf, arquivos/, and the whole generated Asterisk
+# config volume (including secrets and the TLS key). Nothing is merged
+# row-by-row.
+#
+# Restore ordering (see docs/tasks/
+# 0033a-backup-restore-disaster-recovery-foundation.md RESTORE ORDER for
+# the full evidence trail this was derived from, not assumed):
+#   1. stop app/asterisk/db (nothing should be writing to what we're
+#      about to replace)
+#   2. wipe the target: mag-db, asterisk-etc, mag-asterisk-var volumes;
+#      host-side setup.conf and arquivos/ content
+#   3. restore asterisk-etc + astdb.sqlite3 + setup.conf + arquivos/
+#      BEFORE any container that owns them starts -- this is what makes
+#      docker/entrypoint.sh's and docker/asterisk-entrypoint.sh's own
+#      first-boot guards (`[ ! -f ... ]`) work *for* us instead of
+#      against us: they see the restored files already present and skip
+#      regeneration entirely, so the exact restored secrets/config/cert
+#      survive untouched.
+#   4. start db, let its own first-boot init scripts run on the now-empty
+#      volume (harmless: the schema they install is fully superseded a
+#      moment later), then import the real dump on top -- mariadb-dump's
+#      own default DROP-TABLE-IF-EXISTS/CREATE-TABLE/INSERT output makes
+#      this idempotent against whatever the stock install just created,
+#      so restore reuses the existing supported bootstrap path instead of
+#      fighting it.
+#   5. start asterisk, then app; verify readiness at each step.
+#
+# Usage:
+#   scripts/restore.sh <path-to-backup.tar.gz> [--confirm] [--validate-only]
+#
+#   --validate-only  Check archive integrity/completeness only -- never
+#                     touches a container or volume. Used by
+#                     scripts/backup-smoke-test.sh's failure-mode checks
+#                     and safe for an operator to run before deciding to
+#                     proceed.
+#   --confirm        Required whenever the target already has non-trivial
+#                     existing state (see target_has_existing_state
+#                     below). Mirrors `make reset`'s existing
+#                     typed-confirmation precedent for destructive
+#                     operations; scriptable via
+#                     `make restore FROM=... CONFIRM=RESTORE`.
+#
+# Exit code: 0 on a fully verified restore (or a clean --validate-only
+# pass); 1 on any validation failure or restore-step failure. Never
+# reports success on a partially-applied restore -- verification
+# failures after the destructive steps have already run are reported as
+# a hard failure with explicit diagnostics, not silently ignored.
+
+set -uo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
+# shellcheck source=lib/backup-lib.sh
+source "$SCRIPT_DIR/lib/backup-lib.sh"
+# shellcheck source=lib/harness.sh
+source "$SCRIPT_DIR/lib/harness.sh"
+# Sourced only for harness_retry (a standalone bounded-retry helper with
+# no side effects at source time) -- this script does NOT call
+# harness_install_traps and does not use the PASS/FAIL/BLOCKED
+# vocabulary; it is a plain operator command with a plain 0/1 exit code.
+
+COMPOSE="${SMOKE_COMPOSE:-docker compose}"
+ARCHIVE=""
+CONFIRMED=0
+VALIDATE_ONLY=0
+
+while [ $# -gt 0 ]; do
+    case "$1" in
+        --confirm) CONFIRMED=1; shift ;;
+        --validate-only) VALIDATE_ONLY=1; shift ;;
+        -*) blib_die "unknown argument: $1" ;;
+        *) ARCHIVE="$1"; shift ;;
+    esac
+done
+[ -n "$ARCHIVE" ] || blib_die "usage: restore.sh <path-to-backup.tar.gz> [--confirm] [--validate-only]"
+[ -f "$ARCHIVE" ] || blib_die "backup archive not found: $ARCHIVE"
+
+: "${COMPOSE_PROJECT_NAME:?COMPOSE_PROJECT_NAME must be set (source .env first)}"
+
+EXTRACT_DIR=""
+cleanup_extract() {
+    [ -n "$EXTRACT_DIR" ] && [ -d "$EXTRACT_DIR" ] && rm -rf "$EXTRACT_DIR"
+}
+trap cleanup_extract EXIT
+
+# =====================================================================
+# Phase A -- validation (Phase 11 of TASK-0033A): corrupt archive,
+# incomplete manifest, missing DB dump, missing mandatory component, or
+# a checksum mismatch must all be rejected with an explicit diagnostic,
+# never a silent partial restore.
+# =====================================================================
+
+blib_log "==> validating backup archive: $ARCHIVE"
+
+if ! tar tzf "$ARCHIVE" >/dev/null 2>&1; then
+    blib_die "corrupt archive: '$ARCHIVE' is not a valid gzip/tar file"
+fi
+
+EXTRACT_DIR="$(mktemp -d)"
+blib_secure_path "$EXTRACT_DIR"
+tar xzf "$ARCHIVE" -C "$EXTRACT_DIR" || blib_die "corrupt archive: extraction failed"
+
+STAGE_DIR="$(find "$EXTRACT_DIR" -maxdepth 1 -type d -name 'senma-backup-*' | head -1)"
+[ -n "$STAGE_DIR" ] || blib_die "corrupt archive: no senma-backup-* directory found inside"
+
+MANIFEST="$STAGE_DIR/manifest.txt"
+[ -f "$MANIFEST" ] || blib_die "incomplete manifest: manifest.txt not found in archive"
+
+FORMAT_VERSION="$(blib_manifest_get "$MANIFEST" backup_format_version)"
+[ "$FORMAT_VERSION" = "$BACKUP_FORMAT_VERSION" ] || blib_die "incompatible backup format: archive is version '${FORMAT_VERSION:-<missing>}', this restore.sh supports version ${BACKUP_FORMAT_VERSION}"
+
+COMPONENT_COUNT="$(blib_manifest_get "$MANIFEST" component_count)"
+[ -n "$COMPONENT_COUNT" ] && [ "$COMPONENT_COUNT" -gt 0 ] 2>/dev/null || blib_die "incomplete manifest: component_count missing or zero"
+
+CHECKSUMS="$STAGE_DIR/checksums.sha256"
+[ -f "$CHECKSUMS" ] || blib_die "incomplete manifest: checksums.sha256 not found in archive"
+
+VALIDATION_FAILED=0
+MANDATORY_COMPONENTS="db setup_conf arquivos asterisk_etc"
+for name in $MANDATORY_COMPONENTS; do
+    if ! grep -q "^component=${name}|" "$MANIFEST"; then
+        blib_log "MISSING MANDATORY COMPONENT: $name is not listed in the manifest"
+        VALIDATION_FAILED=1
+    fi
+done
+
+blib_manifest_components "$MANIFEST" | while IFS='|' read -r name relpath expected_hash expected_bytes; do
+    path="$STAGE_DIR/$relpath"
+    if [ ! -f "$path" ]; then
+        echo "MISSING FILE: component '$name' references '$relpath', which is not in the archive"
+        exit 1
+    fi
+    actual_hash="$(blib_sha256 "$path")"
+    if [ "$actual_hash" != "$expected_hash" ]; then
+        echo "CHECKSUM MISMATCH: component '$name' ($relpath) -- manifest says $expected_hash, actual is $actual_hash"
+        exit 1
+    fi
+done
+COMPONENT_LOOP_STATUS=$?
+if [ "$COMPONENT_LOOP_STATUS" -ne 0 ]; then
+    VALIDATION_FAILED=1
+    blib_log "one or more component checks failed (see above)"
+fi
+
+if [ "$VALIDATION_FAILED" -eq 1 ]; then
+    blib_die "backup archive failed validation -- refusing to restore from it (see diagnostics above)"
+fi
+
+blib_log "==> validation OK: format version ${FORMAT_VERSION}, ${COMPONENT_COUNT} components, all checksums match"
+blib_log "    created: $(blib_manifest_get "$MANIFEST" created_at)  git: $(blib_manifest_get "$MANIFEST" senma_git_describe)"
+
+if [ "$VALIDATE_ONLY" -eq 1 ]; then
+    echo "VALIDATE-ONLY: archive is valid and complete. No containers or volumes were touched."
+    exit 0
+fi
+
+# =====================================================================
+# Phase B -- destructive-target protection (Phase 7/10 of TASK-0033A)
+# =====================================================================
+
+target_has_existing_state() {
+    # A target counts as "has existing state" if the db container is up
+    # AND already has a non-empty snep schema, OR the asterisk-etc
+    # volume already has asterisk.conf (first-boot already ran). Either
+    # condition means this restore would destroy real state, not just
+    # populate an empty target.
+    if $COMPOSE ps db 2>/dev/null | grep -q "Up"; then
+        if $COMPOSE exec -T db mariadb -uroot -p"${DB_ROOT_PASSWORD:-}" -N \
+            -e "SHOW TABLES FROM \`${DB_NAME:-snep}\`;" 2>/dev/null | grep -q .; then
+            return 0
+        fi
+    fi
+    if $COMPOSE run --rm --no-deps -T --entrypoint sh asterisk -c \
+        'test -f /etc/asterisk/asterisk.conf' 2>/dev/null; then
+        return 0
+    fi
+    return 1
+}
+
+if target_has_existing_state; then
+    if [ "$CONFIRMED" -ne 1 ]; then
+        blib_die "target already has existing SENMA state (a non-empty database and/or a populated asterisk-etc volume). Restore REPLACES all of it -- nothing is merged. Re-run with --confirm (or 'make restore FROM=... CONFIRM=RESTORE') only if you intend to destroy the current installation's data."
+    fi
+    blib_log "==> --confirm given: proceeding to REPLACE existing target state"
+else
+    blib_log "==> target appears fresh/empty -- proceeding without confirmation"
+fi
+
+: "${DB_NAME:?DB_NAME must be set (source .env first)}"
+: "${DB_ROOT_PASSWORD:?DB_ROOT_PASSWORD must be set (source .env first)}"
+
+FAILED=0
+step() {
+    local desc="$1"; shift
+    blib_log "==> $desc"
+    if ! "$@"; then
+        blib_log "FAILED: $desc"
+        FAILED=1
+        return 1
+    fi
+    return 0
+}
+
+# =====================================================================
+# Phase C -- stop services, wipe target (Phase 8 ordering)
+# =====================================================================
+
+step "stopping app/asterisk/db" $COMPOSE stop app asterisk db
+$COMPOSE rm -f app asterisk db >/dev/null 2>&1 || true
+
+wipe_volume() {
+    local short="$1" vol
+    vol="$(blib_volume_name "$short" 2>/dev/null)" || return 0
+    docker volume rm "$vol" >/dev/null 2>&1 || true
+}
+blib_log "==> removing mag-db, asterisk-etc, mag-asterisk-var volumes"
+wipe_volume mag-db
+wipe_volume asterisk-etc
+wipe_volume mag-asterisk-var
+
+rm -f "$REPO_ROOT/snep/includes/setup.conf"
+rm -rf "${REPO_ROOT:?}/snep/arquivos"
+mkdir -p "$REPO_ROOT/snep/arquivos"
+
+if [ "$FAILED" -eq 1 ]; then
+    blib_die "wiping target state failed -- aborting before writing any restored data"
+fi
+
+# =====================================================================
+# Phase D -- restore host-side filesystem state (before any container
+# that owns it starts)
+# =====================================================================
+
+step "restoring snep/includes/setup.conf" cp "$STAGE_DIR/fs/setup.conf" "$REPO_ROOT/snep/includes/setup.conf"
+step "restoring snep/arquivos/" bash -c "tar xzf '$STAGE_DIR/fs/arquivos.tar.gz' -C '$REPO_ROOT/snep'"
+
+# =====================================================================
+# Phase E -- restore Docker-managed volumes via a throwaway container
+# using the real `asterisk` service's own image/mounts (same pattern
+# backup.sh uses to create them), entrypoint overridden so the real
+# bootstrap logic never runs and never races this restore.
+# =====================================================================
+
+restore_asterisk_etc() {
+    # Plain `tar xzf` alone is not enough here: running unprivileged as
+    # the `asterisk` user (matching the real entrypoint's own USER,
+    # confirmed in the Dockerfile), a non-root tar extraction does not
+    # reliably reproduce the original archive's group/mode -- confirmed
+    # live during this task's own DR proof run: a restored
+    # /etc/asterisk/snep ended up group "asterisk" mode 0755 instead of
+    # group "senma-config" mode 2775, and its *.conf files 0644 instead
+    # of 0664, which broke www-data's group-write access and surfaced as
+    # a real HTTP 500 (PBX_Exception_IO) on the very next PJSIP/legacy
+    # config regeneration. Re-apply docker/asterisk-entrypoint.sh's own
+    # first-boot permission scheme explicitly after extraction, rather
+    # than trusting tar to have preserved it -- asterisk is already a
+    # senma-config member (same as the entrypoint), so this needs no
+    # elevated privilege.
+    $COMPOSE run --rm --no-deps -T \
+        -v "$STAGE_DIR/fs:/restore-input:ro" \
+        --entrypoint sh asterisk -c '
+            set -e
+            tar xzf /restore-input/asterisk-etc.tar.gz -C /etc/asterisk
+            chgrp senma-config /etc/asterisk/snep
+            chmod 2775 /etc/asterisk/snep
+            chgrp senma-config /etc/asterisk/snep/*.conf
+            chmod 664 /etc/asterisk/snep/*.conf
+            if [ -d /etc/asterisk/keys ]; then
+                chmod 600 /etc/asterisk/keys/*key*.pem 2>/dev/null || true
+                chmod 644 /etc/asterisk/keys/*cert*.pem 2>/dev/null || true
+            fi
+        '
+}
+step "restoring asterisk-etc volume" restore_asterisk_etc
+
+if [ -f "$STAGE_DIR/fs/astdb.sqlite3" ]; then
+    restore_astdb() {
+        $COMPOSE run --rm --no-deps -T \
+            -v "$STAGE_DIR/fs:/restore-input:ro" \
+            --entrypoint sh asterisk -c \
+            'cp /restore-input/astdb.sqlite3 /var/lib/asterisk/astdb.sqlite3'
+    }
+    step "restoring astdb.sqlite3" restore_astdb
+else
+    blib_log "==> backup did not include astdb.sqlite3 -- nothing to restore (Asterisk creates it lazily)"
+fi
+
+if [ "$FAILED" -eq 1 ]; then
+    blib_die "restoring filesystem/volume state failed -- target is now in a PARTIAL, inconsistent state. Do not start services. Re-run restore from a known-good archive, or investigate the failure above before proceeding."
+fi
+
+# =====================================================================
+# Phase F -- start db, import dump on top of its own fresh-boot schema
+# =====================================================================
+
+step "starting db" $COMPOSE up -d db
+
+db_ready() { $COMPOSE ps db 2>/dev/null | grep -q "(healthy)"; }
+if ! harness_retry 30 2 -- db_ready; then
+    blib_die "db did not become healthy within ~60s after restore -- check 'docker compose logs db'"
+fi
+
+import_dump() {
+    gunzip -c "$STAGE_DIR/db/dump.sql.gz" | $COMPOSE exec -T db mariadb -uroot -p"${DB_ROOT_PASSWORD}" "${DB_NAME}"
+    # Capture both PIPESTATUS elements in the SAME command as the array
+    # access -- word expansion happens before `local` itself runs, so
+    # this is the last point both indices are still valid. Evaluating a
+    # `[ ... ]` test first (as a separate command) would overwrite
+    # PIPESTATUS with that single command's own 1-element result before
+    # the second index could ever be read (confirmed live: this exact
+    # bug crashed a real restore run with "PIPESTATUS[1]: unbound
+    # variable" under `set -u`, after the import itself had already
+    # succeeded).
+    local dump_status="${PIPESTATUS[0]}" import_status="${PIPESTATUS[1]}"
+    [ "$dump_status" -eq 0 ] && [ "$import_status" -eq 0 ]
+}
+step "importing database dump" import_dump
+
+if [ "$FAILED" -eq 1 ]; then
+    blib_die "database restore failed -- target database is now in an UNDEFINED state (fresh-boot schema may be partially overwritten by a failed import). Do not proceed to start asterisk/app. Investigate 'docker compose logs db' and the import output above."
+fi
+
+# =====================================================================
+# Phase G -- start asterisk, then app; verify basic readiness
+# =====================================================================
+
+step "starting asterisk" $COMPOSE up -d asterisk
+asterisk_ready() { $COMPOSE ps asterisk 2>/dev/null | grep -q "(healthy)"; }
+harness_retry 15 2 -- asterisk_ready || blib_log "WARNING: asterisk container did not report healthy within ~30s -- continuing to check runtime state directly"
+
+pjsip_ready() {
+    $COMPOSE exec -T asterisk asterisk -rx 'pjsip show transports' 2>&1 | grep -q 'wss\|udp\|tcp'
+}
+if ! harness_retry 15 1 -- pjsip_ready; then
+    blib_die "restored asterisk-etc did not produce working PJSIP transports after restart -- check 'docker compose exec asterisk asterisk -rx \"pjsip show transports\"' and 'docker compose logs asterisk'"
+fi
+
+odbc_ready() {
+    # `odbc show all` never prints the literal word "Connected" -- it
+    # reports "Number of active connections: N (out of M)". At least one
+    # active connection is the real signal that the DSN in res_odbc.conf
+    # actually authenticated against MariaDB (confirmed against this
+    # project's own live Asterisk 22 build, not assumed from documentation).
+    $COMPOSE exec -T asterisk asterisk -rx 'odbc show all' 2>&1 | grep -qE 'Number of active connections: [1-9]'
+}
+if ! harness_retry 10 1 -- odbc_ready; then
+    blib_die "Asterisk's ODBC connection to MariaDB is not Connected after restore. The most likely cause: the restored asterisk-etc/res_odbc.conf was templated with DB credentials from backup time, and the CURRENT .env's DB_PASSWORD does not match them (SENMA does not yet support credential rotation on an existing volume -- see TASK-0033/0033C). Check 'docker compose exec asterisk asterisk -rx \"odbc show all\"' and compare against the current .env."
+fi
+
+step "starting app" $COMPOSE up -d app
+app_ready() { $COMPOSE ps app 2>/dev/null | grep -q "(healthy)"; }
+harness_retry 15 2 -- app_ready || blib_log "WARNING: app container did not report healthy within ~30s -- check 'docker compose logs app'"
+
+if [ "$FAILED" -eq 1 ]; then
+    blib_die "post-restore readiness verification failed -- see diagnostics above. The restore steps themselves completed, but the resulting stack is not provably usable."
+fi
+
+echo
+echo "================================================================"
+echo "SENMA restore complete from: $ARCHIVE"
+echo "Backup created: $(blib_manifest_get "$MANIFEST" created_at)  git: $(blib_manifest_get "$MANIFEST" senma_git_describe)"
+echo "db/asterisk/app started and passed basic readiness checks (schema"
+echo "imported, PJSIP transports loaded, ODBC connected, app HTTP up)."
+echo "Run 'make ps' / 'make doctor' to confirm, and verify your own"
+echo "provisioning (extensions/trunks) through the admin UI."
+echo "================================================================"

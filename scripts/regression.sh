@@ -179,6 +179,15 @@ run_suite "transport-smoke"        "transport-smoke-test.sh"
 run_suite "transport-shared-runtime-ux-smoke" "transport-shared-runtime-ux-smoke-test.sh"
 run_suite "dialplan-legacy-closure" "dialplan-legacy-closure-smoke-test.sh"
 run_suite "restart-smoke"          "restart-smoke-test.sh"
+# TASK-0033A: lightweight, non-destructive backup/restore validation --
+# placed after restart-smoke (both are infra/lifecycle-adjacent rather
+# than a specific controller's CRUD flow) and before the external-*
+# suites. Never stops a container or touches a volume -- see
+# scripts/backup-smoke-test.sh's own header for exactly what it does and
+# does not do, and why the real destructive DR proof
+# (backup-restore-dr-smoke-test.sh / `make backup-restore-smoke`) is
+# deliberately NOT run here.
+run_suite "backup-smoke"           "backup-smoke-test.sh"
 run_suite "external-failure-smoke" "external-failure-smoke-test.sh"
 run_suite "external-content-smoke" "external-content-smoke-test.sh"
 

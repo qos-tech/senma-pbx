@@ -1,5 +1,23 @@
 #!/bin/bash
 #
+# *** SUPERSEDED for SENMA PBX (TASK-0033A) ***
+#
+# This script targets a pre-Docker, bare-metal SNEP filesystem layout
+# (hardcoded /home/backup, /etc/asterisk, /var/lib/asterisk/sounds,
+# /var/www/html/snep host paths; a hardcoded, wrong-for-this-project DB
+# password) that does not match SENMA's current Docker Compose topology,
+# and it explicitly excludes `arquivos` -- one of the paths a complete
+# SENMA backup must cover. It is kept only for historical/GPL-provenance
+# reasons and must not be invoked against a SENMA Docker deployment.
+#
+# The supported SENMA backup/restore commands are:
+#   make backup
+#   make restore FROM=<path-to-backup.tar.gz> [CONFIRM=RESTORE]
+#
+# See docs/tasks/0033a-backup-restore-disaster-recovery-foundation.md.
+#
+# --- Original file, unmodified below this point ----------------------
+#
 # backup-X.sh - Programa feito para realizar o Backup completo do Snep na sua versao 3.X
 #
 # Autor: Anderson Freitas <tmsi.freitas@gmail.com>
@@ -8,7 +26,7 @@
 #
 # Revisao: Daian Conrad <daian.conrad@gmail.com>
 #
-# Desenvolvido sob licensa GPL. 
+# Desenvolvido sob licensa GPL.
 # Fique a vontade para contribuir com a evolucao deste programa.
 #
 #-----------------------------------------------------------------------------------------------
