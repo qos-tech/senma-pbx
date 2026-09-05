@@ -736,6 +736,23 @@ class TrunksController extends Zend_Controller_Action {
     // check type Qualify, (yes|no|specify)
     if ($trunk_data['qualify'] === 'specify') {
       $trunk_data['qualify'] = trim($trunk_data['qualify_value']);
+      // TASK-0028Y: this value now actually reaches Asterisk
+      // (Snep_PjsipTrunkConf::renderTrunk()'s new qualify_frequency=
+      // handling, confirmed gap #1 of the PJSIP Completeness
+      // Architecture Review, TASK-0028W) -- previously it was stored
+      // and never consumed, so no validation existed. A milliseconds
+      // interval is the only shape that generator can safely translate;
+      // anything else would otherwise skip the whole trunk at
+      // generation time with no feedback to the admin at all. Failing
+      // fast here, at submission, is the same discipline this
+      // controller already applies to other newly-consumed fields (see
+      // the PJSIP transport-selection checks above). 1-5 digits: a
+      // pre-existing, previously-unenforced boundary --
+      // `peers.qualify` is `char(5)` (schema.sql) -- surfaced now as a
+      // clear product error instead of a raw SQL fatal on insert/update.
+      if (!preg_match('/^\d{1,5}$/', $trunk_data['qualify'])) {
+        return $this->view->translate('Qualification time must be a whole number of milliseconds (up to 5 digits).');
+      }
     }
 
     // codecs

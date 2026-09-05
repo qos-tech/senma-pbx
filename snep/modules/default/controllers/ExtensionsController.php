@@ -642,7 +642,14 @@ class ExtensionsController extends Zend_Controller_Action {
             $blf = (isset($formData["blf"]))? $formData["blf"]: "";
             $dtmfmode = (isset($formData["dtmf"]))? $formData["dtmf"]: "";
             $directmedia = $formData["directmedia"];
-            $callLimit = $formData["calllimit"];
+            // TASK-0028Y: "calllimit" is no longer a form field (removed
+            // from addedit.phtml -- see that file's own comment and
+            // docs/tasks/0028y-pjsip-parameter-regression-closure.md,
+            // confirmed gap #3). peers.call-limit itself is preserved
+            // (not dropped) and keeps receiving a fixed value, exactly
+            // matching multiaddAction()'s already-established
+            // '1'-default convention for the same column.
+            $callLimit = '1';
 
             // TASK-0019: transport_id is a PJSIP-only concept -- every
             // other technology must persist NULL regardless of what a

@@ -111,7 +111,25 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
       <!-- SIP -->
       <div id="ip" class="invisible">
 
-        <div class="form-group">
+        <!-- TASK-0028Y: dialmethod's only PJSIP-relevant role (gating
+             whether an outbound registration is emitted) was already
+             fully superseded by `reverse_auth` when Snep_PjsipTrunkConf
+             was built (TASK-0014 §4/§17/§20 -- "dialmethod is stored but
+             not specially interpreted"); PBX_Trunks::get()'s dialmethod
+             check is also SIP/IAX2-only (Trunks.php:92, never reached
+             for tech=PJSIP). No live edit path can even reach a
+             non-PJSIP/pjsip_external technology today (preparePost()
+             rejects anything else), so this control is dead in every
+             reachable state -- confirmed gap #4 (dialmethod) of the
+             PJSIP Completeness Architecture Review, TASK-0028W. Hidden
+             via showDiv() for technology=pjsip, exactly like
+             trunk_type_group/trunk_insecure_group/trunk_calllimit_group
+             below (senma-product-designer review, TASK-0028Y): value
+             stays persisted (trunks.dialmethod is not dropped, no
+             schema change) for historical-row compatibility, only the
+             now-ineffective control is removed from the presented
+             product surface. -->
+        <div class="form-group" id="trunk_dialmethod_group">
           <label class="col-sm-3 control-label"><?php echo $this->translate("Dial Method")?></label>
           <div class="col-sm-6">
             <label class="radio-inline">
@@ -552,6 +570,9 @@ function showDiv(div){
   document.getElementById("trunk_type_group").className = isPjsip ? "invisible" : "visible";
   document.getElementById("trunk_insecure_group").className = isPjsip ? "invisible" : "visible";
   document.getElementById("trunk_calllimit_group").className = isPjsip ? "invisible" : "visible";
+  // TASK-0028Y: dialmethod has no PJSIP equivalent/effect -- see this
+  // group's own HTML comment above.
+  document.getElementById("trunk_dialmethod_group").className = isPjsip ? "invisible" : "visible";
   // TASK-0019: transport selection has no chan_sip/IAX2/etc. equivalent.
   document.getElementById("trunk_transport_group").className = isPjsip ? "visible" : "invisible";
 
