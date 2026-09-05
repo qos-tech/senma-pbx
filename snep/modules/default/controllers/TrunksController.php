@@ -948,7 +948,21 @@ class TrunksController extends Zend_Controller_Action {
       return false;
     }
     $data = isset($result['data']) ? $result['data'] : '';
-    return preg_match('/^Endpoint:\s+' . preg_quote($endpoint, '/') . '\\//mi', $data) === 1;
+    // TASK-0028X finding (pre-existing, unrelated to that task's own
+    // outbound-dial-string defect -- fixed here as its own narrowly-scoped
+    // change): the real "pjsip show endpoint" CLI line is indented with a
+    // leading space (" Endpoint:  <name>/<cid>" or, when the endpoint has
+    // no configured callerid, " Endpoint:  <name>   <state>" with no
+    // slash at all) -- confirmed live via AMI. The previous
+    // '/^Endpoint:.../mi' anchor (no leading \s*) never matched that
+    // indentation, and the previous unconditional trailing '\/' never
+    // matched a callerid-less endpoint either, so this check rejected
+    // every real endpoint unconditionally, making pjsip_external trunk
+    // creation impossible through the UI. '(?:\/|\s)' after the endpoint
+    // name accepts both real forms while still requiring a boundary
+    // there, so a name that is merely a prefix of a different endpoint's
+    // name (e.g. "foo" vs "foobar") cannot false-positive match.
+    return preg_match('/^\s*Endpoint:\s+' . preg_quote($endpoint, '/') . '(?:\/|\s)/mi', $data) === 1;
   }
 
   /**
