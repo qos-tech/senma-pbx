@@ -386,18 +386,13 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
       <div class="form-group">
         <label class="col-sm-3 control-label"><?php echo $this->translate("Runtime status");?></label>
         <div class="col-sm-6">
-          <?php $st = $this->runtimeStatus; ?>
-          <?php if ($st === null): ?>
-            <span class="text-muted">&mdash; <?php echo $this->translate("not available for this trunk's technology");?></span>
-          <?php else:
-            $badgeClass = array('ACTIVE' => 'label-success', 'PENDING' => 'label-warning', 'DEGRADED' => 'label-warning', 'INACTIVE' => 'label-default', 'DISABLED' => 'label-default', 'ERROR' => 'label-danger', 'UNKNOWN' => 'label-default');
-            $stateText = array('ACTIVE' => 'Active', 'PENDING' => 'Pending', 'DEGRADED' => 'Degraded', 'INACTIVE' => 'Inactive', 'DISABLED' => 'Disabled', 'ERROR' => 'Error', 'UNKNOWN' => 'Unknown');
-            $cls = isset($badgeClass[$st['state']]) ? $badgeClass[$st['state']] : 'label-default';
-            $txt = isset($stateText[$st['state']]) ? $stateText[$st['state']] : $st['state'];
-          ?>
-            <span class="label <?php echo $cls; ?>"><?php echo $this->translate($txt); ?></span>
-            <p class="help-block"><?php echo $this->escape($st['detail']); ?></p>
-          <?php endif; ?>
+          <?php // TASK-0032 (Phase 5): shared status badge primitive --
+                // see extensions/index.phtml's identical comment. ?>
+          <?php echo $this->statusBadge($this->runtimeStatus ? $this->runtimeStatus['state'] : null, array(
+            'detail' => $this->runtimeStatus ? $this->runtimeStatus['detail'] : null,
+            'showDetail' => true,
+            'unavailableText' => $this->translate("not available for this trunk's technology"),
+          )); ?>
         </div>
       </div>
     </details>

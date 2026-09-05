@@ -173,6 +173,9 @@ class TrunksController extends Zend_Controller_Action {
     $this->view->saved_active_messages = $flash->getMessages('saved_active');
     $this->view->saved_pending_messages = $flash->getMessages('saved_pending');
     $this->view->apply_failed_messages = $flash->getMessages('apply_failed');
+    // TASK-0032 (Phase 13): delete had no success feedback of any kind
+    // before this task (a bare silent redirect, confirmed by inspection).
+    $this->view->deleted_messages = $flash->getMessages('deleted');
 
   }
 
@@ -643,6 +646,15 @@ class TrunksController extends Zend_Controller_Action {
 
       $id = $this->_request->getParam("id");
       $name = $this->_request->getParam("name");
+      // TASK-0032 (Phase 8, object identification): trunks.name is an
+      // opaque internal identifier the admin never sees in the UI --
+      // trunks/index.phtml's own "Name" column is actually callerid
+      // (confirmed by inspection; trunks.name only ever appears there as
+      // the hidden-by-default "Code" column). Fetched once, up front, and
+      // reused below instead of the second Snep_Trunks_Manager::get($id)
+      // call the delete path used to make on its own.
+      $trunkRow = Snep_Trunks_Manager::get($id);
+      $trunkIdentity = $trunkRow ? $trunkRow['callerid'] : $name;
 
       try {
         $astinfo = new AsteriskInfo();
@@ -667,10 +679,23 @@ class TrunksController extends Zend_Controller_Action {
 
       if (count($regras) > 0) {
 
-        $this->view->error_message = $this->view->translate("Cannot remove. The following routes are using this trunk: ") . "<br />";
+        // TASK-0032 (Phase 7/8): shared dependency-warning primitive --
+        // same message shape now used by
+        // ExtensionsController/PjsipTransportsController::removeAction();
+        // reuses getValidation()/getRules()'s existing rows unchanged (no
+        // new dependency discovery). Also closes a real gap the
+        // un-shared version had: route item text was previously
+        // concatenated with NO escaping at all.
+        $items = array();
         foreach ($regras as $regra) {
-          $this->view->error_message .= $regra['id'] . " - " . $regra['desc'] . "<br />\n";
+          $items[] = $regra['id'] . " - " . $regra['desc'];
         }
+        $this->view->error_message = $this->view->dependencyWarning(
+          $this->view->translate("trunk"),
+          $trunkIdentity,
+          $items,
+          $this->view->translate("Remove or reassign these routes before deleting this trunk.")
+        );
         $this->renderScript('error/sneperror.phtml');
       } else {
 
@@ -685,7 +710,7 @@ class TrunksController extends Zend_Controller_Action {
 
           //audit
           $loguser = Snep_Trunks_Manager::get($id);
-          Snep_Audit_Manager::SaveLog("Deleted", 'trunks', $id, $this->view->translate("Trunk") . " {$id} ". $loguser['callerid']);     
+          Snep_Audit_Manager::SaveLog("Deleted", 'trunks', $id, $this->view->translate("Trunk") . " {$id} ". $loguser['callerid']);
 
           Snep_Trunks_Manager::remove($_POST['id']);
           Snep_Trunks_Manager::removePeers($_POST['name']);
@@ -696,6 +721,14 @@ class TrunksController extends Zend_Controller_Action {
           // exist before Snep_PjsipTrunkConf renders a transport=<name> reference.
           Snep_PjsipTransportConf::loadConfFromDb();
           Snep_PjsipTrunkConf::loadConfFromDb();
+
+          // TASK-0032 (Phase 13): "deleted successfully" -- trunks never
+          // surfaced any delete feedback before this task (a bare silent
+          // redirect, confirmed by inspection).
+          $deleteFlash = $this->_helper->FlashMessenger;
+          $deleteFlash->setNamespace('deleted');
+          $deleteFlash->addMessage($this->view->translate("Trunk %s deleted successfully.", $loguser['callerid']));
+
           $this->_redirect("trunks");
         }
       }

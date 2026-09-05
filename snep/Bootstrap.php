@@ -83,6 +83,15 @@ class Bootstrap extends Zend_Application_Bootstrap_Bootstrap {
 
         $view->doctype('HTML5');
         $view->headMeta()->appendHttpEquiv('Content-Type', 'text/html;charset=utf-8');
+
+        // TASK-0032: shared presentation primitives (status badge, save/
+        // apply flash rendering, delete-blocked dependency warning) --
+        // registered once here so every view script in every module can
+        // call $this->statusBadge(...)/$this->applyFeedback(...)/
+        // $this->dependencyWarning(...) without each controller wiring
+        // its own helper path. No app-specific view helper path existed
+        // before this task (confirmed by inspection); this is the first.
+        $view->addHelperPath('Snep/View/Helper', 'Snep_View_Helper');
         
 
         $view->headTitle()->setSeparator(' - ');

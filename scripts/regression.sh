@@ -171,6 +171,12 @@ run_suite "pjsip-runtime-status-smoke" "pjsip-runtime-status-smoke-test.sh"
 # edit/delete flows) and before transport-smoke.
 run_suite "extensions-trunks-admin-experience-smoke" "extensions-trunks-admin-experience-smoke-test.sh"
 run_suite "transport-smoke"        "transport-smoke-test.sh"
+# TASK-0032: Transport + shared runtime UX foundation -- placed right
+# after transport-smoke (the closest-related existing suite: both
+# exercise PjsipTransportsController's real add/edit/delete flows) and
+# restarts the asterisk container (Part E), same "run in isolation"
+# reasoning as pjsip-runtime-status-smoke/wss-platform-smoke.
+run_suite "transport-shared-runtime-ux-smoke" "transport-shared-runtime-ux-smoke-test.sh"
 run_suite "dialplan-legacy-closure" "dialplan-legacy-closure-smoke-test.sh"
 run_suite "restart-smoke"          "restart-smoke-test.sh"
 run_suite "external-failure-smoke" "external-failure-smoke-test.sh"

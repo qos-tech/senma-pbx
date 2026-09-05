@@ -12,19 +12,16 @@
             </div>
           </div>
         </div><br>
-        <?php // TASK-0031 (Phase 10, save/apply feedback): one-shot
-              // messages set by TrunksController::reportTrunkSaveResult()
-              // after the add/edit that led to this redirect -- never a
-              // bare 302 implying success. ?>
-        <?php foreach ($this->saved_active_messages as $msg): ?>
-          <div class="alert alert-success"><?php echo $this->escape($msg); ?></div>
-        <?php endforeach; ?>
-        <?php foreach ($this->saved_pending_messages as $msg): ?>
-          <div class="alert alert-info"><?php echo $this->escape($msg); ?></div>
-        <?php endforeach; ?>
-        <?php foreach ($this->apply_failed_messages as $msg): ?>
-          <div class="alert alert-danger"><?php echo $this->escape($msg); ?></div>
-        <?php endforeach; ?>
+        <?php // TASK-0032 (Phase 6): shared save/apply/delete feedback
+              // primitive -- see extensions/index.phtml's identical
+              // comment. Messages still set by
+              // TrunksController::reportTrunkSaveResult()/removeAction(). ?>
+        <?php echo $this->applyFeedback(array(
+          'saved_active' => $this->saved_active_messages,
+          'saved_pending' => $this->saved_pending_messages,
+          'apply_failed' => $this->apply_failed_messages,
+          'deleted' => $this->deleted_messages,
+        )); ?>
         <table class="table table-striped" id="listtable">
           <thead>
             <tr>
@@ -63,17 +60,9 @@
                       // trunks get no runtime_status (null); shown as a
                       // plain dash, not a fabricated state. ?>
                 <td class="text-center" data-runtime-status="<?php echo $trunk['runtime_status'] ? $this->escape($trunk['runtime_status']['state']) : ''; ?>">
-                  <?php if ($trunk['runtime_status'] === null): ?>
-                    <span class="text-muted">&mdash;</span>
-                  <?php else:
-                    $st = $trunk['runtime_status'];
-                    $badgeClass = array('ACTIVE' => 'label-success', 'PENDING' => 'label-warning', 'DEGRADED' => 'label-warning', 'INACTIVE' => 'label-default', 'DISABLED' => 'label-default', 'ERROR' => 'label-danger', 'UNKNOWN' => 'label-default');
-                    $stateText = array('ACTIVE' => 'Active', 'PENDING' => 'Pending', 'DEGRADED' => 'Degraded', 'INACTIVE' => 'Inactive', 'DISABLED' => 'Disabled', 'ERROR' => 'Error', 'UNKNOWN' => 'Unknown');
-                    $cls = isset($badgeClass[$st['state']]) ? $badgeClass[$st['state']] : 'label-default';
-                    $txt = isset($stateText[$st['state']]) ? $stateText[$st['state']] : $st['state'];
-                  ?>
-                    <span class="label <?php echo $cls; ?>" title="<?php echo $this->escape($st['detail']); ?>"><?php echo $this->translate($txt); ?></span>
-                  <?php endif; ?>
+                  <?php // TASK-0032 (Phase 5): shared status badge primitive
+                        // -- see extensions/index.phtml's identical comment. ?>
+                  <?php echo $this->statusBadge($trunk['runtime_status'] ? $trunk['runtime_status']['state'] : null, array('detail' => $trunk['runtime_status'] ? $trunk['runtime_status']['detail'] : null)); ?>
                 </td>
                 <td class="text-center">
                   <a class="btn btn-edit btn-sm"  href="<?php echo $this->url ."/edit/trunk/".  $trunk['id'] ?>" role="button"><?php echo $this->translate('Edit')?></a>

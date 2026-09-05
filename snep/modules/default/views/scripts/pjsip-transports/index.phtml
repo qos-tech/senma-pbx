@@ -5,15 +5,25 @@
         <?php if ($this->alert_message): ?>
           <div class="alert alert-warning"><?php echo $this->alert_message; ?></div>
         <?php endif; ?>
-        <?php // TASK-0020 items 2-4/7: one-shot post-save messages -- never
-              // claim "active" when the investigation proved that is not
-              // always true. See PjsipTransportsController::reportApplyResult(). ?>
-        <?php foreach ($this->restart_required_messages as $msg): ?>
-          <div class="alert alert-warning"><?php echo $this->escape($msg); ?></div>
-        <?php endforeach; ?>
-        <?php foreach ($this->apply_failed_messages as $msg): ?>
-          <div class="alert alert-danger"><?php echo $this->escape($msg); ?></div>
-        <?php endforeach; ?>
+        <?php // TASK-0032 (Phase 10): runtime unavailability is a distinct,
+              // explicit banner -- never silently rendered as "no
+              // transports configured" when DB data exists but the AMI
+              // query itself failed. See
+              // PjsipTransportsController::indexAction(). ?>
+        <?php if ($this->runtimeQueryFailed): ?>
+          <div class="alert alert-warning"><?php echo $this->translate("Asterisk's live transport state could not be queried right now. The configuration below is accurate; Status columns show Unknown until this is resolved.");?></div>
+        <?php endif; ?>
+        <?php // TASK-0032 (Phase 6): one shared save/apply feedback
+              // primitive, replacing the two hand-duplicated foreach
+              // blocks this view used to render directly (see
+              // Snep_View_Helper_ApplyFeedback). Transports only ever
+              // produce these two outcomes -- never saved_active/
+              // saved_pending, which have no meaning for a transport
+              // (TASK-0020). ?>
+        <?php echo $this->applyFeedback(array(
+          'restart_required' => $this->restart_required_messages,
+          'apply_failed' => $this->apply_failed_messages,
+        )); ?>
         <div class="panel-heading">
           <div class="snep-body-top-buttons">
             <a class="btn btn-add" href="<?php echo $this->url ?>/add/ " role="button"><?php echo $this->translate("Add Transport")?></a>
@@ -24,17 +34,25 @@
             </div>
           </div>
         </div><br>
+        <?php if (count($this->transports) === 0 && !$this->runtimeQueryFailed): ?>
+          <p class="text-muted" style="padding: 0 15px 15px;"><?php echo $this->translate("No transports configured yet.");?></p>
+        <?php else: ?>
         <table class="table table-striped" id="listtable">
           <thead>
             <tr>
+              <!-- TASK-0032 (Phase 12): Name/Protocol/Bind/Status/Actions
+                   are the high-priority columns for this table -- External
+                   Signaling/External Media/In Use collapse first at
+                   narrow widths, matching the exact hidden-xs/hidden-sm
+                   utility-class pattern TASK-0031 already established for
+                   Extensions/Trunks (no footable dependency). -->
               <th class="text-center"><?php echo $this->translate('Name');?></th>
               <th class="text-center"><?php echo $this->translate('Protocol');?></th>
               <th class="text-center"><?php echo $this->translate('Bind');?></th>
-              <th class="text-center"><?php echo $this->translate('External Signaling');?></th>
-              <th class="text-center"><?php echo $this->translate('External Media');?></th>
+              <th class="text-center hidden-xs hidden-sm"><?php echo $this->translate('External Signaling');?></th>
+              <th class="text-center hidden-xs hidden-sm"><?php echo $this->translate('External Media');?></th>
               <th class="text-center"><?php echo $this->translate('Status');?></th>
-              <th class="text-center"><?php echo $this->translate('Runtime');?></th>
-              <th class="text-center"><?php echo $this->translate('In Use');?></th>
+              <th class="text-center hidden-xs"><?php echo $this->translate('In Use');?></th>
               <th class="text-center"><?php echo $this->translate('Actions');?></th>
             </tr>
           </thead>
@@ -49,37 +67,26 @@
                 </td>
                 <td class="text-center"><?php echo strtoupper($transport['protocol']) ?></td>
                 <td class="text-center"><?php echo $transport['bind_address'] . ':' . $transport['bind_port'] ?></td>
-                <td class="text-center">
+                <td class="text-center hidden-xs hidden-sm">
                   <?php echo $transport['external_signaling_address'] ? $transport['external_signaling_address'] . ($transport['external_signaling_port'] ? ':' . $transport['external_signaling_port'] : '') : '-' ?>
                 </td>
-                <td class="text-center"><?php echo $transport['external_media_address'] ?: '-' ?></td>
-                <td class="text-center">
-                  <?php if ($transport['enabled']): ?>
-                    <span class="label label-success"><?php echo $this->translate('Enabled')?></span>
-                  <?php else: ?>
-                    <span class="label label-default"><?php echo $this->translate('Disabled')?></span>
-                  <?php endif ?>
+                <td class="text-center hidden-xs hidden-sm"><?php echo $transport['external_media_address'] ?: '-' ?></td>
+                <?php // TASK-0032 (Phase 4/5): ONE shared status badge,
+                      // replacing the separate Status (enabled/disabled)
+                      // and Runtime (active/restart_required) columns this
+                      // view used to render as two independently-styled
+                      // blocks. data-runtime-state is preserved verbatim
+                      // (scripts/transport-smoke-test.sh's own
+                      // t20_runtime_badge() depends on this exact
+                      // attribute/value set, TASK-0020) alongside the new
+                      // shared data-runtime-status attribute extensions/
+                      // trunks already carry. ?>
+                <td class="text-center"
+                    data-runtime-state="<?php echo $this->escape($transport['runtime_state']); ?>"
+                    data-runtime-status="<?php echo $this->escape($transport['status']['state']); ?>">
+                  <?php echo $this->statusBadge($transport['status']['state'], array('detail' => $transport['status']['detail'])); ?>
                 </td>
-                <td class="text-center" data-runtime-state="<?php echo $this->escape($transport['runtime_state']); ?>">
-                  <?php // TASK-0020 item 6: derived every page load from a
-                        // real pjsip show transports call -- never inferred
-                        // from enabled=1 alone. See
-                        // PjsipTransportsController::indexAction(). The
-                        // data-runtime-state attribute gives this column an
-                        // unambiguous marker distinct from the Status
-                        // column's own label-success/"Enabled" badge (which
-                        // uses the identical Bootstrap class for an
-                        // unrelated concept) -- for any future automated
-                        // check, and for anyone inspecting the page source. ?>
-                  <?php if ($transport['runtime_state'] === 'active'): ?>
-                    <span class="label label-success" title="<?php echo $this->translate('Asterisk currently has this transport loaded, matching its saved configuration.')?>"><?php echo $this->translate('Active')?></span>
-                  <?php elseif ($transport['runtime_state'] === 'restart_required'): ?>
-                    <span class="label label-warning" title="<?php echo $this->translate('Configuration does not match what Asterisk currently has loaded. A restart is required.')?>"><?php echo $this->translate('Restart required')?></span>
-                  <?php else: ?>
-                    <span class="text-muted">&mdash;</span>
-                  <?php endif ?>
-                </td>
-                <td class="text-center"><?php echo (int) $transport['usage_count'] ?></td>
+                <td class="text-center hidden-xs"><?php echo (int) $transport['usage_count'] ?></td>
                 <td class="text-center">
                   <a class="btn btn-edit btn-sm" href="<?php echo $this->url ."/edit/id/".  $transport['id'] ?>" role="button"><?php echo $this->translate('Edit')?></a>
                   <a class="btn btn-danger btn-sm" href="<?php echo $this->url ."/remove/id/".  $transport['id'] ?>" role="button"><?php echo $this->translate('Delete')?></a>
@@ -88,6 +95,7 @@
             <?php endforeach ?>
           </tbody>
         </table>
+        <?php endif; ?>
       </div>
     </div>
   </div>

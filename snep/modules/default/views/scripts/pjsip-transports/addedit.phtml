@@ -1,3 +1,14 @@
+<?php
+// TASK-0032 (Phase 2): Basic/Connection -> TLS/Certificate (protocol-
+// conditional) -> Advanced -> Diagnostics (edit-only), the same
+// information architecture TASK-0031 already established for Extensions/
+// Trunks (see trunks/addedit.phtml). No field is new; this only
+// reclassifies/regroups the exact fields TASK-0018/0029A already
+// introduced -- see docs/tasks/0032-transport-shared-runtime-ux-foundation.md
+// FIELD CLASSIFICATION.
+$tlsCapable = in_array($this->transport['protocol'], array('tls', 'wss', 'ws'), true);
+$tlsOnly = $this->transport['protocol'] === 'tls';
+?>
 <div class="row">
   <form id="defaultForm" method="post" class="form-horizontal" style="margin-top: 20px;" action="<?php echo $this->url(array("controller" => "pjsip-transports", "action" => $this->action), null, false); ?>" METHOD="post">
 
@@ -11,20 +22,22 @@
       </div>
     <?php endif; ?>
 
+    <!-- TASK-0032: Basic/Connection -- the minimal fields every transport
+         needs (Phase 2). -->
     <fieldset>
       <legend><?php echo $this->translate('Transport');?></legend>
 
       <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Name");?></label>
+        <label class="col-sm-3 control-label" for="transport_name"><?php echo $this->translate("Name");?> <span class="text-danger" aria-hidden="true">*</span></label>
         <div class="col-sm-6">
-          <input type="text" class="form-control" name="name" placeholder='<?php echo $this->translate("Name")?>' value='<?php echo $this->escape($this->transport['name']);?>' <?php echo $this->action === "edit" ? "" : ""; ?>/>
+          <input type="text" id="transport_name" class="form-control" name="name" placeholder='<?php echo $this->translate("Name")?>' value='<?php echo $this->escape($this->transport['name']);?>' aria-required="true"/>
         </div>
       </div>
 
       <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Protocol");?></label>
+        <label class="col-sm-3 control-label" for="transport_protocol"><?php echo $this->translate("Protocol");?> <span class="text-danger" aria-hidden="true">*</span></label>
         <div class="col-sm-4">
-          <select class="form-control" name="protocol" id="transport_protocol" onchange="senmaTransportShowTls();">
+          <select class="form-control" name="protocol" id="transport_protocol" aria-required="true" onchange="senmaTransportShowTls();">
             <?php foreach (array('udp', 'tcp', 'tls', 'wss', 'ws') as $proto): ?>
               <option value="<?php echo $proto; ?>" <?php echo ($this->transport['protocol'] === $proto) ? "selected" : ""; ?>><?php echo strtoupper($proto); ?></option>
             <?php endforeach; ?>
@@ -33,92 +46,33 @@
       </div>
 
       <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Bind Address");?></label>
+        <label class="col-sm-3 control-label" for="transport_bind_address"><?php echo $this->translate("Bind Address");?> <span class="text-danger" aria-hidden="true">*</span></label>
         <div class="col-sm-4">
-          <input type="text" class="form-control" name="bind_address" value='<?php echo $this->escape($this->transport['bind_address']);?>'/>
+          <input type="text" id="transport_bind_address" class="form-control" name="bind_address" value='<?php echo $this->escape($this->transport['bind_address']);?>' aria-required="true"/>
         </div>
       </div>
 
       <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Bind Port");?></label>
+        <label class="col-sm-3 control-label" for="transport_bind_port"><?php echo $this->translate("Bind Port");?> <span class="text-danger" aria-hidden="true">*</span></label>
         <div class="col-sm-4">
-          <input type="text" class="form-control" name="bind_port" value='<?php echo $this->escape($this->transport['bind_port']);?>'/>
+          <input type="text" id="transport_bind_port" class="form-control" name="bind_port" value='<?php echo $this->escape($this->transport['bind_port']);?>' aria-required="true"/>
         </div>
       </div>
 
       <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Enabled");?></label>
+        <label class="col-sm-3 control-label" for="transport_enabled"><?php echo $this->translate("Enabled");?></label>
         <div class="col-sm-6">
-          <input type="checkbox" name="enabled" value="1" <?php echo !empty($this->transport['enabled']) ? "checked" : ""; ?>/>
+          <input type="checkbox" id="transport_enabled" name="enabled" value="1" <?php echo !empty($this->transport['enabled']) ? "checked" : ""; ?>/>
           <span class="help-block"><?php echo $this->translate("A disabled transport exists as a record but is never emitted into Asterisk's live config (e.g. a WSS transport with no certificate configured yet).");?></span>
         </div>
       </div>
-
-      <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Default transport");?></label>
-        <div class="col-sm-6">
-          <input type="checkbox" name="is_default" value="1" <?php echo !empty($this->transport['is_default']) ? "checked" : ""; ?>/>
-          <span class="help-block"><?php echo $this->translate("Marks this transport as the primary one shown in listings. Extensions and trunks with no transport explicitly pinned (Automatic) are NOT forced onto this transport -- Asterisk selects the first configured transport compatible with each request on its own.");?></span>
-        </div>
-      </div>
     </fieldset>
 
-    <fieldset>
-      <legend><?php echo $this->translate('NAT / Advertised addresses');?></legend>
-
-      <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Domain");?></label>
-        <div class="col-sm-6">
-          <input type="text" class="form-control" name="domain" value='<?php echo $this->escape($this->transport['domain']);?>'/>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("External Signaling Address");?></label>
-        <div class="col-sm-6">
-          <input type="text" class="form-control" name="external_signaling_address" value='<?php echo $this->escape($this->transport['external_signaling_address']);?>'/>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("External Signaling Port");?></label>
-        <div class="col-sm-4">
-          <input type="text" class="form-control" name="external_signaling_port" value='<?php echo $this->escape($this->transport['external_signaling_port']);?>'/>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("External Media Address");?></label>
-        <div class="col-sm-6">
-          <input type="text" class="form-control" name="external_media_address" value='<?php echo $this->escape($this->transport['external_media_address']);?>'/>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Local Networks (CIDR)");?></label>
-        <div class="col-sm-6">
-          <textarea class="form-control" name="local_net" rows="4" placeholder="192.168.0.0/16"><?php echo $this->escape($this->networksText);?></textarea>
-          <span class="help-block"><?php echo $this->translate("One network per line. Each becomes an independent local_net= entry.");?></span>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Symmetric Transport");?></label>
-        <div class="col-sm-6">
-          <input type="checkbox" name="symmetric_transport" value="1" <?php echo !empty($this->transport['symmetric_transport']) ? "checked" : ""; ?>/>
-        </div>
-      </div>
-
-      <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Allow Reload");?></label>
-        <div class="col-sm-6">
-          <input type="checkbox" name="allow_reload" value="1" <?php echo !empty($this->transport['allow_reload']) ? "checked" : ""; ?>/>
-          <span class="help-block"><?php echo $this->translate("Not every field on this page can safely change on a running transport without a full container/process restart -- see docs/tasks/0018-pjsip-transports.md.");?></span>
-        </div>
-      </div>
-    </fieldset>
-
-    <fieldset id="transport_tls_group">
+    <!-- TASK-0032 (Phase 3): TLS/Certificate -- only rendered for
+         protocol-relevant fields (TASK-0029A's existing conditional
+         disclosure, now toggled via hidden/aria-hidden instead of a
+         visible/invisible CSS class -- Phase 11). -->
+    <fieldset id="transport_tls_group" <?php echo $tlsCapable ? '' : 'hidden aria-hidden="true"'; ?>>
       <legend><?php echo $this->translate('TLS / Certificate');?></legend>
 
       <?php if ($this->action === "edit" && !empty($this->transport['cert_file']) && strpos($this->transport['cert_file'], 'wss-test-cert.pem') !== false): ?>
@@ -127,63 +81,65 @@
         </div>
       <?php endif; ?>
 
-      <?php if ($this->action === "edit" && $this->certInspection !== null): ?>
-        <div class="alert <?php echo $this->certInspection['valid'] ? 'alert-info' : 'alert-danger'; ?>">
-          <?php if ($this->certInspection['valid']): ?>
-            <?php echo $this->translate("Current certificate: %s, valid until %s.", $this->escape($this->certInspection['subject']), $this->escape($this->certInspection['not_after'])); ?>
-          <?php else: ?>
-            <?php echo $this->translate("Current certificate problem: %s.", $this->escape($this->certInspection['error'])); ?>
-          <?php endif; ?>
-        </div>
-      <?php endif; ?>
-      <?php if ($this->action === "edit" && $this->keyCheck !== null && $this->keyCheck['mode_warning']): ?>
-        <div class="alert alert-warning"><?php echo $this->translate("Private key: %s.", $this->escape($this->keyCheck['mode_warning'])); ?></div>
+      <?php // TASK-0032 (Phase 16): the WSS certificate belongs to
+            // Asterisk's global HTTP/TLS listener, not to this row's own
+            // PJSIP transport object -- the exact TASK-0029A architecture
+            // decision this task must not blur (Phase 3's own explicit
+            // "do not present native-TLS transport certificate semantics
+            // as if they were identical to WSS" instruction). Shown only
+            // for wss/ws, immediately above the same cert_file/
+            // priv_key_file fields, since those fields' OWN meaning
+            // differs by protocol even though the inputs look identical. ?>
+      <?php if (in_array($this->transport['protocol'], array('wss', 'ws'), true)): ?>
+        <p class="help-block"><?php echo $this->translate("For WSS/WS, this certificate configures Asterisk's single, process-wide HTTP/TLS listener -- not a per-transport TLS context. Only one enabled WSS/WS transport may reference a certificate at a time.");?></p>
+      <?php else: ?>
+        <p class="help-block"><?php echo $this->translate("For a native TLS transport, this certificate applies directly to this transport's own PJSIP TLS context.");?></p>
       <?php endif; ?>
 
       <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Certificate File");?></label>
+        <label class="col-sm-3 control-label" for="cert_file"><?php echo $this->translate("Certificate File");?></label>
         <div class="col-sm-6">
-          <input type="text" class="form-control" name="cert_file" placeholder="/etc/asterisk/keys/mycert.pem" value='<?php echo $this->escape($this->transport['cert_file']);?>'/>
-          <span class="help-block"><?php echo $this->translate("Absolute path INSIDE the Asterisk container to an existing PEM certificate file. SENMA never stores certificate/key content -- place the file there first (e.g. via docker compose exec), then reference its path here.");?></span>
+          <input type="text" id="cert_file" class="form-control" name="cert_file" placeholder="/etc/asterisk/keys/mycert.pem" value='<?php echo $this->escape($this->transport['cert_file']);?>'/>
+          <span class="help-block"><?php echo $this->translate("Absolute path INSIDE the Asterisk container to an existing PEM certificate file. SENMA never stores certificate/key content, and does not own the file -- place it there first (e.g. via docker compose exec), then reference its path here.");?></span>
         </div>
       </div>
 
       <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Private Key File");?></label>
+        <label class="col-sm-3 control-label" for="priv_key_file"><?php echo $this->translate("Private Key File");?></label>
         <div class="col-sm-6">
-          <input type="text" class="form-control" name="priv_key_file" placeholder="/etc/asterisk/keys/mycert.key" value='<?php echo $this->escape($this->transport['priv_key_file']);?>'/>
-          <span class="help-block"><?php echo $this->translate("Absolute path INSIDE the Asterisk container. Recommended permissions: 0600, owned by the asterisk user only.");?></span>
+          <input type="text" id="priv_key_file" class="form-control" name="priv_key_file" placeholder="/etc/asterisk/keys/mycert.key" value='<?php echo $this->escape($this->transport['priv_key_file']);?>'/>
+          <span class="help-block"><?php echo $this->translate("Absolute path INSIDE the Asterisk container. Recommended permissions: 0600, owned by the asterisk user only. SENMA cannot and does not read this file's contents.");?></span>
         </div>
       </div>
 
       <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("CA Bundle File");?></label>
+        <label class="col-sm-3 control-label" for="ca_list_file"><?php echo $this->translate("CA Bundle File");?></label>
         <div class="col-sm-6">
-          <input type="text" class="form-control" name="ca_list_file" placeholder="<?php echo $this->translate("optional");?>" value='<?php echo $this->escape($this->transport['ca_list_file']);?>'/>
+          <input type="text" id="ca_list_file" class="form-control" name="ca_list_file" placeholder="<?php echo $this->translate("optional");?>" value='<?php echo $this->escape($this->transport['ca_list_file']);?>'/>
           <span class="help-block"><?php echo $this->translate("Required only if verifying client or server certificates below.");?></span>
         </div>
       </div>
 
       <div class="form-group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Verify Client");?></label>
+        <label class="col-sm-3 control-label" for="verify_client"><?php echo $this->translate("Verify Client");?></label>
         <div class="col-sm-6">
-          <input type="checkbox" name="verify_client" value="1" <?php echo !empty($this->transport['verify_client']) ? "checked" : ""; ?>/>
+          <input type="checkbox" id="verify_client" name="verify_client" value="1" <?php echo !empty($this->transport['verify_client']) ? "checked" : ""; ?>/>
           <span class="help-block"><?php echo $this->translate("WSS/WS only. Requires connecting clients to present a certificate signed by the CA bundle above.");?></span>
         </div>
       </div>
 
-      <div class="form-group" id="transport_verify_server_group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("Verify Server");?></label>
+      <div class="form-group" id="transport_verify_server_group" <?php echo $tlsOnly ? '' : 'hidden aria-hidden="true"'; ?>>
+        <label class="col-sm-3 control-label" for="verify_server"><?php echo $this->translate("Verify Server");?></label>
         <div class="col-sm-6">
-          <input type="checkbox" name="verify_server" value="1" <?php echo !empty($this->transport['verify_server']) ? "checked" : ""; ?>/>
+          <input type="checkbox" id="verify_server" name="verify_server" value="1" <?php echo !empty($this->transport['verify_server']) ? "checked" : ""; ?>/>
           <span class="help-block"><?php echo $this->translate("TLS only -- not applicable to WSS/WS. Verifies the remote server's certificate when Asterisk dials out over this transport.");?></span>
         </div>
       </div>
 
-      <div class="form-group" id="transport_method_group">
-        <label class="col-sm-3 control-label"><?php echo $this->translate("TLS Method");?></label>
+      <div class="form-group" id="transport_method_group" <?php echo $tlsOnly ? '' : 'hidden aria-hidden="true"'; ?>>
+        <label class="col-sm-3 control-label" for="method"><?php echo $this->translate("TLS Method");?></label>
         <div class="col-sm-4">
-          <select class="form-control" name="method">
+          <select class="form-control" id="method" name="method">
             <?php foreach (array('' => 'Automatic', 'tlsv1_2' => 'TLS 1.2', 'tlsv1_3' => 'TLS 1.3') as $value => $label): ?>
               <option value="<?php echo $value; ?>" <?php echo ($this->transport['method'] === $value) ? "selected" : ""; ?>><?php echo $this->translate($label); ?></option>
             <?php endforeach; ?>
@@ -192,6 +148,111 @@
         </div>
       </div>
     </fieldset>
+
+    <!-- TASK-0032 (Phase 2): Advanced -- collapsed by default, same
+         disclosure pattern as Extensions/Trunks (Phase 2/4). -->
+    <details id="advancedSection" <?php echo $this->error_message ? 'open' : ''; ?>>
+      <summary style="cursor:pointer;"><h4 style="display:inline;"><?php echo $this->translate('Advanced');?></h4></summary>
+
+      <fieldset>
+        <legend class="sr-only"><?php echo $this->translate('NAT / Advertised addresses');?></legend>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="domain"><?php echo $this->translate("Domain");?></label>
+          <div class="col-sm-6">
+            <input type="text" id="domain" class="form-control" name="domain" value='<?php echo $this->escape($this->transport['domain']);?>'/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="external_signaling_address"><?php echo $this->translate("External Signaling Address");?></label>
+          <div class="col-sm-6">
+            <input type="text" id="external_signaling_address" class="form-control" name="external_signaling_address" value='<?php echo $this->escape($this->transport['external_signaling_address']);?>'/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="external_signaling_port"><?php echo $this->translate("External Signaling Port");?></label>
+          <div class="col-sm-4">
+            <input type="text" id="external_signaling_port" class="form-control" name="external_signaling_port" value='<?php echo $this->escape($this->transport['external_signaling_port']);?>'/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="external_media_address"><?php echo $this->translate("External Media Address");?></label>
+          <div class="col-sm-6">
+            <input type="text" id="external_media_address" class="form-control" name="external_media_address" value='<?php echo $this->escape($this->transport['external_media_address']);?>'/>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="local_net"><?php echo $this->translate("Local Networks (CIDR)");?></label>
+          <div class="col-sm-6">
+            <textarea class="form-control" id="local_net" name="local_net" rows="4" placeholder="192.168.0.0/16"><?php echo $this->escape($this->networksText);?></textarea>
+            <span class="help-block"><?php echo $this->translate("One network per line. Each becomes an independent local_net= entry.");?></span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="symmetric_transport"><?php echo $this->translate("Symmetric Transport");?></label>
+          <div class="col-sm-6">
+            <input type="checkbox" id="symmetric_transport" name="symmetric_transport" value="1" <?php echo !empty($this->transport['symmetric_transport']) ? "checked" : ""; ?>/>
+            <span class="help-block"><?php echo $this->translate("Reuses the same source port for outbound requests as this transport's own bind port, instead of a random ephemeral one. Enable if calls through this transport are unexpectedly rejected by a remote endpoint enforcing strict source-port matching.");?></span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="allow_reload"><?php echo $this->translate("Allow Reload");?></label>
+          <div class="col-sm-6">
+            <input type="checkbox" id="allow_reload" name="allow_reload" value="1" <?php echo !empty($this->transport['allow_reload']) ? "checked" : ""; ?>/>
+            <span class="help-block"><?php echo $this->translate("Lets Asterisk apply future changes to this transport with a plain configuration reload. Not every change is actually hot-appliable this way regardless of this setting -- a rename, a disable, or an in-place native-TLS certificate change on an already-loaded bind still needs an Asterisk restart to take effect (see Diagnostics after saving).");?></span>
+          </div>
+        </div>
+
+        <div class="form-group">
+          <label class="col-sm-3 control-label" for="is_default"><?php echo $this->translate("Default transport");?></label>
+          <div class="col-sm-6">
+            <input type="checkbox" id="is_default" name="is_default" value="1" <?php echo !empty($this->transport['is_default']) ? "checked" : ""; ?>/>
+            <span class="help-block"><?php echo $this->translate("Marks this transport as the primary one shown in listings. Extensions and trunks with no transport explicitly pinned (Automatic) are NOT forced onto this transport -- Asterisk selects the first configured transport compatible with each request on its own.");?></span>
+          </div>
+        </div>
+      </fieldset>
+    </details>
+
+    <?php if ($this->action === 'edit'): ?>
+    <!-- TASK-0032 (Phase 9): Diagnostics -- read-only runtime detail,
+         never part of the editable input form (Phase 2's own IA rule). -->
+    <details id="diagnosticsSection">
+      <summary style="cursor:pointer;"><h4 style="display:inline;"><?php echo $this->translate('Diagnostics');?></h4></summary>
+
+      <div class="form-group">
+        <label class="col-sm-3 control-label"><?php echo $this->translate("Runtime status");?></label>
+        <div class="col-sm-6">
+          <?php echo $this->statusBadge($this->normalizedStatus['state'], array('detail' => $this->normalizedStatus['detail'], 'showDetail' => true)); ?>
+        </div>
+      </div>
+
+      <?php // TASK-0032 (Phase 16): moved out of the editable TLS
+            // fieldset above -- this is read-only, runtime-derived
+            // information about what Asterisk currently has loaded, not
+            // an input the admin is editing right now. ?>
+      <?php if ($this->certInspection !== null): ?>
+        <div class="form-group">
+          <label class="col-sm-3 control-label"><?php echo $this->translate("Certificate identity");?></label>
+          <div class="col-sm-6">
+            <?php if ($this->certInspection['valid']): ?>
+              <p><?php echo $this->translate("Currently configured: %s, valid until %s.", $this->escape($this->certInspection['subject']), $this->escape($this->certInspection['not_after'])); ?></p>
+            <?php else: ?>
+              <p class="text-danger"><?php echo $this->translate("Certificate problem: %s.", $this->escape($this->certInspection['error'])); ?></p>
+            <?php endif; ?>
+            <?php if ($this->keyCheck !== null && $this->keyCheck['mode_warning']): ?>
+              <p class="text-warning"><?php echo $this->translate("Private key: %s.", $this->escape($this->keyCheck['mode_warning'])); ?></p>
+            <?php endif; ?>
+          </div>
+        </div>
+      <?php endif; ?>
+    </details>
+    <?php endif; ?>
 
     <br>
     <div class="snep-body-footer-buttons">
@@ -204,19 +265,26 @@
 </div>
 
 <script type="text/javascript">
-// TASK-0029A: progressive disclosure -- TLS/certificate fields are
-// irrelevant noise for udp/tcp (Snep_PjsipTransportConf never emits
-// them for those protocols; the controller rejects them being set at
-// all), and verify_server/method are additionally inert for wss/ws
-// (real TLS control for those lives in http.conf, confirmed live --
-// see docs/tasks/0029a-tls-transport-certificate-management.md).
+// TASK-0032 (Phase 11): progressive disclosure now toggles the native
+// `hidden` attribute (+ mirrors it onto aria-hidden) instead of swapping
+// a visible/invisible CSS class -- TASK-0030's own accessibility finding
+// was that a JS-driven className toggle may still leave a visually-absent
+// field announced by assistive technology. Server-rendered initial state
+// (see $tlsCapable/$tlsOnly above) means a client with JS disabled still
+// sees the CORRECT fields for whatever protocol was already saved.
+function senmaSetHidden(id, isHidden) {
+    var el = document.getElementById(id);
+    if (!el) { return; }
+    el.hidden = isHidden;
+    el.setAttribute("aria-hidden", isHidden ? "true" : "false");
+}
 function senmaTransportShowTls() {
     var protocol = document.getElementById("transport_protocol").value;
     var tlsCapable = (protocol === "tls" || protocol === "wss" || protocol === "ws");
-    document.getElementById("transport_tls_group").className = tlsCapable ? "visible" : "invisible";
+    senmaSetHidden("transport_tls_group", !tlsCapable);
     var tlsOnly = (protocol === "tls");
-    document.getElementById("transport_verify_server_group").className = tlsOnly ? "visible" : "invisible";
-    document.getElementById("transport_method_group").className = tlsOnly ? "visible" : "invisible";
+    senmaSetHidden("transport_verify_server_group", !tlsOnly);
+    senmaSetHidden("transport_method_group", !tlsOnly);
 }
 senmaTransportShowTls();
 </script>

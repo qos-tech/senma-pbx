@@ -233,6 +233,19 @@ pjsip-runtime-status-smoke: up
 extensions-trunks-admin-experience-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/extensions-trunks-admin-experience-smoke-test.sh
 
+# TASK-0032: Transport + shared runtime UX foundation -- shared status
+# badge (data-runtime-status alongside the pre-existing TASK-0020
+# data-runtime-state), transport protocol disclosure via hidden/
+# aria-hidden, WSS-vs-native-TLS certificate wording, transport
+# Diagnostics, shared dependency-warning panel across all three entities,
+# delete-success feedback, responsive transport list columns, and the
+# AMI-down-never-crashes/never-fabricates contract extended to the
+# transport list. Stops/restarts the asterisk container (Part E) -- same
+# "run in isolation" reasoning as pjsip-runtime-status-smoke. See
+# docs/tasks/0032-transport-shared-runtime-ux-foundation.md.
+transport-shared-runtime-ux-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/transport-shared-runtime-ux-smoke-test.sh
+
 # TASK-0028C: proves the reachable SIP/IAX-era dialplan/config constructs
 # closed by that task stay closed (context bleed, SIPAddHeader, callback
 # .call generation) -- see docs/tasks/0028c-pjsip-legacy-runtime-closure.md.

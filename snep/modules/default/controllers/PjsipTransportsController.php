@@ -49,10 +49,32 @@ class PjsipTransportsController extends Zend_Controller_Action {
         // proved enabled=1 is NOT sufficient proof of an active runtime
         // object -- a collision, or a rename never followed by a restart,
         // both leave an enabled=1 row with no live runtime counterpart).
-        $runtimeNames = Snep_PjsipTransportConf::getRuntimeTransportNames();
+        // TASK-0032 (Phase 10): a bare uncaught AMI failure here used to
+        // crash the whole page (no try/catch existed) -- confirmed by
+        // inspection, unlike Extensions/Trunks' own preDispatch()
+        // connectivity check or Snep_PjsipStatus_Manager::amiCommand()'s
+        // established "return null, never throw" contract. Runtime
+        // unavailability must degrade to an explicit UNKNOWN per row plus
+        // a page-level banner, never a fatal error and never a silent
+        // "no transports configured" (Phase 10's own explicit requirement).
+        $runtimeQueryFailed = false;
+        try {
+            $runtimeNames = Snep_PjsipTransportConf::getRuntimeTransportNames();
+        } catch (Exception $e) {
+            error_log("PjsipTransportsController: runtime transport query failed: " . $e->getMessage());
+            $runtimeNames = array();
+            $runtimeQueryFailed = true;
+        }
         foreach ($transports as &$transport) {
             $inRuntime = in_array($transport['name'], $runtimeNames, true);
-            if ($transport['enabled']) {
+            if ($runtimeQueryFailed) {
+                // TASK-0020's own runtime_state vocabulary (item 6) has no
+                // "could not observe" value -- kept as its own sentinel
+                // here rather than guessing active/restart_required, which
+                // scripts/transport-smoke-test.sh's t20_runtime_badge()
+                // already greps verbatim (never redefined by this task).
+                $transport['runtime_state'] = 'unknown';
+            } elseif ($transport['enabled']) {
                 // enabled and live -> active. enabled but absent from
                 // Asterisk's own runtime -> exactly the RESTART REQUIRED/
                 // RUNTIME MISMATCH state the investigation's §K/§6/§8
@@ -64,9 +86,19 @@ class PjsipTransportsController extends Zend_Controller_Action {
                 // do not claim it is fully gone.
                 $transport['runtime_state'] = $inRuntime ? 'restart_required' : 'disabled';
             }
+            // TASK-0032 (Phase 4): the shared 7-state product vocabulary
+            // (Snep_PjsipStatus_Manager, TASK-0029B), reconciled onto this
+            // controller's own unchanged runtime_state computation above --
+            // a presentation-layer mapping only, per
+            // docs/tasks/0030-telephony-administration-ux-foundation.md's
+            // own STATUS MODEL decision. runtime_state (and its
+            // data-runtime-state attribute) is kept verbatim alongside it,
+            // unchanged, for the same reason.
+            $transport['status'] = $this->normalizeStatus($transport['runtime_state']);
         }
         unset($transport);
         $this->view->transports = $transports;
+        $this->view->runtimeQueryFailed = $runtimeQueryFailed;
 
         // TASK-0020 items 2-4: surface whatever the last create/edit/
         // delete on this page determined (see reportApplyResult()) --
@@ -197,6 +229,24 @@ class PjsipTransportsController extends Zend_Controller_Action {
             ? Snep_PjsipTransports_Manager::keyFileExists($transport['priv_key_file'])
             : null;
 
+        // TASK-0032 (Phase 9): Diagnostics tier -- the edit page itself
+        // had no runtime status at all before this task (only the list
+        // page did); mirrors the identical addition TASK-0031 already
+        // made to trunks/addedit.phtml's own Diagnostics section, reusing
+        // the same normalizeStatus() mapping indexAction() uses (no
+        // second runtime source, no new AMI call shape).
+        try {
+            $runtimeNames = Snep_PjsipTransportConf::getRuntimeTransportNames();
+            $rawState = $transport['enabled']
+                ? (in_array($transport['name'], $runtimeNames, true) ? 'active' : 'restart_required')
+                : (in_array($transport['name'], $runtimeNames, true) ? 'restart_required' : 'disabled');
+        } catch (Exception $e) {
+            error_log("PjsipTransportsController: runtime transport query failed: " . $e->getMessage());
+            $rawState = 'unknown';
+        }
+        $this->view->runtimeState = $rawState;
+        $this->view->normalizedStatus = $this->normalizeStatus($rawState);
+
         if ($this->getRequest()->isPost()) {
             $error = $this->validatePost($_POST, $id);
             $this->view->transport = $_POST;
@@ -252,10 +302,20 @@ class PjsipTransportsController extends Zend_Controller_Action {
         }
 
         if (count($usage) > 0) {
-            $this->view->error_message = $this->view->translate("Cannot remove. The following objects are using this transport: ") . "<br />";
+            // TASK-0032 (Phase 7/8): shared dependency-warning primitive --
+            // same message shape now used by ExtensionsController/
+            // TrunksController::removeAction(); reuses getUsageDetails()'s
+            // existing rows unchanged (no new dependency discovery).
+            $items = array();
             foreach ($usage as $ref) {
-                $this->view->error_message .= ($ref['type'] === 'extension' ? $this->view->translate("Extension") : $this->view->translate("Trunk")) . " " . $ref['id'] . " - " . $ref['label'] . "<br />\n";
+                $items[] = ($ref['type'] === 'extension' ? $this->view->translate("Extension") : $this->view->translate("Trunk")) . " " . $ref['id'] . " - " . $ref['label'];
             }
+            $this->view->error_message = $this->view->dependencyWarning(
+                $this->view->translate("transport"),
+                $transport['name'],
+                $items,
+                $this->view->translate("Remove or reassign these references before deleting this transport.")
+            );
             $this->renderScript('error/sneperror.phtml');
             return;
         }
@@ -396,6 +456,42 @@ class PjsipTransportsController extends Zend_Controller_Action {
         $asteriskAmi = PBX_Asterisk_AMI::getInstance();
         $result = $asteriskAmi->Command('http show status');
         return isset($result['data']) ? $result['data'] : '';
+    }
+
+    /**
+     * normalizeStatus - TASK-0032 (Phase 4): reconciles this controller's
+     * own runtime_state vocabulary (active/restart_required/disabled/
+     * unknown, TASK-0020, unchanged) onto the shared 7-state product
+     * vocabulary Snep_PjsipStatus_Manager already established for
+     * extensions/trunks (TASK-0029B), so Snep_View_Helper_StatusBadge can
+     * render all three entities identically. A presentation-layer mapping
+     * only, per docs/tasks/0030-telephony-administration-ux-foundation.md's
+     * own STATUS MODEL decision -- runtime_state itself, and how it is
+     * computed, is untouched (see indexAction()/editAction()).
+     *
+     * ERROR is deliberately never produced here: a bind-collision/TLS
+     * apply failure is a save-time-only signal (reportApplyResult()'s own
+     * 'apply_failed' flash), not a value derivable from a plain "is this
+     * name loaded" query on every page view -- exactly mirroring how
+     * extensions/trunks' own per-row runtime_status is likewise separate
+     * from their save-time checkApplyResult() flash. Never fabricated.
+     *
+     * @param string $rawState one of 'active'|'restart_required'|
+     *               'disabled'|'unknown'
+     * @return array('state' => Snep_PjsipStatus_Manager::* constant,
+     *               'detail' => translated product-language string)
+     */
+    protected function normalizeStatus($rawState) {
+        switch ($rawState) {
+            case 'active':
+                return array('state' => Snep_PjsipStatus_Manager::ACTIVE, 'detail' => $this->view->translate("Asterisk currently has this transport loaded, matching its saved configuration."));
+            case 'restart_required':
+                return array('state' => Snep_PjsipStatus_Manager::PENDING, 'detail' => $this->view->translate("Configuration saved; Asterisk restart required to apply."));
+            case 'disabled':
+                return array('state' => Snep_PjsipStatus_Manager::DISABLED, 'detail' => $this->view->translate("This transport is disabled and not loaded in Asterisk."));
+            default:
+                return array('state' => Snep_PjsipStatus_Manager::UNKNOWN, 'detail' => $this->view->translate("Could not query Asterisk's live transport state."));
+        }
     }
 
     /**

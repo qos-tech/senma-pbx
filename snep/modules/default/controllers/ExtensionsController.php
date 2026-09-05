@@ -126,6 +126,10 @@ class ExtensionsController extends Zend_Controller_Action {
         $this->view->saved_active_messages = $flash->getMessages('saved_active');
         $this->view->saved_pending_messages = $flash->getMessages('saved_pending');
         $this->view->apply_failed_messages = $flash->getMessages('apply_failed');
+        // TASK-0032 (Phase 13): delete had no success feedback of any
+        // kind before this task (a bare silent redirect, confirmed by
+        // inspection) -- the same gap TASK-0031 already closed for save.
+        $this->view->deleted_messages = $flash->getMessages('deleted');
 
       }
 
@@ -1126,11 +1130,24 @@ class ExtensionsController extends Zend_Controller_Action {
               $rules = array_merge($rules, $rulesQuery);
 
               if (count($rules) > 0) {
-                $errMsg = $this->view->translate('The following routes use this extension, modify them prior to remove this extension') . ":<br />\n";
+                // TASK-0032 (Phase 7/8): shared dependency-warning
+                // primitive -- same message shape now used by
+                // TrunksController/PjsipTransportsController::removeAction();
+                // reuses getValidation()/getValidationRules()'s existing
+                // rows unchanged (no new dependency discovery). Also
+                // closes a real gap the un-shared version had: route
+                // item text was previously concatenated with NO escaping
+                // at all.
+                $items = array();
                 foreach ($rules as $regra) {
-                  $errMsg .= $regra['id'] . " - " . $regra['desc'] . "<br />\n";
+                  $items[] = $regra['id'] . " - " . $regra['desc'];
                 }
-                $this->view->error_message = $errMsg;
+                $this->view->error_message = $this->view->dependencyWarning(
+                  $this->view->translate("extension"),
+                  $exten,
+                  $items,
+                  $this->view->translate("Remove or reassign these routes before deleting this extension.")
+                );
                 $this->view->back = $this->view->translate("Back");
                 $this->renderScript('error/sneperror.phtml');
 
@@ -1154,7 +1171,7 @@ class ExtensionsController extends Zend_Controller_Action {
                   try {
                     //audit
                     Snep_Audit_Manager::SaveLog("Deleted", 'peers', $exten, $this->view->translate("Extension") . " {$result['name']} ". $exten);
-                    
+
                     Snep_Binds_Manager::removeBondByPeer($exten);
                     Snep_Extensions_Manager::remove($exten);
                     Snep_Extensions_Manager::removeVoicemail($exten);
@@ -1165,6 +1182,16 @@ class ExtensionsController extends Zend_Controller_Action {
                     // additively" pattern already used for the trunk generator below.
                     Snep_PjsipTransportConf::loadConfFromDb();
                     Snep_PjsipConf::loadConfFromDb();
+
+                    // TASK-0032 (Phase 13): "deleted successfully" is a
+                    // canonical outcome extensions never surfaced before
+                    // this task (a bare silent redirect, confirmed by
+                    // inspection) -- placed inside the try block so it
+                    // only fires once every step above has actually
+                    // succeeded, never on the catch path below.
+                    $deleteFlash = $this->_helper->FlashMessenger;
+                    $deleteFlash->setNamespace('deleted');
+                    $deleteFlash->addMessage($this->view->translate("Extension %s deleted successfully.", $exten));
 
                   } catch (PDOException $e) {
                     $db->rollBack();
@@ -1203,11 +1230,18 @@ class ExtensionsController extends Zend_Controller_Action {
               $rules = array_merge($rules, $rulesQuery);
 
               if (count($rules) > 0) {
-                $errMsg = $this->view->translate('The following routes use this extension, modify them prior to remove this extension') . ":<br />\n";
+                // TASK-0032 (Phase 7/8): shared dependency-warning
+                // primitive -- see removeAction()'s identical comment.
+                $items = array();
                 foreach ($rules as $regra) {
-                  $errMsg .= $regra['id'] . " - " . $regra['desc'] . "<br />\n";
+                  $items[] = $regra['id'] . " - " . $regra['desc'];
                 }
-                $this->view->error_message = $errMsg;
+                $this->view->error_message = $this->view->dependencyWarning(
+                  $this->view->translate("extension"),
+                  $exten,
+                  $items,
+                  $this->view->translate("Remove or reassign these routes before disabling this extension.")
+                );
                 $this->view->back = $this->view->translate("Back");
                 $this->renderScript('error/sneperror.phtml');
 
