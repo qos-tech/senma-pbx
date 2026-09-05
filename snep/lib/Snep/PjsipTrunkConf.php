@@ -197,9 +197,52 @@ class Snep_PjsipTrunkConf {
         $codecList = array_filter(explode(";", (string) $peer['allow']));
         $allow = implode(",", $codecList);
 
+        // TASK-0028Y: same auto_* resolution as Snep_PjsipConf::renderExtension()
+        // -- see that method's own comment for the full rationale. Applied
+        // identically here so a trunk using only the "auto" NAT checkboxes
+        // gets the same real accommodation an extension now does, rather
+        // than the two supported entity types diverging on an
+        // unimplemented-vs-implemented basis.
         $natTokens = array_filter(explode(",", (string) $peer['nat']));
-        $forceRport = in_array('force_rport', $natTokens, true) ? 'yes' : 'no';
-        $rtpSymmetric = in_array('comedia', $natTokens, true) ? 'yes' : 'no';
+        $forceRport = (in_array('force_rport', $natTokens, true) || in_array('auto_force_rport', $natTokens, true)) ? 'yes' : 'no';
+        $rtpSymmetric = (in_array('comedia', $natTokens, true) || in_array('auto_comedia', $natTokens, true)) ? 'yes' : 'no';
+
+        // TASK-0028Y: qualify -- confirmed gap #1 (PJSIP Completeness
+        // Architecture Review, TASK-0028W): this generator never
+        // consumed trunks.peers.qualify at all, so a trunk's "Delay
+        // Qualification"/"Qualification time" controls were persisted
+        // but had zero runtime effect (no `qualify_frequency=` on the
+        // AOR below, ever). Same boolean-to-interval convention already
+        // established for extensions (Snep_PjsipConf::renderExtension()):
+        // "no" -> 0 (disabled); "yes" -> 60s, a *chosen* default (reused
+        // verbatim from the extension convention for consistency, not
+        // independently derived). The "specify" case is a real,
+        // admin-supplied number, carried over from chan_sip's own
+        // `qualify=<milliseconds>` directive (Snep_InterfaceConf.php) --
+        // PJSIP's `qualify_frequency` is documented in *seconds*
+        // (res_pjsip_outbound_registration/res_pjsip's own built-in help
+        // text), so passing the raw number through unconverted would
+        // silently turn a legacy "2000" (2s) into a 2000-SECOND (33
+        // minute) interval -- effectively disabling qualify while
+        // appearing configured. Converted ms->s, rounded, with a 1s
+        // floor for any positive value so a sub-second "specify" doesn't
+        // silently round down to 0 (disabled). Only "yes"/"no"/a
+        // digits-only string are accepted; anything else (unreachable
+        // through the real UI, which only ever posts one of those three
+        // shapes -- TrunksController::preparePost() now validates this
+        // at submission time too) skips the whole trunk, matching the
+        // existing unsafe-value discipline above rather than writing a
+        // malformed `qualify_frequency=` line.
+        if ($peer['qualify'] === 'yes') {
+            $qualifyFrequency = 60;
+        } elseif ($peer['qualify'] === 'no' || $peer['qualify'] === '' || $peer['qualify'] === null) {
+            $qualifyFrequency = 0;
+        } elseif (preg_match('/^\d+$/', (string) $peer['qualify'])) {
+            $qualifyMs = (int) $peer['qualify'];
+            $qualifyFrequency = $qualifyMs === 0 ? 0 : max(1, (int) round($qualifyMs / 1000));
+        } else {
+            throw new PBX_Exception_NotFound("Trunk '{$peer['name']}' (id $id) has an invalid 'qualify' value ('{$peer['qualify']}') -- skipping.");
+        }
 
         $dtmfMode = isset(self::$dtmfModeMap[$peer['dtmfmode']])
             ? self::$dtmfModeMap[$peer['dtmfmode']]
@@ -270,6 +313,10 @@ class Snep_PjsipTrunkConf {
         $out .= "[$name]\n";
         $out .= "type=aor\n";
         $out .= "contact=sip:$host:$port\n";
+        // TASK-0028Y: see $qualifyFrequency's own computation above --
+        // 0 means disabled, matching Asterisk's own qualify_frequency
+        // default/semantics by omission just as explicitly as writing it.
+        $out .= "qualify_frequency=$qualifyFrequency\n";
         $out .= "\n";
 
         // Registration: only for the model this milestone actually

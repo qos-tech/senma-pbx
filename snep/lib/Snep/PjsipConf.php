@@ -167,10 +167,20 @@ class Snep_PjsipConf {
      * Field mapping is deliberately limited to what TASK-0010 classified
      * as safe/evidence-backed. See docs/tasks/0011-pjsip-extension-provisioning.md
      * for the full field-by-field rationale; ambiguous chan_sip-only
-     * values (rewrite_contact, auto_force_rport/auto_comedia,
-     * directmedia=outgoing) are deliberately NOT translated here -- they
-     * fall back to a safe, documented default rather than an invented
-     * mapping.
+     * values (rewrite_contact, directmedia=outgoing) are deliberately
+     * NOT translated here -- they fall back to a safe, documented
+     * default rather than an invented mapping.
+     *
+     * TASK-0028Y: `auto_force_rport`/`auto_comedia` (deferred by
+     * TASK-0011 as an explicit "needs a product decision, not an
+     * inference" item -- see docs/tasks/0011-pjsip-extension-provisioning.md
+     * §4) are now resolved: collapsed into `force_rport=yes`/
+     * `rtp_symmetric=yes` respectively, exactly the mapping TASK-0010 §9
+     * had originally floated. This makes the UI's "auto-force-rport"/
+     * "auto-comedia" checkboxes finally have their presented effect
+     * instead of being silently inert -- not a newly-invented behavior,
+     * a resolution of a previously-flagged gap. See
+     * docs/tasks/0028y-pjsip-parameter-regression-closure.md.
      *
      * @param array $peer one row from `peers`
      * @return string
@@ -199,15 +209,18 @@ class Snep_PjsipConf {
         $codecList = array_filter(explode(";", (string) $peer['allow']));
         $allow = implode(",", $codecList);
 
-        // NAT: only the two direct, evidence-backed tokens (TASK-0010 §9).
-        // auto_force_rport/auto_comedia are deliberately NOT collapsed
-        // into these -- TASK-0011 explicitly forbids inventing that
-        // mapping. An extension using only "auto_*" NAT modes gets no
-        // PJSIP NAT accommodation (both default "no"), which is the safe,
-        // documented, explicit default, not silently equivalent to auto.
+        // NAT: the two direct, evidence-backed tokens (TASK-0010 §9),
+        // plus TASK-0028Y's resolution of the previously-deferred
+        // "auto_*" case -- chan_sip's auto_force_rport/auto_comedia have
+        // no PJSIP "auto" mode, so they are collapsed into the same
+        // boolean each is most closely paired with (auto_force_rport ->
+        // force_rport=yes, auto_comedia -> rtp_symmetric=yes), matching
+        // TASK-0010 §9's originally-floated mapping. Both an entity with
+        // the direct flag and one with only the "auto" flag now get the
+        // same, documented accommodation -- no longer silently inert.
         $natTokens = array_filter(explode(",", (string) $peer['nat']));
-        $forceRport = in_array('force_rport', $natTokens, true) ? 'yes' : 'no';
-        $rtpSymmetric = in_array('comedia', $natTokens, true) ? 'yes' : 'no';
+        $forceRport = (in_array('force_rport', $natTokens, true) || in_array('auto_force_rport', $natTokens, true)) ? 'yes' : 'no';
+        $rtpSymmetric = (in_array('comedia', $natTokens, true) || in_array('auto_comedia', $natTokens, true)) ? 'yes' : 'no';
         // rewrite_contact: no source field in `peers` at all (TASK-0010
         // §9) -- deliberately left unset (Asterisk's own compiled
         // default, "no", applies by omission).
