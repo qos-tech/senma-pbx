@@ -352,7 +352,7 @@ odbc_ready() {
     $COMPOSE exec -T asterisk asterisk -rx 'odbc show all' 2>&1 | grep -qE 'Number of active connections: [1-9]'
 }
 if ! harness_retry 10 1 -- odbc_ready; then
-    blib_die "Asterisk's ODBC connection to MariaDB is not Connected after restore. The most likely cause: the restored asterisk-etc/res_odbc.conf was templated with DB credentials from backup time, and the CURRENT .env's DB_PASSWORD does not match them (SENMA does not yet support credential rotation on an existing volume -- see TASK-0033/0033C). Check 'docker compose exec asterisk asterisk -rx \"odbc show all\"' and compare against the current .env."
+    blib_die "Asterisk's ODBC connection to MariaDB is not Connected after restore. The most likely cause: the restored asterisk-etc/res_odbc.conf was templated with DB credentials from backup time, and the CURRENT .env's DB_PASSWORD does not match them. Run 'make secrets-check' to confirm, then 'make rotate-secrets' to reconcile the restored installation onto the currently declared credentials (TASK-0033C). Check 'docker compose exec asterisk asterisk -rx \"odbc show all\"' and compare against the current .env."
 fi
 
 step "starting app" $COMPOSE up -d app
