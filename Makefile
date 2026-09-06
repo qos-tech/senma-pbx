@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke
 
 COMPOSE ?= docker compose
 
@@ -361,3 +361,59 @@ reconcile-check: up
 # pjsip-reconcile-smoke-test.sh's own header.
 pjsip-reconcile-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/pjsip-reconcile-smoke-test.sh
+
+# TASK-0033C: non-mutating secret-consistency check -- for each
+# rotatable credential (DB_PASSWORD, DB_ROOT_PASSWORD, AMI_PASSWORD),
+# reports whether the value currently declared in .env matches what is
+# actually active/persisted everywhere that credential is consumed.
+# Never writes to disk, never touches a DB account, never
+# reloads/restarts anything. See docs/tasks/
+# 0033c-secret-rotation-contract.md. Exit codes: 0 all MATCH, 3 drift
+# detected on at least one secret, 1 could not be determined/error.
+secrets-check: up
+	@set -a; . ./.env; set +a; bash scripts/secrets-check.sh
+
+# TASK-0033C: reconciles every DECLARED secret in .env into its
+# active/persisted state on an EXISTING installation -- the operator
+# command that turns "I edited .env" into an actual, verified,
+# old-value-rejected/new-value-accepted rotation, with automatic
+# rollback to the previous coherent state on any verification failure.
+# Fixed order: DB_ROOT_PASSWORD, DB_PASSWORD, AMI_PASSWORD (see
+# docs/tasks/0033c-secret-rotation-contract.md ROTATION ORDERING).
+# Rotating DB_ROOT_PASSWORD prompts once, interactively, for the
+# CURRENT root password (never read from .env, never stored/logged).
+# Exit code: 0 if every secret ends ROTATED_SUCCESSFULLY, 1 if any ends
+# ROTATION_REJECTED (never a partial "success").
+rotate-secrets: up
+	@set -a; . ./.env; set +a; bash scripts/rotate-secrets.sh
+
+rotate-db-password: up
+	@set -a; . ./.env; set +a; bash scripts/rotate-secrets.sh --only db-password
+
+rotate-db-root-password: up
+	@set -a; . ./.env; set +a; bash scripts/rotate-secrets.sh --only db-root-password
+
+rotate-ami-password: up
+	@set -a; . ./.env; set +a; bash scripts/rotate-secrets.sh --only ami-password
+
+# TASK-0033C: safe, non-mutating regression coverage for the
+# consistency-check contract itself (asserts MATCH on this dev
+# install's own baseline, and that no secret value ever appears in
+# output). Safe for `make regression` -- see scripts/
+# secrets-consistency-smoke-test.sh's own header, and
+# secret-rotation-smoke, deliberately NOT part of `make regression`,
+# for the full destructive rotation proof.
+secrets-consistency-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/secrets-consistency-smoke-test.sh
+
+# TASK-0033C: the real, destructive secret-rotation proof -- rotates
+# DB_PASSWORD, DB_ROOT_PASSWORD and AMI_PASSWORD forward on this
+# existing installation, proves old-value-rejected/new-value-accepted
+# for each, proves restart/force-recreate persistence, proves backup/
+# reconcile/runtime-status keep working, injects controlled failures,
+# then rotates every secret back to its original value. Deliberately
+# NOT part of `make regression` (mirrors backup-restore-smoke's own
+# precedent, see scripts/secret-rotation-smoke-test.sh's own header) --
+# run this explicitly.
+secret-rotation-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/secret-rotation-smoke-test.sh
