@@ -194,6 +194,16 @@ run_suite "restart-smoke"          "restart-smoke-test.sh"
 # (backup-restore-dr-smoke-test.sh / `make backup-restore-smoke`) is
 # deliberately NOT run here.
 run_suite "backup-smoke"           "backup-smoke-test.sh"
+# TASK-0033C: safe, non-mutating secret-consistency check -- placed
+# right after backup-smoke (both are infra/lifecycle-adjacent, non-
+# destructive validations run near restart-smoke) and before the
+# external-* suites. Never writes to disk, never touches a DB account,
+# never restarts/reloads anything -- see scripts/
+# secrets-consistency-smoke-test.sh's own header for exactly what it
+# does and does not do, and why the real destructive rotation proof
+# (secret-rotation-smoke-test.sh / `make secret-rotation-smoke`) is
+# deliberately NOT run here.
+run_suite "secrets-consistency-smoke" "secrets-consistency-smoke-test.sh"
 run_suite "external-failure-smoke" "external-failure-smoke-test.sh"
 run_suite "external-content-smoke" "external-content-smoke-test.sh"
 
