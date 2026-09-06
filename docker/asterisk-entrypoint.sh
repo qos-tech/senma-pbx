@@ -242,4 +242,12 @@ else
     [ "$_SENMA_COHERENT" = "1" ] || exit 1
 fi
 
+# TASK-0033D: bounded-growth watcher for /var/log/asterisk/{full,queue_log}
+# -- no cron/systemd exists in this image, so this is backgrounded here
+# as a sibling process to Asterisk (still under this container's PID 1
+# once `exec` below replaces the shell) rather than left unbounded. See
+# docker/log-rotate-asterisk.sh and docs/tasks/
+# 0033d-diagnostics-logging-storage-lifecycle.md LOG LIFECYCLE.
+/usr/local/bin/log-rotate-asterisk.sh &
+
 exec "$@"

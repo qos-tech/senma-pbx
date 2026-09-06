@@ -33,7 +33,8 @@ COPY docker/apache-mag.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/php-mag.ini /usr/local/etc/php/conf.d/zz-mag.ini
 COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY docker/bootstrap-admin.php /usr/local/bin/bootstrap-admin.php
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh
+COPY docker/log-rotate-app.sh /usr/local/bin/log-rotate-app.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/log-rotate-app.sh
 EXPOSE 80
 
 ENTRYPOINT ["docker-entrypoint.sh"]

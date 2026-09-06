@@ -93,4 +93,12 @@ chmod 664 "$SETUP_CONF"
 # app container's own first run) still gets bootstrapped.
 php /usr/local/bin/bootstrap-admin.php || echo "[entrypoint] bootstrap-admin.php failed (non-fatal, see above)"
 
+# TASK-0033D: bounded-growth watcher for mag-error.log/ui.log -- no
+# cron/systemd exists in this image, so this is backgrounded here as a
+# sibling process to Apache (still under this container's PID 1 once
+# `exec` below replaces the shell) rather than left unbounded. See
+# docker/log-rotate-app.sh and docs/tasks/
+# 0033d-diagnostics-logging-storage-lifecycle.md LOG LIFECYCLE.
+/usr/local/bin/log-rotate-app.sh &
+
 exec "$@"
