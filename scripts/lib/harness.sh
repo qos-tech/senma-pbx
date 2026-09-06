@@ -377,3 +377,162 @@ harness_require_containers() {
         harness_blocked "one or more of [$*] not Up -- run 'make up' first"
     fi
 }
+
+# --- Asterisk restart post-recovery contract (TASK-0033E1) ------------------
+#
+# TASK-0033E discovered (docs/tasks/0033e-readiness-contract-hardening.md,
+# REMAINING DEBT item 5) that `res_odbc.so` makes exactly ONE connection
+# attempt during Asterisk's own module-load sequence and does NOT
+# auto-reconnect afterward -- the same one-shot behavior that motivated
+# that task's own `asterisk -> db: condition: service_healthy` Compose
+# gate. TASK-0033E1 re-verified this live and found a MORE PRECISE root
+# cause than originally attributed (docs/tasks/
+# 0033e1-asterisk-restart-harness-odbc-recovery.md ROOT CAUSE section):
+# the `depends_on` gate protects every *create/start*-path operation
+# (`docker compose up -d --force-recreate ...`, `docker compose start
+# ...`) -- confirmed live, ODBC reconnects cleanly every time. It does
+# NOT protect the plain `docker compose restart` subcommand (bare, or
+# naming `asterisk` alongside `db`) -- confirmed live, 100% reproduction
+# rate -- because `restart` does not re-evaluate any dependency
+# condition before bouncing already-existing containers.
+#
+# Every suite that restarts/recreates Asterisk mid-run must call
+# harness_restore_asterisk_post_restart after its own
+# harness_wait_asterisk_ready, before continuing or exiting -- whether
+# or not the specific restart mechanism it uses is known to race. This
+# converts an incidental, mechanism-dependent self-healing property into
+# an explicit, bounded-retry, fail-closed contract that does not depend
+# on Compose's own restart-vs-recreate semantics staying constant.
+
+# harness_asterisk_cli_ready -- predicate: the Asterisk CLI responds.
+harness_asterisk_cli_ready() {
+    $COMPOSE exec -T asterisk asterisk -rx "core show version" >/dev/null 2>&1
+}
+
+# harness_pjsip_ready -- predicate: res_pjsip.so reports Running.
+harness_pjsip_ready() {
+    $COMPOSE exec -T asterisk asterisk -rx 'module show like res_pjsip.so' 2>&1 | grep -q "Running"
+}
+
+# harness_wait_asterisk_ready [attempts] [delay_seconds] -- bounded wait
+# for CLI availability, then res_pjsip.so Running. Centralizes the same
+# core-show-version-then-pjsip_modules_running precondition every
+# stateful suite already re-implemented locally (call-smoke-test.sh,
+# trunk-smoke-test.sh, dialplan-legacy-closure-smoke-test.sh,
+# pjsip-external-trunk-smoke-test.sh, pjsip-lifecycle-smoke-test.sh,
+# pjsip-reconcile-smoke-test.sh, transport-shared-runtime-ux-smoke-test.sh):
+# NOT refactored here (out of this task's scope, no restart-recovery
+# behavior involved), only reused by the new post-restart contract below.
+harness_wait_asterisk_ready() {
+    local attempts="${1:-15}" delay="${2:-2}"
+    harness_retry "$attempts" "$delay" -- harness_asterisk_cli_ready \
+        && harness_retry "$attempts" "$delay" -- harness_pjsip_ready
+}
+
+# harness_odbc_active_connections <dsn> -- prints the active-connection
+# count for the named DSN section of `odbc show all` output, or an empty
+# string if that DSN is not present at all (a configuration problem
+# distinct from a present-but-disconnected DSN).
+harness_odbc_active_connections() {
+    local dsn="$1"
+    $COMPOSE exec -T asterisk asterisk -rx "odbc show all" 2>&1 | awk -v dsn="$dsn" '
+        /^[[:space:]]*Name:/ { name = $2 }
+        /Number of active connections:/ {
+            if (name == dsn) {
+                n = $0
+                sub(/.*connections:[[:space:]]*/, "", n)
+                sub(/[[:space:]].*/, "", n)
+                print n
+                found = 1
+                exit
+            }
+        }
+        END { if (!found) print "" }
+    '
+}
+
+# harness_require_odbc_ready [dsn] -- predicate: the named ODBC DSN
+# (default "snep", the only DSN this project's res_odbc.conf declares)
+# is present in `odbc show all` AND reports at least one active
+# connection. Deliberately does not merely check that res_odbc.so is
+# loaded -- the module can be Running with zero live connections, which
+# is exactly the post-restart leak this task fixes.
+harness_require_odbc_ready() {
+    local dsn="${1:-snep}" count
+    count="$(harness_odbc_active_connections "$dsn")"
+    [ -n "$count" ] && [ "$count" -gt 0 ] 2>/dev/null
+}
+
+# harness_require_cdr_ready -- predicate: cdr_adaptive_odbc.so reports
+# Running. A cheap module-state check, not a real CDR write -- suites
+# needing a real-write proof already run one explicitly (call-smoke-
+# test.sh/trunk-smoke-test.sh's own CDR report-readback assertions).
+harness_require_cdr_ready() {
+    $COMPOSE exec -T asterisk asterisk -rx 'module show like cdr_adaptive_odbc.so' 2>&1 | grep -q "Running"
+}
+
+# harness_restore_asterisk_post_restart [dsn] -- the one shared
+# post-restart recovery contract. Call after harness_wait_asterisk_ready
+# succeeds, any time a suite has restarted/recreated the asterisk
+# container or its process mid-run.
+#
+# Sequence (bounded throughout, no fixed sleeps): confirm `db` is at
+# least Up/running (_harness_container_up, the same credential-
+# independent primitive harness_require_containers already uses) -> if
+# ODBC+CDR are already ready, return immediately (the common case for a
+# create/start-path restart already protected by the asterisk->db
+# depends_on gate) -> otherwise `module reload res_odbc.so` then
+# `module reload cdr_adaptive_odbc.so`, re-check, retry up to 5 times ->
+# return 1 if still not ready. 5 attempts (not 3) per live evidence
+# during this task's own validation: reload+recheck almost always
+# recovers on the very first attempt, but one observed trial needed a
+# second pass under host load -- widening the bound costs nothing in
+# the common fast-success case (each attempt returns as soon as the
+# check passes) while giving real headroom for that outlier instead of
+# a narrower bound that could flake under contention.
+#
+# Deliberately checks `db` is Up, NOT that Compose reports it `healthy`
+# -- live-confirmed during this task (secret-rotation-smoke-test.sh) that
+# `docker/healthcheck-db.sh` authenticates using credentials baked into
+# the `db` container's OWN environment at container-creation time, which
+# a live secret rotation followed by a non-recreating `restart` leaves
+# stale even though the database itself (and Asterisk's own
+# already-current res_odbc.conf) are both genuinely reachable/correct --
+# gating on Compose health here produced a false-negative BLOCKED/FAIL
+# in exactly that scenario. `db` being Up is the actual precondition
+# this helper needs (a live reload attempt is itself the real,
+# unambiguous test of ODBC-level reachability); full Compose health
+# bundles in an unrelated credential-matching concern this helper has no
+# reason to depend on.
+#
+# Returns 0 only with ODBC active-connection AND cdr_adaptive_odbc both
+# confirmed ready. Callers MUST treat a non-zero return as an explicit
+# FAIL (harness_bad) or BLOCKED (harness_blocked) -- never silently
+# continue, so a broken ODBC/CDR state can never be inherited by a later
+# suite without a visible, classified failure pointing at this suite.
+harness_restore_asterisk_post_restart() {
+    local dsn="${1:-snep}"
+
+    if ! harness_retry 15 2 -- _harness_container_up "db"; then
+        harness_log "harness_restore_asterisk_post_restart: 'db' container is not Up -- refusing to reload ODBC against a database that is not running"
+        return 1
+    fi
+
+    if harness_require_odbc_ready "$dsn" && harness_require_cdr_ready; then
+        return 0
+    fi
+
+    harness_log "harness_restore_asterisk_post_restart: ODBC/CDR not ready after restart -- reloading res_odbc.so/cdr_adaptive_odbc.so"
+    local attempt
+    for attempt in 1 2 3 4 5; do
+        $COMPOSE exec -T asterisk asterisk -rx "module reload res_odbc.so" >/dev/null 2>&1
+        $COMPOSE exec -T asterisk asterisk -rx "module reload cdr_adaptive_odbc.so" >/dev/null 2>&1
+        if harness_retry 5 2 -- harness_require_odbc_ready "$dsn" && harness_require_cdr_ready; then
+            harness_log "harness_restore_asterisk_post_restart: ODBC/CDR recovered on reload attempt ${attempt}"
+            return 0
+        fi
+    done
+
+    harness_log "harness_restore_asterisk_post_restart: Asterisk restarted successfully but ODBC/CDR runtime did not recover after ${attempt} reload attempt(s)"
+    return 1
+}
