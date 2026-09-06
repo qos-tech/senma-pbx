@@ -209,6 +209,37 @@ if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
         -e "s|__DB_PASSWORD__|${DB_PASSWORD}|g" \
         "$ASTERISK_ETC/res_odbc.conf"
 
+else
+    # TASK-0033C: this asterisk-etc volume was already provisioned by an
+    # earlier boot, so the block above -- the only place AMI_PASSWORD/
+    # DB_PASSWORD from the environment ever reach manager.conf/
+    # res_odbc.conf -- does NOT run again, by this file's own
+    # first-boot-only design (guarded on asterisk.conf's existence). If
+    # an operator has since changed AMI_PASSWORD/DB_PASSWORD in .env
+    # without running an explicit rotation, starting normally here would
+    # leave Asterisk silently running with whichever credential is
+    # already persisted while reporting healthy -- exactly the silent
+    # rotation failure TASK-0033's own audit identified as a production
+    # blocker. Fail fast and clearly instead; see docs/tasks/
+    # 0033c-secret-rotation-contract.md STARTUP POLICY.
+    _senma_secret_coherent() {
+        local declared="$1" sed_pattern="$2" file="$3" label="$4" persisted dh ph
+        persisted="$(sed -n "$sed_pattern" "$file" | head -1 | tr -d '\r\n')"
+        [ -z "$persisted" ] && return 0
+        dh="$(printf '%s' "$declared" | sha256sum | awk '{print $1}')"
+        ph="$(printf '%s' "$persisted" | sha256sum | awk '{print $1}')"
+        if [ "$dh" != "$ph" ]; then
+            echo "[asterisk-entrypoint] ROTATION_PENDING_EXPLICIT_ACTION: declared ${label} (.env) does not match the value already persisted in ${file}." >&2
+            echo "[asterisk-entrypoint] Run 'make rotate-secrets' (or the matching per-secret target) to reconcile, or revert .env if this change was not intended." >&2
+            echo "[asterisk-entrypoint] Refusing to start on a stale/ambiguous credential -- see docs/tasks/0033c-secret-rotation-contract.md." >&2
+            return 1
+        fi
+        return 0
+    }
+    _SENMA_COHERENT=1
+    _senma_secret_coherent "${AMI_PASSWORD:-}" 's/^secret = \(.*\)$/\1/p' "$ASTERISK_ETC/manager.conf" "AMI_PASSWORD" || _SENMA_COHERENT=0
+    _senma_secret_coherent "${DB_PASSWORD:-}" 's/^password => \(.*\)$/\1/p' "$ASTERISK_ETC/res_odbc.conf" "DB_PASSWORD" || _SENMA_COHERENT=0
+    [ "$_SENMA_COHERENT" = "1" ] || exit 1
 fi
 
 exec "$@"

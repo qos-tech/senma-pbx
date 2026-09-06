@@ -43,6 +43,41 @@ if [ ! -f "$SETUP_CONF" ]; then
     sed -i \
         -e "s|^path\.web = .*|path.web = \"${SENMA_WEB_BASE_PATH:-}\"|" \
         "$SETUP_CONF"
+else
+    # TASK-0033C: this volume/bind-mount was already provisioned by an
+    # earlier boot, so the block above -- the only place DB_PASSWORD/
+    # AMI_PASSWORD from the environment ever reach setup.conf -- does
+    # NOT run again, by this file's own first-boot-only design. If an
+    # operator has since changed DB_PASSWORD/AMI_PASSWORD in .env
+    # without running an explicit rotation, starting normally here would
+    # leave the app silently talking to whichever credential is already
+    # persisted while reporting healthy -- exactly the silent rotation
+    # failure TASK-0033's own audit identified as a production blocker.
+    # Fail fast and clearly instead of guessing which side is right; see
+    # docs/tasks/0033c-secret-rotation-contract.md STARTUP POLICY.
+    _senma_secret_coherent() {
+        local declared="$1" sed_pattern="$2" label="$3" persisted dh ph
+        persisted="$(sed -n "$sed_pattern" "$SETUP_CONF" | tr -d '\r\n')"
+        # An empty/unmatched extraction means this line's own shape
+        # changed for an unrelated reason -- not this task's concern,
+        # and not something to block boot over.
+        [ -z "$persisted" ] && return 0
+        dh="$(printf '%s' "$declared" | sha256sum | awk '{print $1}')"
+        ph="$(printf '%s' "$persisted" | sha256sum | awk '{print $1}')"
+        if [ "$dh" != "$ph" ]; then
+            echo "[entrypoint] ROTATION_PENDING_EXPLICIT_ACTION: declared ${label} (.env) does not match the value already persisted in includes/setup.conf." >&2
+            echo "[entrypoint] Run 'make rotate-secrets' (or the matching per-secret target) to reconcile, or revert .env if this change was not intended." >&2
+            echo "[entrypoint] Refusing to start on a stale/ambiguous credential -- see docs/tasks/0033c-secret-rotation-contract.md." >&2
+            return 1
+        fi
+        return 0
+    }
+    _SENMA_COHERENT=1
+    _senma_secret_coherent "${DB_PASSWORD}" 's/^db\.password = "\(.*\)"$/\1/p' "DB_PASSWORD" || _SENMA_COHERENT=0
+    if [ -n "${ASTERISK_HOST:-}" ]; then
+        _senma_secret_coherent "${AMI_PASSWORD}" 's/^pass_sock = "\(.*\)"$/\1/p' "AMI_PASSWORD" || _SENMA_COHERENT=0
+    fi
+    [ "$_SENMA_COHERENT" = "1" ] || exit 1
 fi
 
 # The web UI (e.g. ParametersController) writes recording-path settings back
