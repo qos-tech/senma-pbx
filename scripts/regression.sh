@@ -170,6 +170,12 @@ run_suite "pjsip-runtime-status-smoke" "pjsip-runtime-status-smoke-test.sh"
 # suite: both exercise ExtensionsController/TrunksController's real add/
 # edit/delete flows) and before transport-smoke.
 run_suite "extensions-trunks-admin-experience-smoke" "extensions-trunks-admin-experience-smoke-test.sh"
+# TASK-0033B: DB->PJSIP reconciliation -- placed right after the other
+# extension/trunk provisioning suites and before transport-smoke. Does
+# not restart or recreate any container (unlike backup-restore-smoke,
+# which is deliberately NOT here) -- deletes/corrupts only its own
+# SENMA-managed generated files, which `make reconcile` regenerates.
+run_suite "pjsip-reconcile-smoke"  "pjsip-reconcile-smoke-test.sh"
 run_suite "transport-smoke"        "transport-smoke-test.sh"
 # TASK-0032: Transport + shared runtime UX foundation -- placed right
 # after transport-smoke (the closest-related existing suite: both

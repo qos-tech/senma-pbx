@@ -59,16 +59,54 @@ class Snep_PjsipTransportConf {
      */
     public static function loadConfFromDb() {
         $view = new Zend_View();
-        $db = Snep_Db::getInstance();
 
         $config = Zend_Registry::get('config');
         $asteriskDirectory = $config->system->path->asterisk->conf;
-
         $transportFileConf = "$asteriskDirectory/snep/senma-pjsip-transports.conf";
 
         if (!is_writable($transportFileConf)) {
             throw new PBX_Exception_IO($view->translate("Failed to open file %s with write permission.", $transportFileConf));
         }
+
+        $rendered = self::renderContent();
+        file_put_contents($transportFileConf, $rendered['content']);
+
+        self::reload($view);
+
+        // TASK-0029A: the wss/ws certificate lives at the Asterisk
+        // http.conf level, not on the PJSIP transport object itself
+        // (confirmed live: cert_file/priv_key_file set directly on a
+        // protocol=wss transport are silently ignored by
+        // res_pjsip_transport_websocket -- see
+        // docs/tasks/0029a-tls-transport-certificate-management.md
+        // FINDINGS). This has to regenerate and reload unconditionally,
+        // same "full stateless rewrite" property as everything above --
+        // any transport create/edit/delete could have changed which row
+        // (if any) is now the active wss cert source.
+        $httpTlsFileConf = "$asteriskDirectory/snep/senma-http-tls.conf";
+        if (!is_writable($httpTlsFileConf)) {
+            throw new PBX_Exception_IO($view->translate("Failed to open file %s with write permission.", $httpTlsFileConf));
+        }
+        file_put_contents($httpTlsFileConf, self::renderHttpTlsContent());
+        self::reloadHttp($view);
+    }
+
+    /**
+     * renderContent - TASK-0033B. Pure generation, no filesystem/runtime
+     * side effects -- see Snep_PjsipConf::renderContent()'s own docblock
+     * for the full rationale (shared by loadConfFromDb() above and
+     * Snep_Pjsip_Reconciler). Covers senma-pjsip-transports.conf only;
+     * senma-http-tls.conf is a separate managed file, see
+     * renderHttpTlsContent() below.
+     *
+     * @return array('content' => string, 'warnings' => string[]) --
+     *         warnings is always empty today (this generator has no
+     *         per-row skip condition the other two generators have), kept
+     *         for a uniform three-generator contract Snep_Pjsip_Reconciler
+     *         can treat identically.
+     */
+    public static function renderContent() {
+        $db = Snep_Db::getInstance();
 
         $todayDate = date("d/m/Y H:i:s");
         $header  = ";------------------------------------------------------------------------------------\n";
@@ -94,47 +132,20 @@ class Snep_PjsipTransportConf {
             $sections .= self::renderTransport($transport, $networks);
         }
 
-        $content = $header . $sections;
-        file_put_contents($transportFileConf, $content);
-
-        self::reload($view);
-
-        // TASK-0029A: the wss/ws certificate lives at the Asterisk
-        // http.conf level, not on the PJSIP transport object itself
-        // (confirmed live: cert_file/priv_key_file set directly on a
-        // protocol=wss transport are silently ignored by
-        // res_pjsip_transport_websocket -- see
-        // docs/tasks/0029a-tls-transport-certificate-management.md
-        // FINDINGS). This has to regenerate and reload unconditionally,
-        // same "full stateless rewrite" property as everything above --
-        // any transport create/edit/delete could have changed which row
-        // (if any) is now the active wss cert source.
-        self::writeHttpTlsConf($view);
-        self::reloadHttp($view);
+        return array('content' => $header . $sections, 'warnings' => array());
     }
 
     /**
-     * writeHttpTlsConf - TASK-0029A. Regenerates the #include'd snippet
-     * docker/asterisk-config/http.conf's [general] section pulls TLS
-     * settings from, sourced from whichever single enabled ws/wss row
-     * currently carries certificate material (Manager::
-     * getActiveWssCertTransport() -- PjsipTransportsController's own
-     * save-time validation, findActiveWssCertConflict(), is what
-     * guarantees there is at most one). No row qualifying is a normal,
-     * explicit state (a fresh install before any cert is configured, or
-     * every wss/ws row disabled) -- tlsenable=no is emitted rather than
-     * leaving stale previous settings in place, matching "explicit
-     * failure over silently broken behavior".
+     * renderHttpTlsContent - TASK-0033B. Pure generation of
+     * senma-http-tls.conf, extracted out of the former writeHttpTlsConf()
+     * for the same reason as renderContent() above. See that former
+     * method's docblock (preserved below) for the full rationale of what
+     * this file contains and why it must regenerate unconditionally
+     * alongside the transport list.
+     *
+     * @return string
      */
-    private static function writeHttpTlsConf(Zend_View $view) {
-        $config = Zend_Registry::get('config');
-        $asteriskDirectory = $config->system->path->asterisk->conf;
-        $httpTlsFileConf = "$asteriskDirectory/snep/senma-http-tls.conf";
-
-        if (!is_writable($httpTlsFileConf)) {
-            throw new PBX_Exception_IO($view->translate("Failed to open file %s with write permission.", $httpTlsFileConf));
-        }
-
+    public static function renderHttpTlsContent() {
         $todayDate = date("d/m/Y H:i:s");
         $header  = ";------------------------------------------------------------------------------------\n";
         $header .= "; File: senma-http-tls.conf - SENMA-generated Asterisk HTTP/WSS TLS settings\n";
@@ -149,30 +160,38 @@ class Snep_PjsipTransportConf {
         $header .= "; docs/tasks/0029a-tls-transport-certificate-management.md.\n";
         $header .= ";------------------------------------------------------------------------------------\n\n";
 
+        // Sourced from whichever single enabled ws/wss row currently
+        // carries certificate material (Manager::getActiveWssCertTransport()
+        // -- PjsipTransportsController's own save-time validation,
+        // findActiveWssCertConflict(), is what guarantees there is at
+        // most one). No row qualifying is a normal, explicit state (a
+        // fresh install before any cert is configured, or every wss/ws
+        // row disabled) -- tlsenable=no is emitted rather than leaving
+        // stale previous settings in place, matching "explicit failure
+        // over silently broken behavior".
         $active = Snep_PjsipTransports_Manager::getActiveWssCertTransport();
 
         if (!$active) {
-            $content = $header . "tlsenable=no\n";
-        } else {
-            $content = $header;
-            $content .= "tlsenable=yes\n";
-            $content .= "tlsbindaddr=" . $active['bind_address'] . ":" . $active['bind_port'] . "\n";
-            $content .= "tlscertfile=" . $active['cert_file'] . "\n";
-            $content .= "tlsprivatekey=" . $active['priv_key_file'] . "\n";
-            // http.conf's own TLS option set is narrower than a native
-            // PJSIP tls transport's -- confirmed against the options
-            // Asterisk's own binary actually recognizes (no http.conf
-            // equivalent of verify_server/method exists; those stay
-            // meaningful only for protocol=tls, emitted by
-            // renderTransport() below). tlscafile+tlsverifyclient is the
-            // one pair that IS real here.
-            if (!empty($active['verify_client']) && !empty($active['ca_list_file'])) {
-                $content .= "tlscafile=" . $active['ca_list_file'] . "\n";
-                $content .= "tlsverifyclient=yes\n";
-            }
+            return $header . "tlsenable=no\n";
         }
 
-        file_put_contents($httpTlsFileConf, $content);
+        $content = $header;
+        $content .= "tlsenable=yes\n";
+        $content .= "tlsbindaddr=" . $active['bind_address'] . ":" . $active['bind_port'] . "\n";
+        $content .= "tlscertfile=" . $active['cert_file'] . "\n";
+        $content .= "tlsprivatekey=" . $active['priv_key_file'] . "\n";
+        // http.conf's own TLS option set is narrower than a native PJSIP
+        // tls transport's -- confirmed against the options Asterisk's own
+        // binary actually recognizes (no http.conf equivalent of
+        // verify_server/method exists; those stay meaningful only for
+        // protocol=tls, emitted by renderTransport() below). tlscafile+
+        // tlsverifyclient is the one pair that IS real here.
+        if (!empty($active['verify_client']) && !empty($active['ca_list_file'])) {
+            $content .= "tlscafile=" . $active['ca_list_file'] . "\n";
+            $content .= "tlsverifyclient=yes\n";
+        }
+
+        return $content;
     }
 
     /**

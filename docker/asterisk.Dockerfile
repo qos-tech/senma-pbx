@@ -163,6 +163,18 @@ COPY docker/php-agi.ini /etc/php/8.4/cli/conf.d/99-senma-agi.ini
 COPY docker/asterisk-entrypoint.sh /usr/local/bin/asterisk-entrypoint.sh
 RUN chmod +x /usr/local/bin/asterisk-entrypoint.sh
 
+# TASK-0033B: `make reconcile`/`make reconcile-check`. Lives here, not in
+# docker/app.Dockerfile, deliberately: Snep_Pjsip_Reconciler's atomic
+# publish step needs to create files already owned by the `asterisk`
+# user (matching docker/asterisk-entrypoint.sh's own first-boot
+# ownership scheme) -- the app container has no such user in its own
+# /etc/passwd at all (confirmed live), so a chown() there can only ever
+# succeed by accident (or fail silently). This container already runs
+# PHP as `asterisk` with full DB connectivity for AGI script execution
+# (see docker/php-agi.ini above) -- the same precondition this script
+# needs, already proven working.
+COPY docker/reconcile-pjsip.php /usr/local/bin/reconcile-pjsip.php
+
 USER asterisk
 ENTRYPOINT ["asterisk-entrypoint.sh"]
 CMD ["asterisk", "-f", "-vvv"]

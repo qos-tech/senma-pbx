@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke
 
 COMPOSE ?= docker compose
 
@@ -338,3 +338,26 @@ backup-smoke: up
 # noticeably longer than an ordinary smoke suite.
 backup-restore-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/backup-restore-dr-smoke-test.sh
+
+# TASK-0033B: full DB->PJSIP runtime reconciliation, independent of any
+# single extension/trunk/transport CRUD operation. See docs/tasks/
+# 0033b-pjsip-configuration-reconciliation.md. Exit codes: 0 reconciled,
+# 2 files reconciled but runtime needs separate attention (restart
+# required, or Asterisk unreachable), 1 a real failure.
+reconcile: up
+	@$(COMPOSE) exec asterisk php /usr/local/bin/reconcile-pjsip.php
+
+# Non-mutating drift check -- never writes to disk, never touches
+# Asterisk. Exit codes: 0 in sync, 3 drifted, 1 invalid DB state.
+reconcile-check: up
+	@$(COMPOSE) exec asterisk php /usr/local/bin/reconcile-pjsip.php --check
+
+# TASK-0033B: regression coverage for the reconciliation contract --
+# in-sync/drift detection, deleted-file recovery, stale-section removal,
+# customer/certificate byte-identity, pjsip_external non-interference,
+# invalid-DB refusal, and a real endpoint registration + call after a
+# deliberate delete-and-reconcile. Safe for `make regression` (no volume
+# destruction, unlike backup-restore-smoke) -- see scripts/
+# pjsip-reconcile-smoke-test.sh's own header.
+pjsip-reconcile-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/pjsip-reconcile-smoke-test.sh

@@ -96,16 +96,41 @@ class Snep_PjsipConf {
      */
     public static function loadConfFromDb() {
         $view = new Zend_View();
-        $db = Snep_Db::getInstance();
 
         $config = Zend_Registry::get('config');
         $asteriskDirectory = $config->system->path->asterisk->conf;
-
         $extenFileConf = "$asteriskDirectory/snep/senma-pjsip.conf";
 
         if (!is_writable($extenFileConf)) {
             throw new PBX_Exception_IO($view->translate("Failed to open file %s with write permission.", $extenFileConf));
         }
+
+        $rendered = self::renderContent();
+        file_put_contents($extenFileConf, $rendered['content']);
+
+        self::reload($view);
+    }
+
+    /**
+     * renderContent - TASK-0033B. Pure generation: builds the complete
+     * senma-pjsip.conf content from the current `peers` table WITHOUT
+     * touching the filesystem or Asterisk runtime. Extracted out of
+     * loadConfFromDb() so the CRUD write-and-reload path above and
+     * Snep_Pjsip_Reconciler's stage-validate-publish path share exactly
+     * one rendering implementation -- never two.
+     *
+     * @return array('content' => string, 'warnings' => string[]) --
+     *         warnings is one entry per skipped row (same condition
+     *         loadConfFromDb() has always tolerated and error_log()'d
+     *         silently from the operator's perspective; a full
+     *         reconciliation treats any non-empty warnings list as
+     *         INVALID_DB_STATE and refuses to publish, since a
+     *         deliberate full-integrity operator action should surface
+     *         persisted state a routine single-row CRUD save would not
+     *         have noticed).
+     */
+    public static function renderContent() {
+        $db = Snep_Db::getInstance();
 
         $todayDate = date("d/m/Y H:i:s");
         $header  = ";------------------------------------------------------------------------------------\n";
@@ -130,6 +155,7 @@ class Snep_PjsipConf {
         $peer_data = $db->query($sql)->fetchAll();
 
         $sections = "\n";
+        $warnings = array();
 
         foreach ($peer_data as $peer) {
             // TASK-0019: a single extension pinned to a transport that
@@ -150,14 +176,13 @@ class Snep_PjsipConf {
                 // just never been exercised in practice). error_log() has
                 // no such dependency and still reaches the same
                 // container log this project's other PHP warnings do.
-                error_log("Snep_PjsipConf: skipping extension '{$peer['name']}' -- " . $ex->getMessage());
+                $message = "Snep_PjsipConf: skipping extension '{$peer['name']}' -- " . $ex->getMessage();
+                error_log($message);
+                $warnings[] = $message;
             }
         }
 
-        $content = $header . $sections;
-        file_put_contents($extenFileConf, $content);
-
-        self::reload($view);
+        return array('content' => $header . $sections, 'warnings' => $warnings);
     }
 
     /**

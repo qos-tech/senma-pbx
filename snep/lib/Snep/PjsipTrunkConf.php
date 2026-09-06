@@ -79,16 +79,31 @@ class Snep_PjsipTrunkConf {
      */
     public static function loadConfFromDb() {
         $view = new Zend_View();
-        $db = Snep_Db::getInstance();
 
         $config = Zend_Registry::get('config');
         $asteriskDirectory = $config->system->path->asterisk->conf;
-
         $trunkFileConf = "$asteriskDirectory/snep/senma-pjsip-trunks.conf";
 
         if (!is_writable($trunkFileConf)) {
             throw new PBX_Exception_IO($view->translate("Failed to open file %s with write permission.", $trunkFileConf));
         }
+
+        $rendered = self::renderContent();
+        file_put_contents($trunkFileConf, $rendered['content']);
+
+        self::reload($view);
+    }
+
+    /**
+     * renderContent - TASK-0033B. Pure generation, no filesystem/runtime
+     * side effects -- see Snep_PjsipConf::renderContent()'s own docblock
+     * for the full rationale (shared by loadConfFromDb() above and
+     * Snep_Pjsip_Reconciler).
+     *
+     * @return array('content' => string, 'warnings' => string[])
+     */
+    public static function renderContent() {
+        $db = Snep_Db::getInstance();
 
         $todayDate = date("d/m/Y H:i:s");
         $header  = ";------------------------------------------------------------------------------------\n";
@@ -110,10 +125,16 @@ class Snep_PjsipTrunkConf {
         // are invisible to this same peer_type='T' filter (Snep_PjsipConf
         // reads peer_type='R' only). No coexistence flag needed (TASK-0014
         // §14, mirroring TASK-0010 §11's identical finding for extensions).
+        // pjsip_external trunks (TASK-0028B) never appear here either --
+        // they deliberately get no `peers` row at all (see
+        // TrunksController::preparePost()'s pjsip_external branch), which
+        // is exactly how this generator stays invisible to an endpoint it
+        // does not own (TASK-0033B's ownership boundary).
         $sql = "SELECT * FROM peers WHERE peer_type = 'T' AND disabled != true AND canal LIKE 'PJSIP/%'";
         $peer_data = $db->query($sql)->fetchAll();
 
         $sections = "\n";
+        $warnings = array();
 
         foreach ($peer_data as $peer) {
             // The peers row alone doesn't carry the trunk's own id
@@ -141,14 +162,13 @@ class Snep_PjsipTrunkConf {
             } catch (PBX_Exception_NotFound $ex) {
                 // error_log(), not Zend_Registry::get('log') -- see the
                 // identical comment in Snep_PjsipConf::loadConfFromDb().
-                error_log("Snep_PjsipTrunkConf: skipping trunk '{$peer['name']}' -- " . $ex->getMessage());
+                $message = "Snep_PjsipTrunkConf: skipping trunk '{$peer['name']}' -- " . $ex->getMessage();
+                error_log($message);
+                $warnings[] = $message;
             }
         }
 
-        $content = $header . $sections;
-        file_put_contents($trunkFileConf, $content);
-
-        self::reload($view);
+        return array('content' => $header . $sections, 'warnings' => $warnings);
     }
 
     /**
