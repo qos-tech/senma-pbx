@@ -1,3 +1,20 @@
+# TASK-0033D: every service otherwise inherits Docker's default json-file
+# driver with NO size/file cap (confirmed live: `docker inspect
+# .HostConfig.LogConfig` showed `{"Type":"json-file","Config":{}}` on
+# every container before this task) -- an unbounded risk now that Apache's
+# error/access logs and Asterisk's own stdout both flow through it (see
+# docker/apache-mag.conf, TASK-0033D LOG VISIBILITY). 10m x 5 files (50 MiB
+# per container) is a conservative bound: generous enough to keep several
+# hours of even verbose troubleshooting output available via `docker
+# compose logs`, small enough that four containers can never together
+# threaten host disk space the way the pre-existing unbounded Asterisk
+# `full` file did (confirmed live at 284-297 MiB with zero rotation).
+x-logging: &senma-default-logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   app:
     build:
@@ -30,6 +47,7 @@ services:
     networks:
       - mag
     restart: unless-stopped
+    logging: *senma-default-logging
 
   asterisk:
     build:
@@ -67,6 +85,7 @@ services:
     networks:
       - mag
     restart: unless-stopped
+    logging: *senma-default-logging
 
   # TASK-0015: a second, independent Asterisk 22/PJSIP instance acting as
   # a deterministic local development trunk provider, so outbound PJSIP
@@ -100,6 +119,7 @@ services:
     networks:
       - mag
     restart: unless-stopped
+    logging: *senma-default-logging
 
   db:
     image: mariadb:10.11
@@ -125,6 +145,7 @@ services:
     networks:
       - mag
     restart: unless-stopped
+    logging: *senma-default-logging
 
 networks:
   mag:
