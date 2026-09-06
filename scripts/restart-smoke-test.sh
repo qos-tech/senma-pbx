@@ -512,11 +512,22 @@ if echo "$TRANSPORTS_AFTER" | grep -q '^Transport:  tcp ' && echo "$TRANSPORTS_A
 else
     bad "pjsip transports intact" "$TRANSPORTS_AFTER"
 fi
-ODBC_AFTER="$($COMPOSE exec -T asterisk asterisk -rx 'odbc show all' 2>&1)"
-if echo "$ODBC_AFTER" | grep -q 'Number of active connections: 1'; then
-    ok "odbc reconnected" "1 active connection after restarts"
+# TASK-0033E1: replaces this suite's own ad hoc `odbc show all` grep
+# with the shared harness contract (scripts/lib/harness.sh) -- same
+# invariant (an active ODBC connection), now also verifying
+# cdr_adaptive_odbc.so and *recovering* via module reload (bounded
+# retry) rather than only detecting. This suite's own restarts go
+# through the real HTTP restart endpoint (`core restart gracefully`/
+# `core restart now` via AMI, never a container-level restart) --
+# live-confirmed (docs/tasks/0033e1-asterisk-restart-harness-odbc-recovery.md)
+# to self-heal reliably on its own, since the container/network/db
+# connection path is never interrupted. Verified explicitly anyway so
+# this suite's own pass/fail contract does not silently depend on that
+# self-healing behavior continuing to hold under a future change.
+if harness_wait_asterisk_ready && harness_restore_asterisk_post_restart; then
+    ok "odbc/cdr ready after restarts" "active ODBC connection and cdr_adaptive_odbc.so Running confirmed"
 else
-    bad "odbc reconnected" "$ODBC_AFTER"
+    bad "odbc/cdr ready after restarts" "Asterisk restarted successfully but ODBC/CDR runtime did not recover"
 fi
 AUDIT_ROWS="$(db_query "SELECT COUNT(*) FROM logs_users WHERE \`table\`='asterisk' AND datetime >= NOW() - INTERVAL 5 MINUTE;")"
 if [ "${AUDIT_ROWS:-0}" -ge 3 ]; then

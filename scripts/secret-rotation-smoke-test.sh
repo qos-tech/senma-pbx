@@ -290,6 +290,25 @@ else
     harness_bad "17: full-stack restart preserves new secrets" "secrets-check.sh no longer reports MATCH after restart"
 fi
 
+# --- 17b. post-restart ODBC/CDR recovery (TASK-0033E1) -----------------------
+#
+# Step 17's `$COMPOSE restart app asterisk db` names `asterisk` alongside
+# `db` on the plain Compose `restart` subcommand -- confirmed live
+# (docs/tasks/0033e1-asterisk-restart-harness-odbc-recovery.md) to bounce
+# both concurrently without re-evaluating the `asterisk -> db:
+# condition: service_healthy` gate `up`/`start` honor, racing
+# res_odbc.so's one-shot, non-auto-reconnecting connect attempt exactly
+# like TASK-0033E's own REMAINING DEBT item 5. Left unrecovered, this
+# suite (not part of `make regression`, but run standalone via
+# `make secret-rotation-smoke`) would hand a broken ODBC/CDR state to
+# whatever runs next against the same dev stack.
+log "==> 17b: post-restart ODBC/CDR recovery"
+if harness_wait_asterisk_ready && harness_restore_asterisk_post_restart; then
+    harness_ok "17b: ODBC/CDR ready after full-stack restart" "active ODBC connection and cdr_adaptive_odbc.so Running confirmed (recovered via module reload if needed)"
+else
+    harness_bad "17b: ODBC/CDR ready after full-stack restart" "Asterisk restarted successfully but ODBC/CDR runtime did not recover -- see log above for the reload attempts"
+fi
+
 # --- 18/19. controlled failure injection -------------------------------------
 log "==> 18/19a: DB unavailable during rotation"
 $COMPOSE stop db >&2

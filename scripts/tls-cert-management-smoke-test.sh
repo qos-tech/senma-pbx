@@ -428,6 +428,20 @@ fi
 # real invariant, already covered by the two checks above.
 log "senma-http-tls.conf sha256 before=${HTTP_TLS_HASH_BEFORE} after=${HTTP_TLS_HASH_AFTER}"
 
+# --- post-restart ODBC/CDR recovery (TASK-0033E1) ----------------------------
+#
+# `docker compose restart asterisk` above names only `asterisk`, never
+# `db` -- live-confirmed (docs/tasks/
+# 0033e1-asterisk-restart-harness-odbc-recovery.md) to self-heal reliably
+# since `db` is never touched. Verified explicitly anyway so this
+# suite's own pass/fail contract does not silently depend on that
+# self-healing behavior continuing to hold under a future change.
+if harness_wait_asterisk_ready && harness_restore_asterisk_post_restart; then
+    harness_ok "ODBC/CDR ready after restart" "active ODBC connection and cdr_adaptive_odbc.so Running confirmed"
+else
+    harness_bad "ODBC/CDR ready after restart" "Asterisk restarted successfully but ODBC/CDR runtime did not recover"
+fi
+
 # =============================================================================
 # 8. No secrets committed
 # =============================================================================

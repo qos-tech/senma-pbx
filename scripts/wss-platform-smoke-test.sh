@@ -416,6 +416,23 @@ else
     harness_bad "real WSS handshake after recreate" "handshake failed after recreate"
 fi
 
+# --- post-restart ODBC/CDR recovery (TASK-0033E1) ----------------------------
+#
+# Both restarts above (`restart asterisk`, `up -d --force-recreate
+# asterisk`) name only `asterisk`, never `db` -- live-confirmed
+# (docs/tasks/0033e1-asterisk-restart-harness-odbc-recovery.md) to
+# self-heal reliably, since `db` is never touched and the create/start
+# path honors the `asterisk -> db: condition: service_healthy` gate.
+# Verified explicitly anyway, once, at this suite's own exit point (not
+# after each individual restart) so this suite's own pass/fail
+# contract does not silently depend on that self-healing behavior
+# continuing to hold under a future Compose/Docker change.
+if harness_wait_asterisk_ready && harness_restore_asterisk_post_restart; then
+    harness_ok "ODBC/CDR ready after restart+recreate" "active ODBC connection and cdr_adaptive_odbc.so Running confirmed"
+else
+    harness_bad "ODBC/CDR ready after restart+recreate" "Asterisk restarted successfully but ODBC/CDR runtime did not recover"
+fi
+
 CERT_HASH_AFTER="$($COMPOSE exec -T asterisk sha256sum /etc/asterisk/keys/wss-test-cert.pem 2>/dev/null | awk '{print $1}')"
 HTTP_CONF_HASH_AFTER="$($COMPOSE exec -T asterisk sha256sum /etc/asterisk/http.conf 2>/dev/null | awk '{print $1}')"
 if [ "$CERT_HASH_BEFORE" = "$CERT_HASH_AFTER" ]; then

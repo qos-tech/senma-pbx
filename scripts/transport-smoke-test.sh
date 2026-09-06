@@ -1635,6 +1635,21 @@ if ! harness_retry 15 1 -- pjsip_module_running; then
     stop "res_pjsip.so did not report Running within 15s after the controlled restart"
 fi
 
+# --- post-restart ODBC/CDR recovery (TASK-0033E1) ----------------------------
+#
+# The controlled restart above is a process-level `core restart now`
+# (never a container-level restart) -- live-confirmed (docs/tasks/
+# 0033e1-asterisk-restart-harness-odbc-recovery.md) to self-heal
+# reliably, since the container/network/db connection path is never
+# interrupted. Verified explicitly anyway so this suite's own pass/fail
+# contract does not silently depend on that self-healing behavior
+# continuing to hold under a future change.
+if harness_restore_asterisk_post_restart; then
+    ok "ODBC/CDR ready after controlled restart" "active ODBC connection and cdr_adaptive_odbc.so Running confirmed"
+else
+    bad "ODBC/CDR ready after controlled restart" "Asterisk restarted successfully but ODBC/CDR runtime did not recover"
+fi
+
 # --- 50. Post-restart: renamed transport active, old name gone -------------
 
 RUNTIME_NEW_AFTER="$($COMPOSE exec -T asterisk asterisk -rx "pjsip show transport ${T20_RENAME_NEW}" 2>&1)"

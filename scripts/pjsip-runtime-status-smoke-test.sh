@@ -585,6 +585,22 @@ pjsip_modules_running() {
     $COMPOSE exec -T asterisk asterisk -rx 'module show like res_pjsip.so' 2>&1 | grep -q "Running"
 }
 harness_retry 10 2 -- pjsip_modules_running
+
+# --- post-restart ODBC/CDR recovery (TASK-0033E1) ----------------------------
+#
+# `$COMPOSE stop asterisk` + `$COMPOSE start asterisk` above never
+# touches `db` -- live-confirmed (docs/tasks/
+# 0033e1-asterisk-restart-harness-odbc-recovery.md) to self-heal
+# reliably, since `start` honors the `asterisk -> db: condition:
+# service_healthy` gate exactly like `up`. Verified explicitly anyway so
+# this suite's own pass/fail contract does not silently depend on that
+# self-healing behavior continuing to hold under a future change.
+if harness_wait_asterisk_ready && harness_restore_asterisk_post_restart; then
+    harness_ok "ODBC/CDR ready after restart" "active ODBC connection and cdr_adaptive_odbc.so Running confirmed"
+else
+    harness_bad "ODBC/CDR ready after restart" "Asterisk restarted successfully but ODBC/CDR runtime did not recover"
+fi
+
 RECOVERED_PAGE="$(mktemp)"
 harness_register_best_effort_cleanup "recovered page temp file" "rm -f '$RECOVERED_PAGE'"
 # A container restart means the trunk's outbound registration has to

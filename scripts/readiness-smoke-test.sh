@@ -135,4 +135,25 @@ else
     harness_bad "6: full-stack restart reconverges" "not all services healthy within 60s of 'docker compose restart'"
 fi
 
+# --- 7. post-restart ODBC/CDR recovery (TASK-0033E1) -------------------------
+#
+# This suite's own bare `docker compose restart` above is the confirmed
+# root cause of TASK-0033E's REMAINING DEBT item 5: the plain `restart`
+# subcommand bounces `asterisk` and `db` concurrently and does not
+# re-evaluate the `asterisk -> db: condition: service_healthy` gate the
+# way `docker compose up`/`start` do, so `res_odbc.so`'s one-shot,
+# non-auto-reconnecting connection attempt can race a `db` that is not
+# yet accepting connections -- live-reproduced 100% of trials during
+# this task (docs/tasks/0033e1-asterisk-restart-harness-odbc-recovery.md).
+# Without this step, a later suite in the SAME or a SUBSEQUENT
+# `make regression` run (call-smoke/trunk-smoke/dialplan-legacy-closure)
+# would inherit a broken ODBC connection and fail its own CDR assertions
+# despite the call itself, the dialplan, and the trunk all being correct.
+log "==> 7: post-restart ODBC/CDR recovery"
+if harness_wait_asterisk_ready && harness_restore_asterisk_post_restart; then
+    harness_ok "7: ODBC/CDR ready after full-stack restart" "active ODBC connection and cdr_adaptive_odbc.so Running confirmed (recovered via module reload if needed)"
+else
+    harness_bad "7: ODBC/CDR ready after full-stack restart" "Asterisk restarted successfully but ODBC/CDR runtime did not recover -- see log above for the reload attempts"
+fi
+
 harness_complete

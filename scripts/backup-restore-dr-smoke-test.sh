@@ -432,6 +432,22 @@ RECREATE_SECRET_A="$(db_query "SELECT secret FROM peers WHERE name='${EXT_A}';")
 [ "$RECREATE_SECRET_A" = "$SECRET_A" ] && harness_ok "restored extension survives --force-recreate" "secret unchanged" \
     || harness_bad "restored extension survives --force-recreate" "expected $SECRET_A, got '$RECREATE_SECRET_A'"
 
+# --- post-restart ODBC/CDR recovery (TASK-0033E1) ----------------------------
+#
+# `up -d --force-recreate app asterisk db` above recreates all three
+# together on the create/start path -- live-confirmed (docs/tasks/
+# 0033e1-asterisk-restart-harness-odbc-recovery.md) to self-heal
+# reliably, since that path honors the `asterisk -> db: condition:
+# service_healthy` gate (db is recreated and confirmed healthy before
+# asterisk starts). Verified explicitly anyway so this suite's own
+# pass/fail contract does not silently depend on that self-healing
+# behavior continuing to hold under a future change.
+if harness_restore_asterisk_post_restart; then
+    harness_ok "ODBC/CDR ready after --force-recreate" "active ODBC connection and cdr_adaptive_odbc.so Running confirmed"
+else
+    harness_bad "ODBC/CDR ready after --force-recreate" "Asterisk restarted successfully but ODBC/CDR runtime did not recover"
+fi
+
 # --force-recreate above just replaced the app container again -- another
 # fresh session, same reasoning as the post-restore re-login. Cleanup's
 # delete_extension calls (registered earlier, read $COOKIEJAR/$ADMIN_CSRF
