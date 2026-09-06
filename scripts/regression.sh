@@ -204,6 +204,15 @@ run_suite "backup-smoke"           "backup-smoke-test.sh"
 # (secret-rotation-smoke-test.sh / `make secret-rotation-smoke`) is
 # deliberately NOT run here.
 run_suite "secrets-consistency-smoke" "secrets-consistency-smoke-test.sh"
+# TASK-0033D: safe, non-mutating coverage for `make doctor` -- placed
+# right after secrets-consistency-smoke (same infra/lifecycle-adjacent,
+# non-destructive category) and before the external-* suites. Never
+# stops a container, never touches a volume, never mutates .env or any
+# persisted secret -- see scripts/doctor-smoke-test.sh's own header for
+# exactly what it does and does not do, and why the real failure-
+# injection/log-rotation proof (doctor-failure-smoke-test.sh / `make
+# doctor-failure-smoke`) is deliberately NOT run here.
+run_suite "doctor-smoke" "doctor-smoke-test.sh"
 run_suite "external-failure-smoke" "external-failure-smoke-test.sh"
 run_suite "external-content-smoke" "external-content-smoke-test.sh"
 
