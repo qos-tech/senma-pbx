@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke
 
 COMPOSE ?= docker compose
 
@@ -287,19 +287,19 @@ lint: up
 regression: up
 	@set -a; . ./.env; set +a; bash scripts/regression.sh
 
+# TASK-0033D: canonical read-only diagnostic entrypoint -- see
+# scripts/doctor.sh's own header and docs/tasks/
+# 0033d-diagnostics-logging-storage-lifecycle.md DOCTOR CONTRACT.
+# Deliberately does NOT depend on `up` or require .env to exist (it
+# reports a missing .env/stopped Docker daemon/absent container as its
+# own findings rather than aborting before running) -- .env is sourced
+# only if present, so declared-secret-dependent checks (Application DB
+# authentication, AMI reachable, Secrets) can still run when it is.
+# `make doctor VERBOSE=1` (or `bash scripts/doctor.sh --verbose`) adds
+# sanitized supporting detail (e.g. the full secrets-check.sh/
+# reconcile-pjsip.php --check breakdown) -- never secret values.
 doctor:
-	@command -v docker >/dev/null || (echo "docker is required" && exit 1)
-	@docker compose version >/dev/null || (echo "Docker Compose v2 is required" && exit 1)
-	@test -f .env || (echo ".env missing: run 'cp .env.example .env'" && exit 1)
-	@$(COMPOSE) config >/dev/null
-	@echo "MAG development prerequisites look OK."
-	@if $(COMPOSE) ps asterisk 2>/dev/null | grep -q asterisk; then \
-		if $(COMPOSE) exec -T asterisk asterisk -rx "core show version" >/dev/null 2>&1; then \
-			echo "asterisk: CLI responsive."; \
-		else \
-			echo "asterisk: container is up but CLI is not responding yet."; \
-		fi; \
-	fi
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; bash scripts/doctor.sh $(if $(VERBOSE),--verbose)
 
 reset:
 	@echo "WARNING: this removes MAG development containers and volumes."
@@ -417,3 +417,26 @@ secrets-consistency-smoke: up
 # run this explicitly.
 secret-rotation-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/secret-rotation-smoke-test.sh
+
+# TASK-0033D: safe, non-mutating regression coverage for `make doctor`
+# itself (asserts exit 0/no FAIL on this dev install's own healthy
+# baseline, every mandatory check present, no secret disclosure in
+# normal or --verbose output, and no mutating command in doctor.sh's
+# own source). Safe for `make regression` -- see scripts/
+# doctor-smoke-test.sh's own header, and doctor-failure-smoke,
+# deliberately NOT part of `make regression`, for the real failure-
+# injection/log-rotation proof.
+doctor-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/doctor-smoke-test.sh
+
+# TASK-0033D: the real, destructive doctor-detection proof -- stops
+# asterisk/db/app one at a time (restoring each before moving to the
+# next), injects secret drift and PJSIP config drift (both via safe,
+# non-persistent mechanisms), and forces a live log rotation, proving
+# `make doctor` detects each condition, leaves unrelated checks
+# unaffected, and that the log-rotation mechanism itself works without
+# disrupting Asterisk. Deliberately NOT part of `make regression`
+# (mirrors secret-rotation-smoke's own precedent, see scripts/
+# doctor-failure-smoke-test.sh's own header) -- run this explicitly.
+doctor-failure-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/doctor-failure-smoke-test.sh
