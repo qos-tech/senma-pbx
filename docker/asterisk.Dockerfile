@@ -162,7 +162,8 @@ COPY docker/php-agi.ini /etc/php/8.4/cli/conf.d/99-senma-agi.ini
 
 COPY docker/asterisk-entrypoint.sh /usr/local/bin/asterisk-entrypoint.sh
 COPY docker/log-rotate-asterisk.sh /usr/local/bin/log-rotate-asterisk.sh
-RUN chmod +x /usr/local/bin/asterisk-entrypoint.sh /usr/local/bin/log-rotate-asterisk.sh
+COPY docker/healthcheck-asterisk.sh /usr/local/bin/healthcheck-asterisk.sh
+RUN chmod +x /usr/local/bin/asterisk-entrypoint.sh /usr/local/bin/log-rotate-asterisk.sh /usr/local/bin/healthcheck-asterisk.sh
 
 # TASK-0033B: `make reconcile`/`make reconcile-check`. Lives here, not in
 # docker/app.Dockerfile, deliberately: Snep_Pjsip_Reconciler's atomic

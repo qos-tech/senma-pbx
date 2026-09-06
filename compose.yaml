@@ -36,13 +36,40 @@ services:
     depends_on:
       db:
         condition: service_healthy
+      # TASK-0033E: deliberately NOT `condition: service_healthy`.
+      # `app` has no HARD startup dependency on Asterisk being READY --
+      # docker/entrypoint.sh's own bootstrap (setup.conf generation,
+      # bootstrap-admin.php) only ever touches the database, and
+      # TASK-0029B already established (and this task preserves) that
+      # the application degrades gracefully when Asterisk/AMI is
+      # unavailable (runtime status -> UNKNOWN, admin UI stays usable)
+      # rather than being unusable. `service_started` keeps a sane
+      # default container-start ORDER for `make up` without coupling
+      # app's own readiness to Asterisk's, matching docs/tasks/
+      # 0033e-readiness-contract-hardening.md APP -> ASTERISK GATE.
       asterisk:
-        condition: service_healthy
+        condition: service_started
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost/"]
+      # TASK-0033E: replaces a bare `curl -f http://localhost/` (proved
+      # only that Apache answers a socket, not that PHP bootstrapped or
+      # reached the database -- see docker/healthcheck-app.sh's own
+      # header and docs/tasks/0033e-readiness-contract-hardening.md
+      # APPLICATION READINESS CONTRACT).
+      test: ["CMD", "bash", "/usr/local/bin/healthcheck-app.sh"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      # TASK-0033E: retries lowered 10 -> 6 (100s -> 60s grace before
+      # Docker reports unhealthy). The pre-existing value dates from
+      # when this check was a bare socket ping, tolerant of almost
+      # anything; now that it verifies actual PHP/DB capability, a
+      # genuine failure is not a transient blip that fixes itself in a
+      # few seconds, so slow detection no longer buys real stability --
+      # it only delays the operator finding out. start_period is
+      # unchanged (15s comfortably covers this project's own measured
+      # fresh-install convergence, ~13-14s for the whole stack -- see
+      # docs/tasks/0033e-readiness-contract-hardening.md TIMEOUT/RETRY
+      # MODEL).
+      retries: 6
       start_period: 15s
     networks:
       - mag
@@ -76,11 +103,45 @@ services:
       - ./snep:/var/www/html/snep:ro
     # AMI (5038) is container-to-container only -- no host port published,
     # per TASK-0005's explicit instruction.
+    depends_on:
+      db:
+        condition: service_healthy
+        # TASK-0033E: added after live evidence, NOT part of the original
+        # design. Asterisk has no HARD runtime dependency on the database
+        # (ODBC is classified DEGRADED, deliberately excluded from
+        # healthcheck-asterisk.sh -- see ASTERISK READINESS CONTRACT), but
+        # `res_odbc.so` performs its ONE initial connection attempt during
+        # Asterisk's own module-load sequence and does NOT auto-reconnect
+        # afterward (same non-auto-reconnect behavior documented elsewhere
+        # in this task for destructive db-restart scenarios). With no
+        # ordering gate at all, `asterisk` and `db` start in parallel, and
+        # 3/3 live simultaneous-cold-start trials reproduced Asterisk
+        # winning that race and ending up with "Number of active
+        # connections: 0" permanently -- silently breaking every CDR write
+        # from first boot onward, with nothing surfacing it (ODBC is
+        # excluded from the healthcheck by design; the call itself
+        # completes normally). Gating on `db` service_healthy (proven live
+        # to fully avoid the race across repeated trials) costs only the
+        # few seconds db already needs to report healthy on a normal boot
+        # -- it does not change the DEGRADED-not-NOT_READY classification
+        # of ODBC at runtime, it only removes a bad *initial* connection
+        # attempt at Asterisk startup.
     healthcheck:
-      test: ["CMD", "asterisk", "-rx", "core show version"]
+      # TASK-0033E: replaces `asterisk -rx "core show version"` alone --
+      # TASK-0028V proved live that the CLI answers before res_pjsip.so
+      # finishes loading, so that alone is not proof this container can
+      # do anything SENMA actually needs. See docker/
+      # healthcheck-asterisk.sh's own header and docs/tasks/
+      # 0033e-readiness-contract-hardening.md ASTERISK READINESS
+      # CONTRACT / PJSIP READINESS for the full invariant and evidence.
+      test: ["CMD", "bash", "/usr/local/bin/healthcheck-asterisk.sh"]
       interval: 10s
       timeout: 5s
-      retries: 10
+      # TASK-0033E: retries lowered 10 -> 6 (same rationale as the app
+      # service's own healthcheck above -- this now verifies real
+      # capability, not a bare liveness ping, so a genuine failure
+      # deserves faster operator-visible detection, not more tolerance).
+      retries: 6
       start_period: 15s
     networks:
       - mag
@@ -111,7 +172,15 @@ services:
       - ./docker/provider-entrypoint.sh:/provider-entrypoint.sh:ro
       - ./docker/provider-config:/provider-config-src:ro
     healthcheck:
-      test: ["CMD", "asterisk", "-rx", "core show version"]
+      # TASK-0033E: `provider` is a TEST_ONLY trunk-simulator fixture
+      # (TASK-0015), not core SENMA platform -- it does not get the
+      # full dedicated healthcheck-asterisk.sh contract (no AMI is even
+      # configured for it, and its one transport is static, not
+      # DB-driven). It still closes the SAME TASK-0028V CLI-before-
+      # PJSIP-ready race that affects any Asterisk instance, since
+      # trunk-smoke tests dial through it immediately after it reports
+      # healthy.
+      test: ["CMD-SHELL", "asterisk -rx 'core show version' | grep -q Asterisk && asterisk -rx 'module show like res_pjsip.so' | grep -q Running"]
       interval: 10s
       timeout: 5s
       retries: 10
@@ -136,11 +205,34 @@ services:
       - ./snep/install/database:/docker-entrypoint-initdb.d/snep-install:ro
       - ./snep/modules/billing/install:/docker-entrypoint-initdb.d/snep-billing:ro
       - ./docker/db-init/00-import-snep-schema.sh:/docker-entrypoint-initdb.d/00-import-snep-schema.sh:ro
+      # TASK-0033E: bind-mounted rather than baked into a custom image --
+      # `db` deliberately stays on the stock `mariadb:10.11` image (no
+      # Dockerfile), per CLAUDE.md's own preference for official images
+      # where practical. See docker/healthcheck-db.sh's own header.
+      - ./docker/healthcheck-db.sh:/usr/local/bin/healthcheck-db.sh:ro
     healthcheck:
-      test: ["CMD-SHELL", "mariadb-admin ping -h 127.0.0.1 -uroot -p$$MARIADB_ROOT_PASSWORD --silent"]
+      # TASK-0033E: replaces a bare root `mariadb-admin ping` (proved
+      # only that the server accepts TCP connections, not that the
+      # application credential works or the schema is imported -- see
+      # docker/healthcheck-db.sh's own header and docs/tasks/
+      # 0033e-readiness-contract-hardening.md DB READINESS CONTRACT).
+      # Root-auth verification is preserved inside the script itself
+      # (TASK-0033C's own secret-rotation fail-fast contract depends on
+      # it).
+      test: ["CMD", "bash", "/usr/local/bin/healthcheck-db.sh"]
       interval: 5s
       timeout: 3s
-      retries: 30
+      # TASK-0033E: retries lowered 30 -> 10 (150s -> 50s grace).
+      # Confirmed live: a genuinely broken schema (dropped core_config
+      # table, simulating incomplete bootstrap) stays FAIL indefinitely
+      # -- it is not a transient condition retries should be tuned to
+      # absorb. 50s still comfortably tolerates a real transient
+      # connection blip under write load (a database's own plausible
+      # cause of brief flakiness, more so than app/asterisk), while
+      # cutting operator-visible detection time by two-thirds. See
+      # docs/tasks/0033e-readiness-contract-hardening.md TIMEOUT/RETRY
+      # MODEL.
+      retries: 10
       start_period: 20s
     networks:
       - mag
