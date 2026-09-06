@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke readiness-smoke readiness-failure-smoke
 
 COMPOSE ?= docker compose
 
@@ -440,3 +440,26 @@ doctor-smoke: up
 # doctor-failure-smoke-test.sh's own header) -- run this explicitly.
 doctor-failure-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/doctor-failure-smoke-test.sh
+
+# TASK-0033E: safe, non-mutating regression coverage for the readiness
+# contract (all core containers healthy, each dedicated healthcheck
+# script reports READY on demand, AMI/WSS are part of the reported
+# invariant, no secret leakage, full-stack restart reconverges). Safe
+# for `make regression` -- see scripts/readiness-smoke-test.sh's own
+# header, and readiness-failure-smoke, deliberately NOT part of `make
+# regression`, for the real failure-injection/recovery proof.
+readiness-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/readiness-smoke-test.sh
+
+# TASK-0033E: the real, destructive readiness-detection proof -- proves
+# DB-schema-missing (isolated throwaway project), app-without-DB,
+# Asterisk-with-a-PJSIP-transport-mismatch (the TASK-0028V class of
+# defect, reproduced deterministically), AMI failure, and WSS listener
+# failure each correctly make the affected service NOT_READY, that each
+# recovers automatically once corrected, and that force-recreate
+# converges deterministically. Deliberately NOT part of `make
+# regression` (mirrors doctor-failure-smoke's own precedent, see
+# scripts/readiness-failure-smoke-test.sh's own header) -- run this
+# explicitly.
+readiness-failure-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/readiness-failure-smoke-test.sh

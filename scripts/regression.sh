@@ -213,6 +213,18 @@ run_suite "secrets-consistency-smoke" "secrets-consistency-smoke-test.sh"
 # injection/log-rotation proof (doctor-failure-smoke-test.sh / `make
 # doctor-failure-smoke`) is deliberately NOT run here.
 run_suite "doctor-smoke" "doctor-smoke-test.sh"
+# TASK-0033E: safe, non-mutating coverage for the readiness contract
+# (HEALTHY = READY, TASK-0028V's PJSIP-race class closed, AMI/WSS part
+# of the invariant) -- placed right after doctor-smoke (same infra/
+# lifecycle-adjacent, non-destructive category) and before the
+# external-* suites. Never stops a core service, never mutates
+# persisted state (the one restart it performs is the same class of
+# operation restart-smoke already exercises) -- see scripts/
+# readiness-smoke-test.sh's own header for exactly what it does and
+# does not do, and why the real failure-injection/recovery proof
+# (readiness-failure-smoke-test.sh / `make readiness-failure-smoke`) is
+# deliberately NOT run here.
+run_suite "readiness-smoke" "readiness-smoke-test.sh"
 run_suite "external-failure-smoke" "external-failure-smoke-test.sh"
 run_suite "external-content-smoke" "external-content-smoke-test.sh"
 
