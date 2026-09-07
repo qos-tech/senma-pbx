@@ -31,6 +31,33 @@
 # replacing this with an app-credential-only check would silently
 # remove that contract.
 #
+# TASK-0033F: the schema check below asserts `core_config` has at least
+# one ROW, not merely that the table exists. Live-reproduced during that
+# task, in an isolated Compose project: a bootstrap failure injected
+# between schema.sql (creates `core_config`) and system_data.sql (seeds
+# it -- 5 rows, always, on any successful full import, historical or
+# current) leaves the container reporting "Up" on every subsequent
+# restart -- docker-entrypoint-initdb.d never runs again once
+# /var/lib/mysql is non-empty -- with `core_config` PRESENT but EMPTY (0
+# rows), `users` present but empty (no admin seed), and the PREVIOUS
+# version of this exact check (table-existence only) reporting READY
+# regardless. See docs/tasks/
+# 0033f-database-bootstrap-resilience-upgrade-path.md ROOT CAUSE.
+#
+# Deliberately NOT gated on the new `schema_migrations` migration
+# tracker (docs/tasks/0033f-...md's own MIGRATION METADATA): that table
+# does not exist at all on any install provisioned before TASK-0033F,
+# and `app`'s hard `depends_on: db: condition: service_healthy` gate
+# (TASK-0033E) would deadlock such an install -- `db` never healthy ->
+# `app` never starts -> the one container `make migrate` execs into to
+# baseline `schema_migrations` never runs. A row-count check against
+# `core_config`, a table that has existed since the first Docker-era
+# schema, has no such backward-compatibility hazard and is the exact,
+# minimal, already-sufficient signal for the actual defect proven above.
+# Schema *migration version* (current/behind/ahead) is a separate,
+# non-blocking concern surfaced by `make doctor`/`make migrate-check`,
+# not this healthcheck -- see that doc's READINESS INTEGRATION section.
+#
 # Exit 0 + "READY: ..." when every condition holds; exit 1 + a single
 # concise "FAIL: <reason>" line otherwise (Docker retains this in
 # `docker inspect .State.Health.Log[].Output` -- never a secret value,
@@ -60,5 +87,12 @@ if [ "$SCHEMA_CHECK" != "core_config" ]; then
     exit 1
 fi
 
-echo "READY: root + application auth OK, core_config present in $MARIADB_DATABASE"
+SEED_ROWS="$(MYSQL_PWD="$MARIADB_PASSWORD" mariadb -h 127.0.0.1 -u"$MARIADB_USER" "$MARIADB_DATABASE" -N \
+    -e "SELECT COUNT(*) FROM core_config;" 2>/dev/null | tr -d '\r\n')"
+if [ -z "$SEED_ROWS" ] || [ "$SEED_ROWS" -eq 0 ] 2>/dev/null; then
+    echo "FAIL: bootstrap incomplete (core_config exists but is empty in $MARIADB_DATABASE -- a prior schema import likely failed partway through, after creating tables but before seeding them; see docs/tasks/0033f-database-bootstrap-resilience-upgrade-path.md PARTIAL-FAILURE RECOVERY)"
+    exit 1
+fi
+
+echo "READY: root + application auth OK, core_config present with ${SEED_ROWS} row(s) in $MARIADB_DATABASE"
 exit 0

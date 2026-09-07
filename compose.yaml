@@ -205,6 +205,9 @@ services:
       - ./snep/install/database:/docker-entrypoint-initdb.d/snep-install:ro
       - ./snep/modules/billing/install:/docker-entrypoint-initdb.d/snep-billing:ro
       - ./docker/db-init/00-import-snep-schema.sh:/docker-entrypoint-initdb.d/00-import-snep-schema.sh:ro
+      # TASK-0033F: runs lexically last -- see this file's own header for
+      # why that ordering IS the bootstrap-completion invariant.
+      - ./docker/db-init/99-bootstrap-marker.sh:/docker-entrypoint-initdb.d/99-bootstrap-marker.sh:ro
       # TASK-0033E: bind-mounted rather than baked into a custom image --
       # `db` deliberately stays on the stock `mariadb:10.11` image (no
       # Dockerfile), per CLAUDE.md's own preference for official images
