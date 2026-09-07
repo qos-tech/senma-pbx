@@ -576,24 +576,25 @@ fi
 
 log "==> BLOCKER B: CallsReportController report-filter boundary"
 
-# Pre-existing, unrelated PHP 8.4 compatibility bug discovered while
-# building this suite (not fixed here, per this task's own scope
-# boundary and CLAUDE.md's "do not fix unrelated legacy bugs
-# opportunistically"): getselect() (CallsReportController.php:402)
-# runs `count($stmt)` on the Zend_Db_Statement_Pdo object $db->query()
-# returns -- not Countable/array under PHP 8 -- an uncaught TypeError on
-# EVERY report request, legitimate or malicious, regardless of this
-# task's own SQL fix (confirmed: the line immediately above it,
-# $db->query($select), already completed by the time this throws, so
-# the vulnerable/now-fixed boundary this suite exists to prove IS
-# exercised before the crash). Every check below therefore expects
-# exactly this ONE known crash signature and treats any OTHER fatal
-# (in particular a SQLSTATE/syntax-error-shaped one, which is exactly
-# what an unquoted apostrophe or broken-out-of-context value would have
-# produced pre-fix) as a genuine failure -- proving the submitted value
-# never reached SQL syntax position, which is the actual security
+# TASK-0034A fixed the PHP 8.4 compatibility bug this suite was
+# originally built around: getselect() (then CallsReportController.php
+# :402) ran `count($stmt)` on the Zend_Db_Statement_Pdo object
+# $db->query() returns -- not Countable/array under PHP 8 -- an
+# uncaught TypeError on EVERY report request, legitimate or malicious.
+# The line immediately above it, $db->query($select), already completed
+# by the time this used to throw, so the vulnerable/now-fixed SQL
+# boundary this suite exists to prove was always exercised before the
+# (now-removed) crash either way -- see
+# docs/tasks/0034a-calls-report-runtime-repair.md. calls_report_check()
+# below therefore expects the clean signature (no fatal at all) as the
+# normal case now, still accepts the historical crash signature for
+# robustness against a future regression of the same bug, and treats
+# any OTHER fatal (in particular a SQLSTATE/syntax-error-shaped one,
+# which is exactly what an unquoted apostrophe or broken-out-of-context
+# value would produce) as a genuine failure -- proving the submitted
+# value never reached SQL syntax position, which is the actual security
 # property this suite exists to verify. See
-# docs/tasks/0026j-residual-sql-boundary-closure.md for the
+# docs/tasks/0026j-residual-sql-boundary-closure.md for the original
 # Product-Readiness handoff of this bug.
 KNOWN_BUG_MARK="CallsReportController.php:402"
 
@@ -618,8 +619,12 @@ calls_report_check() {
     tail_text="$(app_exec 'tail -c 4000 /var/log/apache2/mag-error.log 2>/dev/null')"
     total_delta=$((after_total - before_total))
     known_delta=$((after_known - before_known))
-    if [ "$total_delta" -eq "$known_delta" ] && [ "$known_delta" -ge 1 ] && ! echo "$tail_text" | grep -qi "SQLSTATE\|syntax error"; then
-        harness_ok "$label" "only the known, pre-existing CallsReportController.php:402 count()/Countable PHP 8.4 bug fired -- the query itself completed with no SQL/syntax error"
+    if [ "$total_delta" -eq "$known_delta" ] && ! echo "$tail_text" | grep -qi "SQLSTATE\|syntax error"; then
+        if [ "$known_delta" -ge 1 ]; then
+            harness_ok "$label" "only the known, pre-existing CallsReportController.php:402 count()/Countable PHP 8.4 bug fired -- the query itself completed with no SQL/syntax error"
+        else
+            harness_ok "$label" "no fatal at all (TASK-0034A fixed the known CallsReportController.php:402 bug) -- the query itself completed with no SQL/syntax error"
+        fi
     else
         harness_bad "$label" "unexpected fatal signature: total_delta=${total_delta} known_delta=${known_delta}"
     fi
