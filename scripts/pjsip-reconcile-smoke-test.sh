@@ -21,8 +21,14 @@
 #   6. TLS certificate/key byte-identical before/after
 #   7. pjsip_external referenced-but-unmanaged endpoint never generated,
 #      reported only as an external dependency, never a failure
-#   8. invalid DB state (dangling transport_id) refused, active files
-#      left byte-identical to the last known-good set
+#   8. invalid DB state (extension pinned to a since-disabled transport)
+#      refused, active files left byte-identical to the last known-good
+#      set. (Originally modeled as a dangling transport_id -- TASK-0018's
+#      peers.transport_id FK, confirmed via information_schema.KEY_COLUMN_
+#      USAGE, ON DELETE RESTRICT, has since made that literal state
+#      unreachable; the disabled-transport state below exercises the
+#      identical Reconciler::generateAll() INVALID_DB_STATE contract and
+#      remains fully reachable, see TASK-0033F1.)
 #   9. real runtime verification + a real endpoint registration and a
 #      real completed call against the extensions reconcile itself just
 #      recreated from nothing (Phase 26's core proof)
@@ -52,6 +58,11 @@ SECRET_A="${FIXTURE_MARKER}-a"
 SECRET_B="${FIXTURE_MARKER}-b"
 TRUNK_CALLERID="${FIXTURE_MARKER}-trunk"
 EXTERNAL_FIXTURE_USERNAME="${FIXTURE_MARKER}-external"
+# TASK-0033F1 scenario 8 fixture -- port 5099 is not used by any other
+# scripts/*.sh transport fixture (checked: 5060/5061/5070/5073-5076/
+# 5091/5097/5098/5211-5213 are all already claimed elsewhere).
+RECONCILE_TRANSPORT_NAME="${FIXTURE_MARKER}-transport"
+RECONCILE_TRANSPORT_PORT="5099"
 
 log() { harness_log "$@"; }
 
@@ -158,6 +169,82 @@ delete_trunk() {
     [ "$httpcode" = "302" ]
 }
 
+# create_reconcile_transport_fixture / reconcile_transport_set_enabled /
+# delete_reconcile_transport -- same real HTTP flow (add/edit/remove)
+# scripts/transport-smoke-test.sh's save_transport()/delete_transport()
+# already establish for TASK-0018/0019 transport fixtures. enabled=0
+# OMITS the checkbox field entirely, matching a real unchecked checkbox
+# (buildData()'s isset($post['enabled']) check depends on the key being
+# absent, not its value).
+create_reconcile_transport_fixture() {
+    local body httpcode
+    body="$(mktemp)"
+    httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
+        --data-urlencode "name=${RECONCILE_TRANSPORT_NAME}" \
+        --data-urlencode "protocol=udp" \
+        --data-urlencode "bind_address=0.0.0.0" \
+        --data-urlencode "bind_port=${RECONCILE_TRANSPORT_PORT}" \
+        --data-urlencode "domain=" \
+        --data-urlencode "external_signaling_address=" \
+        --data-urlencode "external_signaling_port=" \
+        --data-urlencode "external_media_address=" \
+        --data-urlencode "local_net=" \
+        --data-urlencode "allow_reload=1" \
+        --data-urlencode "enabled=1" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
+        "${BASE_URL}/index.php/default/pjsip-transports/add")"
+    if [ "$httpcode" = "302" ]; then rm -f "$body"; return 0; fi
+    log "create_reconcile_transport_fixture failed (HTTP $httpcode): $(head -c 300 "$body")"
+    rm -f "$body"
+    return 1
+}
+reconcile_transport_set_enabled() {
+    local id="$1" enabled="$2" body httpcode
+    body="$(mktemp)"
+    if [ "$enabled" = "1" ]; then
+        httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
+            --data-urlencode "name=${RECONCILE_TRANSPORT_NAME}" \
+            --data-urlencode "protocol=udp" \
+            --data-urlencode "bind_address=0.0.0.0" \
+            --data-urlencode "bind_port=${RECONCILE_TRANSPORT_PORT}" \
+            --data-urlencode "domain=" \
+            --data-urlencode "external_signaling_address=" \
+            --data-urlencode "external_signaling_port=" \
+            --data-urlencode "external_media_address=" \
+            --data-urlencode "local_net=" \
+            --data-urlencode "allow_reload=1" \
+            --data-urlencode "enabled=1" \
+            --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
+            "${BASE_URL}/index.php/default/pjsip-transports/edit/id/${id}")"
+    else
+        httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o "$body" -w '%{http_code}' \
+            --data-urlencode "name=${RECONCILE_TRANSPORT_NAME}" \
+            --data-urlencode "protocol=udp" \
+            --data-urlencode "bind_address=0.0.0.0" \
+            --data-urlencode "bind_port=${RECONCILE_TRANSPORT_PORT}" \
+            --data-urlencode "domain=" \
+            --data-urlencode "external_signaling_address=" \
+            --data-urlencode "external_signaling_port=" \
+            --data-urlencode "external_media_address=" \
+            --data-urlencode "local_net=" \
+            --data-urlencode "allow_reload=1" \
+            --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
+            "${BASE_URL}/index.php/default/pjsip-transports/edit/id/${id}")"
+    fi
+    if [ "$httpcode" = "302" ]; then rm -f "$body"; return 0; fi
+    log "reconcile_transport_set_enabled(${enabled}) failed (HTTP $httpcode): $(head -c 300 "$body")"
+    rm -f "$body"
+    return 1
+}
+delete_reconcile_transport() {
+    local id="$1" httpcode
+    httpcode="$(curl -sS -c "$COOKIEJAR" -b "$COOKIEJAR" -o /dev/null -w '%{http_code}' \
+        --data-urlencode "id=${id}" --data-urlencode "delete=Delete" \
+        --data-urlencode "snep_csrf_token=${ADMIN_CSRF}" \
+        "${BASE_URL}/index.php/default/pjsip-transports/remove")"
+    [ "$httpcode" = "302" ]
+}
+
 wait_registered() {
     local ext="$1" tries=15
     while [ "$tries" -gt 0 ]; do
@@ -197,6 +284,8 @@ existing_trunk="$(db_query "SELECT id FROM trunks WHERE callerid='${TRUNK_CALLER
 [ -n "$existing_trunk" ] && harness_blocked "leftover trunk fixture (callerid=${TRUNK_CALLERID}) from a prior run -- remove it manually first"
 existing_external="$(db_query "SELECT id FROM trunks WHERE username='${EXTERNAL_FIXTURE_USERNAME}';")"
 [ -n "$existing_external" ] && harness_blocked "leftover pjsip_external fixture row -- remove it manually first"
+existing_transport="$(db_query "SELECT id FROM pjsip_transports WHERE name='${RECONCILE_TRANSPORT_NAME}';")"
+[ -n "$existing_transport" ] && harness_blocked "leftover fixture transport (name=${RECONCILE_TRANSPORT_NAME}) from a prior run -- remove it manually first"
 
 # =====================================================================
 # 2. Provision known-state fixtures (extensions + a native trunk)
@@ -445,15 +534,48 @@ db_query "DELETE FROM trunks WHERE id=${EXTERNAL_TRUNK_ID};" >&2
 # 7. Scenario 8: invalid DB state refused, active files untouched
 # =====================================================================
 
-log "==> scenario 8: dangling transport_id must be refused, not published"
+log "==> scenario 8: extension pinned to a disabled transport must be refused, not published"
+
+# peers.transport_id -> pjsip_transports(id) ON DELETE RESTRICT (TASK-0018)
+# now rejects a dangling id outright (ERROR 1452) before Reconciler ever
+# runs, so a nonexistent-id fixture can no longer reach the
+# INVALID_DB_STATE code path it used to exercise. A transport that
+# exists but is disabled reaches the identical
+# Reconciler::generateAll()/Snep_PjsipConf::resolveTransportName()
+# contract instead (PBX_Exception_NotFound -> per-row warning -> full
+# reconciliation treats any warning as INVALID_DB_STATE), and is real,
+# currently-supported administrative behavior: PjsipTransportsController
+# (TASK-0019 item 12) documents disabling a referenced transport as
+# "a deliberately allowed admin action (unlike delete)".
+create_reconcile_transport_fixture || harness_blocked "provisioning fixture transport failed"
+RECONCILE_TRANSPORT_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='${RECONCILE_TRANSPORT_NAME}';")"
+[ -n "$RECONCILE_TRANSPORT_ID" ] || harness_blocked "could not resolve the newly created fixture transport's id"
+harness_register_best_effort_cleanup "fixture transport ${RECONCILE_TRANSPORT_NAME} (safety net -- normally deleted explicitly in scenario 10)" "delete_reconcile_transport ${RECONCILE_TRANSPORT_ID}"
+
+db_query "UPDATE peers SET transport_id = ${RECONCILE_TRANSPORT_ID} WHERE name = '${EXT_A}';" >&2
+RECONCILE_OUT="$(reconcile)"
+echo "$RECONCILE_OUT" | grep -q "status: RECONCILED" \
+    || harness_blocked "could not reconcile after pinning ${EXT_A} to the fixture transport (while it was still enabled): $RECONCILE_OUT"
+
+reconcile_transport_set_enabled "$RECONCILE_TRANSPORT_ID" 0 || harness_blocked "could not disable the fixture transport"
+# PjsipTransportsController::editAction() (the real HTTP action just
+# used to disable the transport) calls its own regenerateAll() ->
+# Snep_PjsipConf::loadConfFromDb() as a normal, expected, and here
+# deliberately EXERCISED side effect of any transport CRUD save (TASK-
+# 0017 cross-generator consistency) -- it already silently skipped
+# ${EXT_A}'s now-invalid row and republished senma-pjsip.conf without it
+# (a single CRUD save tolerates this row-level warning; Reconciler.php's
+# own docblock documents that asymmetry with a full reconciliation
+# explicitly). So the correct "known good" snapshot for THIS assertion
+# is the file as that CRUD save already left it, captured here -- not
+# before the disable.
 KNOWN_GOOD_SHA="$(snep_dir_sha senma-pjsip.conf)"
-db_query "UPDATE peers SET transport_id = 999999 WHERE name = '${EXT_A}';" >&2
 
 RECONCILE_OUT="$(reconcile)"
 if echo "$RECONCILE_OUT" | grep -q "status: INVALID_DB_STATE"; then
-    harness_ok "reconcile refuses to publish with a dangling transport reference" "status: INVALID_DB_STATE"
+    harness_ok "reconcile refuses to publish with an extension pinned to a disabled transport" "status: INVALID_DB_STATE"
 else
-    harness_bad "reconcile refuses to publish with a dangling transport reference" "$RECONCILE_OUT"
+    harness_bad "reconcile refuses to publish with an extension pinned to a disabled transport" "$RECONCILE_OUT"
 fi
 
 AFTER_REFUSAL_SHA="$(snep_dir_sha senma-pjsip.conf)"
@@ -463,7 +585,7 @@ else
     harness_bad "active files left byte-identical after a refused publish" "checksum changed: before=$KNOWN_GOOD_SHA after=$AFTER_REFUSAL_SHA"
 fi
 
-db_query "UPDATE peers SET transport_id = NULL WHERE name = '${EXT_A}';" >&2
+reconcile_transport_set_enabled "$RECONCILE_TRANSPORT_ID" 1 || harness_blocked "could not re-enable the fixture transport"
 RECONCILE_OUT="$(reconcile)"
 echo "$RECONCILE_OUT" | grep -q "status: RECONCILED" \
     && harness_ok "reconcile succeeds again after the invalid state is fixed" "status: RECONCILED" \
@@ -476,6 +598,10 @@ echo "$RECONCILE_OUT" | grep -q "status: RECONCILED" \
 log "==> cleanup and post-delete non-reappearance check"
 delete_extension "$EXT_A" && harness_ok "extension ${EXT_A} deleted via the real HTTP flow" "" || harness_bad "extension ${EXT_A} deleted via the real HTTP flow" "delete did not return 302"
 delete_extension "$EXT_B" && harness_ok "extension ${EXT_B} deleted via the real HTTP flow" "" || harness_bad "extension ${EXT_B} deleted via the real HTTP flow" "delete did not return 302"
+# Dependent row (peers.transport_id referencing it, via $EXT_A) must be
+# gone before the parent transport fixture can be deleted -- $EXT_A was
+# deleted immediately above, so no separate un-pin step is needed.
+delete_reconcile_transport "$RECONCILE_TRANSPORT_ID" && harness_ok "fixture transport ${RECONCILE_TRANSPORT_NAME} deleted via the real HTTP flow" "" || harness_bad "fixture transport ${RECONCILE_TRANSPORT_NAME} deleted via the real HTTP flow" "delete did not return 302"
 delete_trunk "$TRUNK_ID" "$TRUNK_NAME" && harness_ok "trunk id=${TRUNK_ID} deleted via the real HTTP flow" "" || harness_bad "trunk id=${TRUNK_ID} deleted via the real HTTP flow" "delete did not return 302"
 
 RECONCILE_OUT="$(reconcile)"
