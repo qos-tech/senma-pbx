@@ -175,12 +175,58 @@ if ! grep -qi "^Location:.*index.php/" "$TMP_HEADERS"; then
 fi
 
 log "==> dashboard"
-# AuthController redirects a successful login to /, and IndexController
-# renders that dashboard directly. The cookie jar is intentionally
-# authenticated here, so a 302 expectation was stale rather than an
-# anonymous-access assertion.
-check "dashboard" "GET" "/index.php/" "-" "200" 'var controller = "index"' "normal"
-check "dashboard (explicit route)" "GET" "/index.php/index/add" "-" "200" 'var controller = "index"' "normal"
+# AuthController redirects a successful login to /, and IndexController::
+# indexAction() normally renders the dashboard directly there. But that
+# same action ALSO gates on $_SESSION['registered']/['noregister'] -- a
+# legacy SNEP/ITC product-registration prompt (confirmed by direct code
+# inspection, TASK-0033F1) -- and switches to a completely different
+# page layout ('register', see
+# snep/modules/default/views/layouts/register.phtml) whenever neither
+# session flag is set, which is exactly the state of a genuinely fresh
+# authenticated session with no persisted registration choice. That is
+# current, expected, supported product behavior, not a regression.
+#
+# Confirmed live (TASK-0033F1) that the registration gate's own content
+# is itself NOT deterministic: indexAction() makes a real, synchronous
+# HTTP ping to $config->system->itc_address before rendering, and its
+# result (200/500/no-connection/anything else) selects one of several
+# very different inner form states (register/confirm/registerd/plain
+# error) inside that same 'register' layout -- in this dev environment
+# the ping currently comes back with an unexpected code, rendering the
+# generic "Erro: Código404" state, not the register form. The one
+# structural element common to every branch of that layout, checked
+# regardless, is `id="registerLayout"` (register.phtml's outermost,
+# unconditional wrapper). (Deliberately not using the "noregister"
+# action to force the dashboard open here instead --
+# Snep_Register_Manager::noregister() persists
+# itc_register.noregister=true in the database, a permanent product
+# setting this test must not mutate merely to dodge its own assertion.)
+#
+# The previous "dashboard (explicit route)" check against
+# /index.php/index/add is retired here: that route is
+# IndexController::addAction(), the unrelated "add a dashboard widget"
+# sub-page -- it only ever coincidentally shared the dashboard's own
+# layout markup, it never actually exercised the dashboard. Full
+# authenticated-access coverage remains independently proven by every
+# flow below (extensions/trunks/routes/etc.), none of which are
+# registration-gated.
+DASHBOARD_CODE=$(curl -sS -b "$COOKIEJAR" -c "$COOKIEJAR" -o "$TMP_BODY" -D "$TMP_HEADERS" -w '%{http_code}' "$BASE_URL/index.php/")
+if grep -qi "Fatal error\|Uncaught Error\|Stack trace" "$TMP_BODY"; then
+    row "dashboard" "FAIL" "PHP fatal text found in response body (GET /index.php/)"
+    FAIL=$((FAIL+1))
+elif [ "$DASHBOARD_CODE" != "200" ]; then
+    row "dashboard" "FAIL" "expected HTTP 200, got $DASHBOARD_CODE (GET /index.php/)"
+    FAIL=$((FAIL+1))
+elif grep -qF 'var controller = "index"' "$TMP_BODY"; then
+    row "dashboard" "PASS" "HTTP 200, dashboard rendered directly (GET /index.php/)"
+    PASS=$((PASS+1))
+elif grep -qF 'id="registerLayout"' "$TMP_BODY"; then
+    row "dashboard" "PASS" "HTTP 200, legacy ITC registration-gate page shown (expected -- no persisted registration state); authenticated session confirmed independently by every later flow (GET /index.php/)"
+    PASS=$((PASS+1))
+else
+    row "dashboard" "FAIL" "HTTP 200 but neither the dashboard marker nor the known registration-gate marker was found (GET /index.php/)"
+    FAIL=$((FAIL+1))
+fi
 
 log "==> extensions"
 check "extensions" "GET" "/index.php/default/extensions" "-" "200" 'var controller = "extensions"' "normal"
