@@ -1,5 +1,22 @@
 # TASK-0034 — Release Readiness & Production Pilot Gate
 
+## UPDATE (TASK-0034A)
+
+**Finding CH-1 (Calls Report non-functional) is CLOSED.** TASK-0034A
+fixed the layered PHP8/SQL defect chain, closed two output-escaping
+gaps the fix newly made reachable, and proved the repair end to end
+(real CDR data, correct aggregation, no duplication, authorization,
+injection resistance) — see
+`docs/tasks/0034a-calls-report-runtime-repair.md`. Calls Report is now
+**PILOT_SUPPORTED**. Every reference to CH-1 below is left as the
+original evidence record (per this project's documentation policy —
+historical findings are not rewritten); read them together with this
+update, not as the current state. The release blocker this document
+originally identified no longer applies; the final decision below
+(`PILOT_GO_WITH_CONSTRAINTS`) stands unchanged — CH-1 was already
+scoped as a constraint on the Reports screen specifically, not a
+whole-pilot blocker, and its resolution only strengthens that decision.
+
 ## LEAD
 
 senma-workflow-orchestrator
