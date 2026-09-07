@@ -157,6 +157,14 @@ SOUNDS_ROOT="/var/lib/asterisk/sounds"
 MOH_ROOT="/var/lib/asterisk/moh"
 SYS_LANG="$(app_exec "grep '^language' /var/www/html/snep/includes/setup.conf | sed 's/.*\"\\(.*\\)\".*/\\1/'" | tr -d '\r')"
 SYS_LANG="${SYS_LANG:-pt_BR}"
+# SoundFilesController::addAction() (and its edit counterpart) treats
+# "en" as Asterisk's own no-subdirectory default -- $language becomes
+# "" rather than "en" -- so every path this suite builds must mirror
+# that, or it silently provisions/checks the wrong directory whenever
+# the system's configured language is "en".
+SOUNDS_LANG_SUBDIR=""
+[ "$SYS_LANG" != "en" ] && SOUNDS_LANG_SUBDIR="$SYS_LANG"
+SOUNDS_LANG_ROOT="${SOUNDS_ROOT}${SOUNDS_LANG_SUBDIR:+/$SOUNDS_LANG_SUBDIR}"
 # chown to www-data: confirmed live that a root-owned 0755 directory
 # here silently defeats every upload/mkdir this suite exercises (PHP
 # runs as www-data) -- move_uploaded_file()/mkdir() just fail with a
@@ -164,8 +172,8 @@ SYS_LANG="${SYS_LANG:-pt_BR}"
 # control flow continues past that failure with no explicit early
 # return, so the request can still 302 as if it had succeeded. Ownership
 # is part of the same never-provisioned gap, not a separate one.
-app_exec "mkdir -p '${SOUNDS_ROOT}/${SYS_LANG}/tmp' '${SOUNDS_ROOT}/${SYS_LANG}/backup' '${MOH_ROOT}' && chown -R www-data:www-data '${SOUNDS_ROOT}' '${MOH_ROOT}'"
-log "==> provisioned missing sound-files/MOH directory scaffolding (${SOUNDS_ROOT}/${SYS_LANG}, ${MOH_ROOT}) -- pre-existing Docker-topology gap, not a shell-injection finding, see docs/tasks/0026d-shell-execution-hardening.md"
+app_exec "mkdir -p '${SOUNDS_LANG_ROOT}/tmp' '${SOUNDS_LANG_ROOT}/backup' '${MOH_ROOT}' && chown -R www-data:www-data '${SOUNDS_ROOT}' '${MOH_ROOT}'"
+log "==> provisioned missing sound-files/MOH directory scaffolding (${SOUNDS_LANG_ROOT}, ${MOH_ROOT}) -- pre-existing Docker-topology gap, not a shell-injection finding, see docs/tasks/0026d-shell-execution-hardening.md"
 
 MARKER="/tmp/task0026d-marker-$$-${RANDOM}"
 harness_register_best_effort_cleanup "shell-injection marker file (should never exist)" "app_exec \"rm -f '$MARKER'\""
@@ -260,19 +268,19 @@ code="$(multipart_upload "$RESTRICTED_JAR" /index.php/default/sound-files/add in
 # fix touches (filename allowlist -> move_uploaded_file() -> the
 # escapeshellarg()-wrapped sox exec()) and is independent of that
 # unrelated DB-layer bug.
-SF_CONVERTED="$(app_exec "test -f '${SOUNDS_ROOT}/${SYS_LANG}/${SF_NAME}' && echo yes || echo no")"
+SF_CONVERTED="$(app_exec "test -f '${SOUNDS_LANG_ROOT}/${SF_NAME}' && echo yes || echo no")"
 # Not asserting on $code here: the unrelated pre-existing sounds.secao
 # schema bug documented above throws AFTER the file conversion this
 # task's fix is responsible for, which is exactly the part checked here
 # (a 500 from that unrelated bug is expected and already accounted for
 # by the health check below, not silently ignored).
 if [ "$SF_CONVERTED" = "yes" ]; then
-    harness_ok "F2 valid: upload a legitimate sound file" "HTTP $code, ${SOUNDS_ROOT}/${SYS_LANG}/${SF_NAME} converted and stored via the real addAction() HTTP flow (allowlist -> move_uploaded_file() -> sox all succeed; the subsequent DB insert failing is the unrelated schema bug documented above)"
+    harness_ok "F2 valid: upload a legitimate sound file" "HTTP $code, ${SOUNDS_LANG_ROOT}/${SF_NAME} converted and stored via the real addAction() HTTP flow (allowlist -> move_uploaded_file() -> sox all succeed; the subsequent DB insert failing is the unrelated schema bug documented above)"
 else
     harness_bad "F2 valid: upload a legitimate sound file" "HTTP $code, converted file present=${SF_CONVERTED}"
 fi
 harness_register_cleanup "sound file ${SF_NAME} (F2 fixture)" \
-    "db_query \"DELETE FROM sounds WHERE arquivo='${SF_NAME}';\" >/dev/null; app_exec \"rm -f '${SOUNDS_ROOT}/${SYS_LANG}/${SF_NAME}' '${SOUNDS_ROOT}/${SYS_LANG}/tmp/${SF_NAME}'\"; true"
+    "db_query \"DELETE FROM sounds WHERE arquivo='${SF_NAME}';\" >/dev/null; app_exec \"rm -f '${SOUNDS_LANG_ROOT}/${SF_NAME}' '${SOUNDS_LANG_ROOT}/tmp/${SF_NAME}'\"; true"
 
 SF_MALICIOUS_NAME='`touch '"$MARKER"'`.wav'
 code="$(multipart_upload "$RESTRICTED_JAR" /index.php/default/sound-files/add inputFile "$LOCAL_WAV" "$SF_MALICIOUS_NAME" description=task0026d gsm=0 "snep_csrf_token=${RESTRICTED_CSRF}")"

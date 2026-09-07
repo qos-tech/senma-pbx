@@ -24,8 +24,31 @@ BASE_URL="http://127.0.0.1:${SENMA_HTTP_PORT:-8080}"
 COMPOSE="${SMOKE_COMPOSE:-docker compose}"
 CFG=/var/www/html/snep/includes/setup.conf
 BACKUP=/tmp/task0026b-setup.conf
+TEST_USER="admin"
+TEST_PASSWORD="SmokeTest123!"
 
-harness_require_containers app
+harness_require_containers app db
+harness_require_env DB_USER DB_PASSWORD DB_NAME
+
+# TASK-0034: this suite's own "admin login" check below assumes
+# $TEST_USER's password is already $TEST_PASSWORD, but -- unlike every
+# sibling security suite (sql-security-smoke-test.sh,
+# residual-sql-security-smoke-test.sh, etc.) -- it never set that
+# password itself. That made it depend on suite ORDER/history (only
+# passing if some earlier suite/session had already run this exact
+# UPDATE), and it is the third suite `make regression` runs -- before
+# any suite that does set it. Confirmed live: on a stack freshly brought
+# up via `make reset && make dev` (no other suite/session run against it
+# yet), this suite's own "admin login" check failed (HTTP 200, not 302)
+# for exactly this reason, breaking the canonical regression gate's
+# determinism from a genuinely fresh install. Mirrors
+# sql-security-smoke-test.sh's own established pattern exactly.
+TEST_HASH="$($COMPOSE exec -T app php -r "echo md5('${TEST_PASSWORD}');" 2>/dev/null | tr -d '\r')"
+if [ -z "$TEST_HASH" ]; then
+    harness_blocked "could not compute the ${TEST_USER} password hash via the app container"
+fi
+$COMPOSE exec -T db mariadb -u"${DB_USER}" -p"${DB_PASSWORD}" "${DB_NAME}" -N \
+    -e "UPDATE users SET password = '${TEST_HASH}' WHERE name = '${TEST_USER}';" >&2
 
 tmp="$(mktemp -d)"
 harness_register_best_effort_cleanup "temp working dir" "rm -rf '$tmp'"
@@ -63,7 +86,7 @@ for user in nobody "x' AND 1=0 -- " "x' OR 1=1 -- "; do
     fi
 done
 
-code=$(curl -sS -o /dev/null -w '%{http_code}' -d 'user=admin&password=SmokeTest123!' "$BASE_URL/index.php/auth/login")
+code=$(curl -sS -o /dev/null -w '%{http_code}' --data-urlencode "user=${TEST_USER}" --data-urlencode "password=${TEST_PASSWORD}" "$BASE_URL/index.php/auth/login")
 if [ "$code" = 302 ]; then harness_ok 'admin login' "HTTP $code"; else harness_bad 'admin login' "HTTP $code"; fi
 
 harness_complete

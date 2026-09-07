@@ -1535,14 +1535,24 @@ SOUNDFILES_PHP="$(mktemp)"
 cat > "$SOUNDFILES_PHP" <<'PHPEOF'
 $sf1 = 'task0026m-sf1.wav';
 $sf2 = 'task0026m-sf2.wav';
+// TASK-0034: Snep_SoundFiles_Manager::get() filters by
+// Zend_Registry::get('config')->system->language (see
+// snep/lib/Snep/SoundFiles/Manager.php), not a hardcoded locale --
+// confirmed live that a fresh install's generated setup.conf sets
+// language="en", not "pt_BR" as this fixture previously assumed
+// (matching whatever long-lived dev volume this fixture was originally
+// written against). Read the same config value the Manager itself uses
+// instead of guessing, so this fixture is correct regardless of the
+// installation's configured language.
+$fixtureLanguage = Zend_Registry::get('config')->system->language;
 // Snep_SoundFiles_Manager::add()'s own $insert_data omits 'secao' (a
 // NOT-NULL, no-default, primary-key column) -- a pre-existing, unrelated
 // strict-SQL-mode compatibility gap affecting the real addAction() flow
 // identically, not fixed by this task. Insert the fixture rows directly
 // to route around it.
 $dbFixture = Zend_Registry::get('db');
-$dbFixture->insert('sounds', ['arquivo' => $sf1, 'descricao' => 'canary', 'data' => new Zend_Db_Expr('NOW()'), 'language' => 'pt_BR', 'tipo' => 'AST', 'secao' => '']);
-$dbFixture->insert('sounds', ['arquivo' => $sf2, 'descricao' => 'canary2', 'data' => new Zend_Db_Expr('NOW()'), 'language' => 'pt_BR', 'tipo' => 'AST', 'secao' => '']);
+$dbFixture->insert('sounds', ['arquivo' => $sf1, 'descricao' => 'canary', 'data' => new Zend_Db_Expr('NOW()'), 'language' => $fixtureLanguage, 'tipo' => 'AST', 'secao' => '']);
+$dbFixture->insert('sounds', ['arquivo' => $sf2, 'descricao' => 'canary2', 'data' => new Zend_Db_Expr('NOW()'), 'language' => $fixtureLanguage, 'tipo' => 'AST', 'secao' => '']);
 $soundMgr = new Snep_SoundFiles_Manager();
 $s1 = $soundMgr->get($sf1);
 echo 'SOUNDFILES_FIXTURES:' . (($s1) ? 'OK' : 'BAD') . PHP_EOL;
