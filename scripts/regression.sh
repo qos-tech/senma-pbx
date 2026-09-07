@@ -225,6 +225,13 @@ run_suite "doctor-smoke" "doctor-smoke-test.sh"
 # (readiness-failure-smoke-test.sh / `make readiness-failure-smoke`) is
 # deliberately NOT run here.
 run_suite "readiness-smoke" "readiness-smoke-test.sh"
+# TASK-0033F: safe, non-mutating -- migrate.php --check reports
+# SCHEMA_CURRENT, re-applying is a no-op, checksum integrity, doctor
+# integration. The real destructive proof (fresh/partial-bootstrap,
+# older-schema upgrade, mid-migration failure, concurrent locking) is
+# deliberately NOT run here -- see scripts/
+# db-migration-failure-smoke-test.sh / `make db-migration-failure-smoke`.
+run_suite "db-migration-smoke" "db-migration-smoke-test.sh"
 run_suite "external-failure-smoke" "external-failure-smoke-test.sh"
 run_suite "external-content-smoke" "external-content-smoke-test.sh"
 
