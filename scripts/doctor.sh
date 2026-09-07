@@ -217,6 +217,28 @@ check_db_schema() {
     fi
 }
 
+# TASK-0033F: reuses docker/migrate.php's own detection logic (invoked
+# via `make migrate-check`'s exact command inside the app container)
+# rather than reimplementing schema-version comparison here (Phase 38's own explicit
+# instruction: "do not duplicate migration detection logic inside
+# doctor"). Exit codes: 0 CURRENT, 2 UNKNOWN, 3 BEHIND, 4 AHEAD.
+check_db_migration_status() {
+    if [ "$(container_state app)" != "running" ]; then
+        record "Database schema" "SKIP" "app container is not running"
+        return
+    fi
+    local out rc
+    out="$($COMPOSE exec -T app php /usr/local/bin/migrate.php --check 2>&1)"
+    rc=$?
+    case "$rc" in
+        0) record "Database schema" "PASS" "CURRENT -- $(printf '%s' "$out" | grep '^Current schema:')" ;;
+        3) record "Database schema" "WARN" "BEHIND -- $(printf '%s' "$out" | grep -c '^  ') pending migration(s), run 'make migrate-check' for detail" ;;
+        4) record "Database schema" "FAIL" "AHEAD -- database has migrations this codebase does not ship; see 'make migrate-check'" ;;
+        2) record "Database schema" "FAIL" "UNKNOWN -- structural fingerprint did not match any known baseline; see 'make migrate-check'" ;;
+        *) record "Database schema" "UNKNOWN" "migrate.php --check exited $rc: $(printf '%s' "$out" | tail -1)" ;;
+    esac
+}
+
 # =============================================================================
 # Application
 # =============================================================================
@@ -537,6 +559,7 @@ for svc in app asterisk db provider; do check_container "$svc"; done
 check_db_reachable
 check_db_auth
 check_db_schema
+check_db_migration_status
 check_app_http
 check_app_content
 check_asterisk_cli
