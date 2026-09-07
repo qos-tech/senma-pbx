@@ -33,6 +33,7 @@ COPY docker/apache-mag.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/php-mag.ini /usr/local/etc/php/conf.d/zz-mag.ini
 COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh
 COPY docker/bootstrap-admin.php /usr/local/bin/bootstrap-admin.php
+COPY docker/migrate.php /usr/local/bin/migrate.php
 COPY docker/log-rotate-app.sh /usr/local/bin/log-rotate-app.sh
 COPY docker/healthcheck-app.sh /usr/local/bin/healthcheck-app.sh
 RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/log-rotate-app.sh /usr/local/bin/healthcheck-app.sh

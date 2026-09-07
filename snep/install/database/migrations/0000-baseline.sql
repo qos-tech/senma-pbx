@@ -1,0 +1,26 @@
+-- TASK-0033F baseline migration.
+--
+-- Represents the cumulative schema state as of TASK-0033F's own starting
+-- point -- everything snep/install/database/schema.sql +
+-- system_data.sql already create, MINUS migration 0001 (see that file).
+--
+-- Intentionally NO-OP: a fresh install always creates this structure
+-- directly via schema.sql/system_data.sql (docker/db-init/
+-- 00-import-snep-schema.sh, run by MariaDB's own docker-entrypoint-
+-- initdb.d), never by executing this file. This migration exists only
+-- so the migration tracker (schema_migrations) has an explicit, checked-
+-- in identity to record against -- either automatically, by
+-- docker/db-init/99-bootstrap-marker.sh right after a successful fresh
+-- bootstrap, or retroactively, by docker/migrate.php's own baselining
+-- logic (docs/tasks/0033f-database-bootstrap-resilience-upgrade-path.md
+-- EXISTING-INSTALL BASELINE) against an already-provisioned install that
+-- structurally matches this baseline's fingerprint.
+--
+-- Historical update/3.01-3.07 and update/betha SQL under
+-- snep/install/database/update/ are NOT represented here and are NOT
+-- migration history for this tracker: they predate this project's
+-- Docker-first architecture entirely, were never wired into
+-- docker-entrypoint-initdb.d, and no known install reaches this schema
+-- baseline by way of that update chain. See this task's own
+-- documentation, SCHEMA BASELINE section, for the full classification.
+SELECT 1;

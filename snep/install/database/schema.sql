@@ -153,7 +153,15 @@ CREATE TABLE IF NOT EXISTS `cdr` (
   `userfield` varchar(255) NOT NULL default '',
   KEY `calldate` (`calldate`),
   KEY `dst` (`dst`),
-  KEY `accountcode` (`accountcode`)
+  KEY `accountcode` (`accountcode`),
+  -- TASK-0033F migration 0001-add-cdr-uniqueid-index: `uniqueid` was
+  -- never indexed despite being the join key every CDR-writing smoke
+  -- suite (call-smoke, trunk-smoke, backup-restore-dr-smoke, etc.)
+  -- already queries by by-value lookup. Kept in sync with
+  -- snep/install/database/migrations/0001-add-cdr-uniqueid-index.sql
+  -- so a fresh install lands on this directly (see that migration's own
+  -- header for why schema.sql and the migration file must agree).
+  KEY `uniqueid` (`uniqueid`)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8;
 
 

@@ -1,4 +1,4 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke readiness-smoke readiness-failure-smoke
+.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke
 
 COMPOSE ?= docker compose
 
@@ -352,6 +352,21 @@ reconcile: up
 reconcile-check: up
 	@$(COMPOSE) exec asterisk php /usr/local/bin/reconcile-pjsip.php --check
 
+# TASK-0033F: apply every pending database schema migration, in order,
+# stopping on the first failure. See docs/tasks/
+# 0033f-database-bootstrap-resilience-upgrade-path.md. Exit codes: 0
+# current/applied, 1 a migration failed, 2 SCHEMA_UNKNOWN (refuses to
+# guess), 4 SCHEMA_AHEAD (refuses to act), 5 lock timeout (another
+# runner already in progress).
+migrate: up
+	@$(COMPOSE) exec app php /usr/local/bin/migrate.php
+
+# Non-mutating: reports current/expected schema version and any pending
+# migrations, never applies anything. Exit codes: 0 current, 3 pending
+# (SCHEMA_BEHIND), 4 SCHEMA_AHEAD, 2 SCHEMA_UNKNOWN.
+migrate-check: up
+	@$(COMPOSE) exec app php /usr/local/bin/migrate.php --check
+
 # TASK-0033B: regression coverage for the reconciliation contract --
 # in-sync/drift detection, deleted-file recovery, stale-section removal,
 # customer/certificate byte-identity, pjsip_external non-interference,
@@ -463,3 +478,19 @@ readiness-smoke: up
 # explicitly.
 readiness-failure-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/readiness-failure-smoke-test.sh
+
+# TASK-0033F: safe, non-mutating regression coverage for the migration
+# runner against the live dev database -- current-install baselining/
+# recognition, `migrate-check` reporting SCHEMA_CURRENT, checksum
+# verification, no secret disclosure. Included in `make regression`.
+db-migration-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/db-migration-smoke-test.sh
+
+# TASK-0033F: the real, destructive proof -- isolated Compose project
+# only. Partial-bootstrap-failure detection/recovery, an older-schema
+# fixture upgrade path, mid-migration failure + retry convergence, and
+# concurrent-runner locking. Deliberately NOT part of `make regression`
+# (mirrors readiness-failure-smoke/doctor-failure-smoke/secret-rotation-
+# smoke's own precedent) -- run this explicitly.
+db-migration-failure-smoke: up
+	@bash scripts/db-migration-failure-smoke-test.sh

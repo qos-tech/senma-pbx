@@ -1,0 +1,21 @@
+-- TASK-0033F: index cdr.uniqueid.
+--
+-- `uniqueid` was never indexed despite being the exact column every
+-- CDR-writing regression suite already queries by (call-smoke-test.sh,
+-- trunk-smoke-test.sh, backup-restore-dr-smoke-test.sh, secret-rotation-
+-- smoke-test.sh all do `SELECT ... FROM cdr WHERE uniqueid='...'`).
+-- Index-only, no semantic change -- safe to retry (`IF NOT EXISTS`,
+-- MariaDB 10.1+), no data rewrite, no destructive risk. Not a business
+-- feature: this is the one deliberately-real forward migration this
+-- task ships to prove the migration runner end to end, chosen because
+-- it is genuinely useful and provably narrow (see docs/tasks/
+-- 0033f-database-bootstrap-resilience-upgrade-path.md).
+--
+-- Kept in sync with snep/install/database/schema.sql's own `cdr` table
+-- definition (which already declares this same KEY directly) so a
+-- fresh install lands on this structure natively without executing this
+-- file -- docker/migrate.php's baselining logic records this migration
+-- as already-applied on a fresh install by fingerprint, and only
+-- actually executes this SQL against an install provisioned before this
+-- task (see the OLDER-SCHEMA UPGRADE PROOF fixture in that same doc).
+ALTER TABLE cdr ADD INDEX IF NOT EXISTS `uniqueid` (`uniqueid`);
