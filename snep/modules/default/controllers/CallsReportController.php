@@ -110,6 +110,20 @@ class CallsReportController extends Zend_Controller_Action
         $user = Snep_Users_Manager::getName($username);
         $_SESSION[$user['name']]['period'] = $filter["period"];
 
+        // TASK-0034A: $exceptions is only ever assigned inside the
+        // $user['id'] != '1' branch below (from
+        // Snep_Binds_Manager::getBondException()), but is read
+        // unconditionally further down (count($exceptions), lines
+        // ~157-172) for every user including the superuser, who
+        // deliberately skips that branch entirely (superusers are not
+        // subject to per-user Binds restrictions -- see the exemption
+        // check itself). Pre-PHP8, the undefined variable coerced to
+        // null and count(null) returned 0 with a warning; PHP 8 raises
+        // a fatal TypeError instead. Initializing to an empty array
+        // reproduces the exact pre-PHP8 semantics (no exceptions) for
+        // the superuser, and is overwritten below for every other user
+        // exactly as before.
+        $exceptions = array();
         if ($user['id'] != '1') {
             $binds = Snep_Binds_Manager::getBond($user['id']);
             if ($binds) {
@@ -229,10 +243,27 @@ class CallsReportController extends Zend_Controller_Action
             $where_contactDst .= ") ";
         }
         
-        // Searches for extensions belonging to the selected source extension group
+        // TASK-0034A: selectSrc/selectDst are real auto-increment
+        // core_peer_groups.id values -- a genuinely numeric domain, same
+        // class as selectContactGroupSrc/selectContactDst above -- but,
+        // unlike those, this pre-existing code never guarded the
+        // "no filter selected" comparison with isset(). The real HTML
+        // form always submits one of these (a <select> whose first,
+        // default <option value="0"> is the "no filter" sentinel this
+        // codebase already uses everywhere else), so normal browser use
+        // never hit this; a request that omits the field entirely
+        // (confirmed live: e.g. a raw/malformed POST) left
+        // $filter['selectSrc'] undefined, and undefined != "0" is TRUE
+        // in PHP's loose comparison, so the "a group IS selected" branch
+        // ran with a null group id -- passed straight through to
+        // Snep_ExtensionsGroups_Manager::getExtensionsGroup(), whose
+        // Zend_Db_Select bind mishandles a null parameter and produces
+        // invalid SQL (confirmed live: SQLSTATE[42000] syntax error).
+        // isset() closes that unconditionally, matching this file's own
+        // established pattern for every other optional selector above.
         $ramaissrc = $ramaisdst = "";
-        if ($filter['selectSrc'] != "0") {
-            $groupsrc = $filter['selectSrc'];
+        if (isset($filter['selectSrc']) && $filter['selectSrc'] != "0") {
+            $groupsrc = (int) $filter['selectSrc'];
             $origens = Snep_ExtensionsGroups_Manager::getExtensionsGroup($groupsrc);
             if (count($origens) == 0) {
                 $this->view->error_message = $this->view->translate("There are no extensions in the selected group");
@@ -249,8 +280,8 @@ class CallsReportController extends Zend_Controller_Action
             }
         }
 
-        if ($filter['selectDst'] != "0") {
-            $groupdst = $filter['selectDst'];
+        if (isset($filter['selectDst']) && $filter['selectDst'] != "0") {
+            $groupdst = (int) $filter['selectDst'];
             $destino = Snep_ExtensionsGroups_Manager::getExtensionsGroup($groupdst);
             if (count($destino) == 0) {
                 $this->view->error_message = $this->view->translate("There are no extensions in the selected group");
@@ -307,8 +338,14 @@ class CallsReportController extends Zend_Controller_Action
         ($filter['duration_init'] != "") ? $where_options[] = ' duration >= ' . (int) $filter['duration_init'] . ' ' : null;
         ($filter['duration_end'] != "") ? $where_options[] = ' duration <= ' . (int) $filter['duration_end'] . ' ' : null;
 
-        // cost center
-        if (!empty($filter['costs_center'])) {
+        // TASK-0034A: costs_center is submitted as costs_center[] (a
+        // real multi-select), always an array in normal browser use, but
+        // a request that sends a bare costs_center=<value> instead
+        // (confirmed live) leaves $filter['costs_center'] a plain
+        // string; count() on it then fatals the same way count($stmt)
+        // did above. is_array() closes that without changing behavior
+        // for the array case this codebase actually relies on.
+        if (!empty($filter['costs_center']) && is_array($filter['costs_center'])) {
             $cost_centers = $filter['costs_center'];
             if (count($cost_centers) > 0) {
                 $tmp_cc = "";
@@ -399,7 +436,12 @@ class CallsReportController extends Zend_Controller_Action
         
         
         $stmt = $db->query($select);
-        $cont = count($stmt);
+        // TASK-0034A: $cont was never read anywhere in this file (dead
+        // since at least this method's current form) -- count() on a
+        // Zend_Db_Statement_Pdo object is not Countable/array under
+        // PHP 8 and fatals unconditionally on every report request.
+        // Removed rather than "fixed" (e.g. ->rowCount()) precisely
+        // because nothing consumes the value.
         while ($dado = $stmt->fetch()) {
             $row[] = $dado;
         }
@@ -419,6 +461,15 @@ class CallsReportController extends Zend_Controller_Action
         $this->view->exportName = $dateForm[0] . '_' . $dateForm[1];
 
         $row = $this->getSelect($filter);
+        // TASK-0034A: $result_data is only ever assigned inside the
+        // "foreach ($row as ...)" loop below; an empty (but entirely
+        // valid) result set -- e.g. a date range with zero matching
+        // calls -- left it undefined, and this method's own
+        // count($result_data) a few lines down fatals under PHP 8 on
+        // that (confirmed live). getSynthetic() never hit this because
+        // it only ever foreach()es $result_data (a silent no-op on
+        // null), never count()s it.
+        $result_data = array();
         $locale_call = false;
         if (isset($filter['locale'])) {
             $locale_call = true;
