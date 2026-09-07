@@ -1,0 +1,48 @@
+# TASK-0034B — Production Network Exposure Hardening (TASK-0034 CH-7).
+#
+# Additive Compose override: publishes the SIP/WSS/RTP ports a pilot
+# needs reachable from outside the Docker host. Layer this on top of
+# the base compose.yaml -- do not merge its contents into compose.yaml
+# directly -- so a development `make dev`/`make up` continues to
+# expose nothing beyond the app's own HTTP port, exactly as before.
+#
+# Usage: `make pilot-up` (wraps the two-file invocation below), or
+# directly:
+#   docker compose -f compose.yaml -f compose.pilot.yaml up -d app asterisk db
+#
+# Port list matches this repository's actual seeded PJSIP transports
+# (snep/install/database/system_data.sql: udp/tcp on 5060, wss on
+# 8089) plus the RTP media range this project's own rtp.conf declares
+# (snep/install/etc/asterisk/rtp.conf: 10000-10199 as of TASK-0034B --
+# narrowed from the dev default of 10000-20000; keep these two files in
+# sync). A `tls` transport is not seeded by default (an admin adds one,
+# at whatever port they choose, via the Transports UI --
+# TASK-0018/0029A) -- if a pilot adds one, publish that port too, in a
+# copy of this file tailored to the pilot's own transport choices. Do
+# not publish a port for a transport the pilot does not actually use.
+#
+# TASK-0034B evidence: publishing the full 10000-20000 range (10001
+# individual host ports) was tried first and confirmed live to hang
+# Docker Desktop's port-publishing step and exhaust host memory (one
+# per-port userspace forwarding process each on macOS) -- see
+# docs/tasks/0034b-production-network-exposure-hardening.md. 200 ports
+# (10000-10199, ~100 simultaneous calls at 2 ports/call) is a generous
+# starting point for a first controlled pilot. Widen this range and
+# rtp.conf's matching range together if real pilot concurrent-call
+# volume requires more -- never let them drift apart, since a mismatch
+# silently breaks audio for RTP ports Asterisk negotiates outside
+# whatever is actually published to the host.
+#
+# Deliberately excludes AMI (5038) and the database (3306) -- these
+# must never be published to the host; see
+# docs/tasks/0034-release-readiness-production-pilot-gate.md CH-6/§35.
+# Deliberately does not add the `provider` dev-only trunk-simulator
+# fixture to any service list here -- see CH-3 in the same document.
+
+services:
+  asterisk:
+    ports:
+      - "5060:5060/udp"
+      - "5060:5060/tcp"
+      - "8089:8089/tcp"
+      - "10000-10199:10000-10199/udp"

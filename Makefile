@@ -1,6 +1,26 @@
-.PHONY: dev up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke
+.PHONY: dev up pilot-config pilot-up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke
 
 COMPOSE ?= docker compose
+
+# TASK-0034B: let a pilot operator's shell session make every `up`-based
+# target (including `lint`/`migrate-check`/`secrets-check`/
+# `reconcile-check`'s own `up` prerequisite, and the `make up` calls in
+# the Upgrade/Rollback runbook procedures) target the pilot compose
+# overlay and service list instead of silently falling back to the
+# base compose.yaml. Both default empty, so plain `make up`/`make dev`
+# behavior for development is byte-for-byte unchanged. Export once per
+# pilot operator shell session:
+#   export COMPOSE_FILES="-f compose.yaml -f compose.pilot.yaml"
+#   export SERVICES="app asterisk db"
+# See docs/operations/production-release-runbook.md and
+# docs/tasks/0034b-production-network-exposure-hardening.md -- without
+# this, `up`'s default (no file flags, no service filter) both drops
+# the pilot's published SIP/WSS/RTP ports (recreating `asterisk` to
+# match the narrower base compose.yaml) and starts the `provider`
+# dev-only trunk-simulator fixture (TASK-0034 CH-3) on a production
+# host.
+COMPOSE_FILES ?=
+SERVICES ?=
 
 dev: doctor up
 
@@ -8,7 +28,19 @@ config:
 	$(COMPOSE) config
 
 up:
-	$(COMPOSE) up -d --build
+	$(COMPOSE) $(COMPOSE_FILES) up -d --build $(SERVICES)
+
+# TASK-0034B: pilot/production-style deployment -- layers
+# compose.pilot.yaml's SIP/WSS/RTP host-port exposure (TASK-0034 CH-7)
+# on top of the base compose.yaml (which stays internal-only for
+# development), and deliberately starts only the services a pilot
+# needs -- excluding the `provider` dev-only trunk-simulator fixture
+# (TASK-0034 CH-3).
+pilot-config:
+	$(COMPOSE) -f compose.yaml -f compose.pilot.yaml config
+
+pilot-up:
+	$(COMPOSE) -f compose.yaml -f compose.pilot.yaml up -d --build app asterisk db
 
 down:
 	$(COMPOSE) down
