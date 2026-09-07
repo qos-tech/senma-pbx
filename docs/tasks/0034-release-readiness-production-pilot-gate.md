@@ -17,6 +17,57 @@ originally identified no longer applies; the final decision below
 scoped as a constraint on the Reports screen specifically, not a
 whole-pilot blocker, and its resolution only strengthens that decision.
 
+## UPDATE (TASK-0034B)
+
+**Finding CH-7 (no SIP/WSS/RTP host port exposure defined anywhere) is
+CLOSED.** TASK-0034B added `compose.pilot.yaml`, an additive Compose
+override (layered on top of the unchanged, still internal-only-by-default
+`compose.yaml`) that publishes exactly this repository's actually-seeded
+PJSIP transports (UDP/TCP 5060, WSS 8089) plus a narrowed RTP media range
+(`10000-10199`, 200 ports — see below), wired in via new `make
+pilot-config`/`make pilot-up` targets, and documented in
+`docs/operations/production-release-runbook.md`. See
+`docs/tasks/0034b-production-network-exposure-hardening.md` for full
+evidence. Every reference to CH-7 below is left as the original evidence
+record (per this project's documentation policy — historical findings
+are not rewritten); read them together with this update, not as the
+current state.
+
+Two things surfaced during closure that materially affect the pilot
+contract:
+
+1. **The RTP range had to be narrowed from rtp.conf's dev-default
+   10000-20000 (10,001 ports) to 10000-10199 (200 ports, ~100
+   simultaneous calls).** Publishing the full dev range as individual
+   host ports was tried first and confirmed live to hang Docker
+   Desktop's own port-publishing step and exhaust host memory (a
+   real, first-hand-observed infrastructure incident, fully
+   recovered from with no data loss — see the task doc). This is a
+   pilot capacity constraint, not a code defect: a pilot needing more
+   than ~100 concurrent calls must widen both `rtp.conf` and
+   `compose.pilot.yaml` together (kept in sync) and re-validate on the
+   target host's own Docker/container runtime, which may not share
+   Docker Desktop's specific port-publishing limitation.
+2. **A second, independent, more severe exposure risk was found and
+   fixed during validation, not originally covered by CH-7's own text:**
+   `make migrate-check`/`secrets-check`/`reconcile-check`/`lint` each
+   depend on the generic `up` target, which — with no pilot-aware
+   variables set — silently re-runs plain `docker compose up -d --build`
+   against `compose.yaml` alone. Confirmed live, this both strips the
+   just-published pilot ports back off `asterisk` (silently re-opening
+   CH-7) and starts the `provider` dev-only trunk-simulator fixture
+   (CH-3) on what would be a production host — a real, reproducible
+   footgun in the very runbook steps this task's own fix depends on,
+   not a hypothetical. Fixed with two new opt-in Makefile variables,
+   `COMPOSE_FILES`/`SERVICES` (both empty by default — plain
+   `make up`/`make dev` behavior is unchanged), which a pilot operator
+   exports once per shell session; the runbook's steps 5/7/8, Preflight,
+   Upgrade, and Rollback sections were all updated accordingly.
+
+The overall release decision below (`PILOT_GO_WITH_CONSTRAINTS`) stands,
+now with one fewer open constraint: CH-7 moves from **PILOT_CONSTRAINT**
+to **PILOT_SUPPORTED (with a documented, adjustable capacity limit)**.
+
 ## LEAD
 
 senma-workflow-orchestrator

@@ -58,21 +58,35 @@ Edit `.env`:
 
 **Do not start the `provider` service in production.** It is a SIP trunk
 simulator for local development/regression only. The current `compose.yaml`
-has no profile gate excluding it — until that follow-up lands, start only
-the services a pilot needs explicitly:
+has no profile gate excluding it — until that follow-up lands, `make
+pilot-up` (step 5 below) starts only the services a pilot needs
+explicitly (`app asterisk db`), never `provider`.
+
+**`compose.yaml` alone does not expose SIP/WSS to the host** — only the
+app's HTTP port is published, by design, so a plain development
+`make dev`/`make up` never opens telephony ports. `compose.pilot.yaml`
+(TASK-0034B, closing Finding CH-7) is an additive override that
+publishes the ports this repository's actually-seeded PJSIP transports
+use (UDP/TCP 5060, WSS 8089) plus the RTP media range
+(`snep/install/etc/asterisk/rtp.conf`, 10000-10199 — narrowed from the
+dev default of 10000-20000; see
+`docs/tasks/0034b-production-network-exposure-hardening.md` for why
+publishing the full 10001-port dev range is impractical on Docker
+Desktop, and widen both files together if a pilot's real concurrent-call
+volume needs more than ~100 simultaneous calls). Use it instead of
+plain `make up`/`make dev` for a pilot deployment:
 
 ```bash
-docker compose up -d app asterisk db
+make pilot-config   # review the merged, published-port configuration first
+make pilot-up       # starts app/asterisk/db only -- never the provider fixture (CH-3)
 ```
 
-**SIP/WSS is not exposed to the host by this repository's `compose.yaml`
-as-is.** No `ports:` mapping exists for any Asterisk SIP/TLS/WSS port —
-only the app's HTTP port is published. Before real external calls are
-possible, add the port mappings your pilot's trunk/transport models need
-(e.g. `5060:5060/udp`, `8089:8089`) to a local compose override, matching
-whichever transports are actually in scope (see TASK-0034 §1 and Finding
-CH-7). AMI and the database correctly have no `ports:` mapping and must
-stay that way.
+If the pilot adds a `tls` transport (not seeded by default — an
+admin-configured port via the Transports UI), publish that port too, in
+a copy of `compose.pilot.yaml` tailored to the pilot's own transport
+choices; do not publish a port for a transport the pilot does not
+actually use. AMI and the database correctly have no `ports:` mapping
+in either file and must stay that way.
 
 ## 3. Provision storage
 
@@ -103,15 +117,39 @@ Before accepting real WSS traffic:
    points at the real certificate until a dedicated follow-up closes that
    gap.
 4. If WSS is not part of this pilot's scope, disable the `wss` transport
-   explicitly rather than leaving the fixture certificate live and
-   internet-reachable on `0.0.0.0:8089`.
+   explicitly rather than leaving the fixture certificate live.
+
+**Do this before step 5.** `make pilot-up` (TASK-0034B) publishes port
+8089 to the host, making the `wss` transport actually reachable from
+outside the Docker network for the first time — if the fixture
+certificate hasn't been replaced by then, it is genuinely
+internet-reachable on a known, non-secret private key, not merely a
+theoretical risk. The gap in step 3 above (`doctor` cannot verify which
+certificate is actually configured) means nothing will warn you if this
+step is skipped — treat it as a hard prerequisite of step 5, not an
+optional hardening pass.
 
 ## 5. Start the stack
 
 ```bash
-make up
-make ps      # confirm all services report healthy
+export COMPOSE_FILES="-f compose.yaml -f compose.pilot.yaml"
+export SERVICES="app asterisk db"
+make pilot-up
+make ps      # confirm all services report healthy (app/asterisk/db only -- no provider)
 ```
+
+**Keep `COMPOSE_FILES`/`SERVICES` exported for the rest of this operator
+shell session** (and every future session that manages this pilot host).
+Every `make` target below that depends on `up` — `lint`, `migrate-check`,
+`secrets-check`, `reconcile-check` — re-runs `up` as a prerequisite. With
+these two variables unset, that re-run silently falls back to plain
+`docker compose up -d --build` against `compose.yaml` alone: it recreates
+`asterisk` **without** the pilot ports published in step 5 (silently
+undoing Finding CH-7's fix) and starts the `provider` dev-only
+trunk-simulator fixture (CH-3) that step 2 said must never run in
+production — both confirmed live during TASK-0034B. `make doctor` does
+not depend on `up` and is unaffected either way. See
+`docs/tasks/0034b-production-network-exposure-hardening.md`.
 
 ## 6. Verify readiness
 
@@ -189,7 +227,11 @@ models are supported in this pilot.
 
 There is currently no single `make preflight` target. Until one exists,
 run the individual read-only gates in this order and treat any failure as
-a stop:
+a stop. **On a pilot host, `COMPOSE_FILES`/`SERVICES` (step 5) must still
+be exported in the shell running these** — otherwise `lint`,
+`secrets-check`, and `migrate-check`/`reconcile-check`'s `up` prerequisite
+silently drop the pilot's published ports and start `provider` (see
+step 5's note):
 
 ```bash
 make lint
@@ -203,10 +245,14 @@ make reconcile-check
 
 ## Upgrade procedure (existing install)
 
+On a pilot host, `COMPOSE_FILES`/`SERVICES` (step 5) must be exported in
+this shell — the closing `make up` is exactly the call that silently
+strips pilot ports and starts `provider` if they are not.
+
 ```bash
 make backup                 # -> ./backups/senma-backup-<ts>.tar.gz — verify it completes and checksums validate
 git fetch && git checkout <new-release-tag>
-docker compose build        # or pull, if using pre-built images
+docker compose $COMPOSE_FILES build   # or pull, if using pre-built images
 make migrate-check          # confirm SCHEMA_BEHIND (expected) or SCHEMA_CURRENT
 make migrate                # only if SCHEMA_BEHIND
 make reconcile-check        # confirm IN_SYNC after any config-affecting change
@@ -217,11 +263,12 @@ make doctor                 # confirm no FAIL
 ## Rollback procedure
 
 Use when an upgrade fails validation above, or a post-upgrade smoke check
-fails:
+fails. On a pilot host, `COMPOSE_FILES`/`SERVICES` must be exported here
+too, for the same reason as the upgrade procedure above:
 
 ```bash
 git checkout <previous-release-tag>
-docker compose build
+docker compose $COMPOSE_FILES build
 make restore FROM=./backups/senma-backup-<pre-upgrade-ts>.tar.gz CONFIRM=RESTORE
 make up
 make doctor
