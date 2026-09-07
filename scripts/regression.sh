@@ -141,6 +141,19 @@ run_suite "http-smoke"             "smoke-test.sh"
 # confusing report-readback failure two suites later.
 run_suite "cdr-window-selftest"    "cdr-window-selftest.sh"
 run_suite "call-smoke"             "call-smoke-test.sh"
+# TASK-0034A: Calls Report (the web CallsReportController flow, distinct
+# from the already-hardened standalone CallsReportService.php API) --
+# placed right after call-smoke, the closest sibling (same real-call
+# placement mechanism), proving the report of a real call works
+# end to end now that the PHP8/SQL defect chain TASK-0034 (CH-1) found
+# is fixed. (An earlier version of this comment attributed a
+# trunk-smoke registration-timeout flake seen once here to this suite's
+# own adjacency; re-tested live with calls-report-smoke moved elsewhere
+# in the order and the identical flake still occurred, disproving that
+# -- it is an independent, host-load-sensitive timing flake, unrelated
+# to this suite or its placement.) See
+# docs/tasks/0034a-calls-report-runtime-repair.md.
+run_suite "calls-report-smoke"     "calls-report-smoke-test.sh"
 run_suite "trunk-smoke"            "trunk-smoke-test.sh"
 # TASK-0028X: pjsip_external outbound dial-string fix -- placed right
 # after trunk-smoke (native registered PJSIP trunk, both directions),

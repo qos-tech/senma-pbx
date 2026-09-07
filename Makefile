@@ -172,6 +172,10 @@ cdr-window-selftest: up
 call-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/call-smoke-test.sh
 
+# TASK-0034A: Calls Report (web CallsReportController) regression suite.
+calls-report-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/calls-report-smoke-test.sh
+
 trunk-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/trunk-smoke-test.sh
 
