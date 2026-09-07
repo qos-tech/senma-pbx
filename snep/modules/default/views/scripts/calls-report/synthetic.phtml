@@ -134,7 +134,7 @@ $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/removeI
           <tbody>
             <?php foreach ($this->ccustos as $key => $value) {?>
               <tr>
-                <td ><?php echo $value['name']; ?></td>
+                <td ><?php echo $this->escape($value['name']); ?></td>
                 <td class="text-center"><?php echo $value['cont']; ?></td>
               </tr>
               <?php }?>

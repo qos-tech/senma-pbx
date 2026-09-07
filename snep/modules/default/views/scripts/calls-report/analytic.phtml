@@ -54,10 +54,10 @@ $this->headScript()->appendFile($this->baseUrl() . '/includes/javascript/removeI
               <td class="text-center"><?php echo $cont; ?></td>
               <td class="text-center"><?php echo $callsList['dia']; ?></td>
               <td class="text-center">
-                <?php if (!$callsList['src_name']) {echo $this->format->fmt_telefone(array("a" => $callsList['src']));} else {echo $callsList['src_name'];}?>
+                <?php if (!$callsList['src_name']) {echo $this->format->fmt_telefone(array("a" => $callsList['src']));} else {echo $this->escape($callsList['src_name']);}?>
               </td>
               <td class="text-center">
-                <?php if (!$callsList['dst_name']) {echo $this->format->fmt_telefone(array("a" => $callsList['dst']));} else {echo $callsList['dst_name'];}?>
+                <?php if (!$callsList['dst_name']) {echo $this->format->fmt_telefone(array("a" => $callsList['dst']));} else {echo $this->escape($callsList['dst_name']);}?>
               </td>
               <td class="text-center"><h4><span class="<?php echo $callsList['class']; ?>"><?php echo $this->translate($callsList['disposition']); ?></span></h4></td>
               <td class="text-center"><h4>
