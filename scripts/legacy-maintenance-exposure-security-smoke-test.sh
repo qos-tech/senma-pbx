@@ -91,6 +91,9 @@ log "==> baseline PHP Fatal Error count: ${FATALS_BEFORE}"
 PEER_GROUPS_BEFORE="$(db_query 'SELECT COUNT(*) FROM core_peer_groups;' | tr -d '\r\n ')"
 log "==> baseline core_peer_groups row count: ${PEER_GROUPS_BEFORE}"
 
+FK_COUNT_BEFORE="$(db_query "SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='peers' AND CONSTRAINT_TYPE='FOREIGN KEY';" | tr -d '\r\n ')"
+log "==> baseline peers table foreign-key count: ${FK_COUNT_BEFORE}"
+
 # =============================================================================
 # 1. Known finding: convert-data-rc3.php cannot be invoked over HTTP
 # =============================================================================
@@ -186,11 +189,11 @@ else
     harness_bad "9: core_peer_groups row count unchanged" "changed: ${PEER_GROUPS_BEFORE} -> ${PEER_GROUPS_AFTER}"
 fi
 
-FK_COUNT="$(db_query "SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='peers' AND CONSTRAINT_TYPE='FOREIGN KEY';" | tr -d '\r\n ')"
-if [ "$FK_COUNT" = "0" ]; then
-    harness_ok "10: peers table foreign-key state unchanged" "0 foreign keys (matches the pre-existing, already-documented schema state)"
+FK_COUNT_AFTER="$(db_query "SELECT COUNT(*) FROM information_schema.TABLE_CONSTRAINTS WHERE TABLE_SCHEMA=DATABASE() AND TABLE_NAME='peers' AND CONSTRAINT_TYPE='FOREIGN KEY';" | tr -d '\r\n ')"
+if [ "$FK_COUNT_AFTER" = "$FK_COUNT_BEFORE" ]; then
+    harness_ok "10: peers table foreign-key state unchanged" "still ${FK_COUNT_AFTER} foreign key(s) -- unaffected by this suite's own blocked-request probing"
 else
-    harness_bad "10: peers table foreign-key state unchanged" "found ${FK_COUNT} foreign key(s) -- unexpected schema change"
+    harness_bad "10: peers table foreign-key state unchanged" "changed: ${FK_COUNT_BEFORE} -> ${FK_COUNT_AFTER} foreign key(s)"
 fi
 
 FATALS_AFTER="$(fatal_count)"
