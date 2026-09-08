@@ -1,3 +1,24 @@
+# TASK-0034C — base Compose contract (Finding CH-3 closure).
+#
+# This file is the PRODUCTION-SAFE BASE: with no `-f compose.pilot.yaml`
+# overlay and no `dev`/`test` Compose profile activated, it starts
+# exactly `app`, `asterisk`, `db` -- never a development/test-only
+# fixture -- and publishes nothing beyond the app's own HTTP port. That
+# is true for a plain `docker compose up`, not just for this repo's own
+# Makefile wrapper, so the guarantee holds even for an operator who
+# bypasses `make` entirely.
+#
+# The `provider` service below (TASK-0015, a SIP-trunk simulator for
+# local development/regression only) carries `profiles: [dev, test]` --
+# Compose only starts a profiled service when one of its listed
+# profiles is explicitly activated (`COMPOSE_PROFILES=dev|test`, or
+# `--profile dev|test`). No plain `up`, `restart`, or `--force-recreate`
+# activates a profile on its own. See the Makefile's own `FIXTURE_PROFILE`
+# variable for this repository's single supported opt-in mechanism, and
+# `docs/tasks/0034c-production-fixture-compose-profile-isolation.md` for
+# the full evidence trail (fixture inventory, why `dev`+`test` rather
+# than one name, and the pilot/regression interaction proof).
+#
 # TASK-0033D: every service otherwise inherits Docker's default json-file
 # driver with NO size/file cap (confirmed live: `docker inspect
 # .HostConfig.LogConfig` showed `{"Type":"json-file","Config":{}}` on
@@ -159,6 +180,23 @@ services:
   # published (only the "asterisk" service needs to reach it, over the
   # internal "mag" network). See docs/tasks/0015-pjsip-trunk-provisioning.md.
   provider:
+    # TASK-0034C: DEVELOPMENT_ONLY/TEST_ONLY fixture -- see the base-contract
+    # header comment at the top of this file. `profiles: [dev, test]` means
+    # this service is never created by a plain `docker compose up` (with or
+    # without `--force-recreate`), never by `make up`/`make pilot-up`, and
+    # never merely by naming it as a Compose dependency elsewhere -- it
+    # requires `COMPOSE_PROFILES` to list `dev` or `test` at the moment
+    # `up` runs. Two profile names, not one, because this repo's own
+    # Makefile uses them to mean two different (if overlapping) callers:
+    # `dev` = an interactive developer opted in via `make dev-up`; `test` =
+    # a regression/smoke suite that owns this fixture's lifecycle for the
+    # duration of its own run (`make trunk-smoke`, `make
+    # pjsip-runtime-status-smoke`, `make readiness-smoke`, `make
+    # regression`). Either profile starts the identical service -- the
+    # split is about which caller and why, not different configurations.
+    profiles:
+      - dev
+      - test
     build:
       context: .
       dockerfile: docker/asterisk.Dockerfile

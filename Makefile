@@ -1,4 +1,4 @@
-.PHONY: dev up pilot-config pilot-up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke
+.PHONY: dev dev-up up pilot-config pilot-up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke
 
 COMPOSE ?= docker compose
 
@@ -14,33 +14,74 @@ COMPOSE ?= docker compose
 #   export SERVICES="app asterisk db"
 # See docs/operations/production-release-runbook.md and
 # docs/tasks/0034b-production-network-exposure-hardening.md -- without
-# this, `up`'s default (no file flags, no service filter) both drops
-# the pilot's published SIP/WSS/RTP ports (recreating `asterisk` to
-# match the narrower base compose.yaml) and starts the `provider`
-# dev-only trunk-simulator fixture (TASK-0034 CH-3) on a production
-# host.
+# this, `up`'s default (no file flags, no service filter) drops the
+# pilot's published SIP/WSS/RTP ports (recreating `asterisk` to match the
+# narrower base compose.yaml). TASK-0034C closed this same scenario's
+# other half (starting the `provider` dev-only trunk-simulator fixture,
+# TASK-0034 CH-3) structurally, via the Compose profile gate below and
+# in compose.yaml -- that part no longer depends on these two variables
+# being exported at all, but COMPOSE_FILES/SERVICES are still required
+# for the port-exposure half.
 COMPOSE_FILES ?=
 SERVICES ?=
 
+# TASK-0034C: closes Finding CH-3 structurally -- the `provider` dev/test
+# trunk-simulator fixture (compose.yaml) now carries `profiles: [dev,
+# test]`, so Compose only ever creates it when one of those profiles is
+# active. This is this repository's single supported mechanism for that
+# opt-in: empty by default (plain `make up`/`make dev`/`make pilot-up`
+# behavior is unchanged -- no fixture, exactly as before this task), set
+# to `dev` by `make dev-up` (interactive developer opt-in) and to `test`
+# by the specific regression targets that own this fixture's lifecycle
+# (`trunk-smoke`, `pjsip-runtime-status-smoke`, `readiness-smoke`,
+# `regression`). `up`'s recipe below passes it as an explicit
+# `COMPOSE_PROFILES=` prefix rather than relying on an inherited shell
+# environment variable of the same name -- this is deliberate: an
+# operator's shell that happens to already export COMPOSE_PROFILES=dev
+# (from an unrelated project, or a forgotten previous session) cannot
+# silently change what `make up` starts, because this recipe always
+# overwrites it with `$(FIXTURE_PROFILE)` (empty unless a target above
+# set it). See docs/tasks/0034c-production-fixture-compose-profile-isolation.md.
+FIXTURE_PROFILE ?=
+
 dev: doctor up
 
+# TASK-0034C: developer opt-in for the `provider` fixture -- the one
+# explicit, documented command that starts it locally (Phase 8). Plain
+# `make dev`/`make up` deliberately do not, so a fixture never appears by
+# accident; this target is how a developer who actually wants it (e.g. to
+# poke at it manually, or run `make asterisk-cli` equivalent debugging
+# against it) asks for it explicitly.
+dev-up: FIXTURE_PROFILE = dev
+dev-up: up
+
 config:
-	$(COMPOSE) config
+	COMPOSE_PROFILES="$(FIXTURE_PROFILE)" $(COMPOSE) config
 
 up:
-	$(COMPOSE) $(COMPOSE_FILES) up -d --build $(SERVICES)
+	COMPOSE_PROFILES="$(FIXTURE_PROFILE)" $(COMPOSE) $(COMPOSE_FILES) up -d --build $(SERVICES)
 
 # TASK-0034B: pilot/production-style deployment -- layers
 # compose.pilot.yaml's SIP/WSS/RTP host-port exposure (TASK-0034 CH-7)
 # on top of the base compose.yaml (which stays internal-only for
 # development), and deliberately starts only the services a pilot
 # needs -- excluding the `provider` dev-only trunk-simulator fixture
-# (TASK-0034 CH-3).
+# (TASK-0034 CH-3, structurally closed by TASK-0034C's Compose profile
+# gate -- see compose.yaml's own header comment).
+#
+# TASK-0034C: `COMPOSE_PROFILES=` is hardcoded empty here, not read from
+# $(FIXTURE_PROFILE) -- deliberately. Every other Compose-invoking target
+# in this Makefile treats the fixture profile as an operator/target
+# choice; the pilot path does not get that choice, by design (Phase 6/21:
+# "production/pilot should require NO fixture profile"). This also
+# defeats an operator's shell that happens to already export
+# COMPOSE_PROFILES=dev or =test (Phase 24 environment-contamination
+# proof) -- these two recipes always win over whatever is inherited.
 pilot-config:
-	$(COMPOSE) -f compose.yaml -f compose.pilot.yaml config
+	COMPOSE_PROFILES= $(COMPOSE) -f compose.yaml -f compose.pilot.yaml config
 
 pilot-up:
-	$(COMPOSE) -f compose.yaml -f compose.pilot.yaml up -d --build app asterisk db
+	COMPOSE_PROFILES= $(COMPOSE) -f compose.yaml -f compose.pilot.yaml up -d --build app asterisk db
 
 down:
 	$(COMPOSE) down
@@ -208,6 +249,12 @@ call-smoke: up
 calls-report-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/calls-report-smoke-test.sh
 
+# TASK-0034C: this suite owns the `provider` fixture's lifecycle for its
+# own run -- FIXTURE_PROFILE=test is a target-specific variable, which
+# GNU Make also applies when building this target's own `up` prerequisite,
+# so `provider` starts here without requiring the operator to know or
+# pass anything. See the FIXTURE_PROFILE header comment above `up`.
+trunk-smoke: FIXTURE_PROFILE = test
 trunk-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/trunk-smoke-test.sh
 
@@ -257,6 +304,9 @@ tls-cert-management-smoke: up
 # pjsip_external existence proof, and the AMI-down-never-fabricates-
 # Offline contract. Stops/restarts the asterisk container (Part C) --
 # same "run in isolation" reasoning as the other restart-using suites.
+# TASK-0034C: needs the `provider` fixture (reachable-trunk proof) -- see
+# trunk-smoke's own FIXTURE_PROFILE comment above.
+pjsip-runtime-status-smoke: FIXTURE_PROFILE = test
 pjsip-runtime-status-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/pjsip-runtime-status-smoke-test.sh
 
@@ -320,6 +370,13 @@ lint: up
 # supported suite serially, in a fixed dependency-respecting order, and
 # never treats BLOCKED/INCONCLUSIVE as PASS. See
 # docs/tasks/0027-regression-harness-reliability.md.
+# TASK-0034C: FIXTURE_PROFILE=test on `regression`'s own `up` prerequisite
+# starts `provider` once, up front, for the three suites inside
+# regression.sh that need it (trunk-smoke, pjsip-runtime-status-smoke,
+# readiness-smoke -- regression.sh invokes each suite script directly, not
+# via `make <suite>`, so their own individual FIXTURE_PROFILE settings
+# don't apply on this path; only this line does).
+regression: FIXTURE_PROFILE = test
 regression: up
 	@set -a; . ./.env; set +a; bash scripts/regression.sh
 
@@ -480,6 +537,17 @@ secret-rotation-smoke: up
 doctor-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/doctor-smoke-test.sh
 
+# TASK-0034C: focused, non-mutating regression coverage for the Compose
+# profile isolation this task added (Finding CH-3) -- proves the base/
+# pilot topology excludes `provider` by default, that FIXTURE_PROFILE=
+# dev/test explicitly includes it, and that `make pilot-config`'s own
+# `COMPOSE_PROFILES=` override survives a contaminated shell. Pure
+# `docker compose ... config` inspection -- never starts, stops, or
+# mutates any container, volume, or file, so it does not depend on `up`.
+# See scripts/compose-profile-isolation-smoke-test.sh's own header.
+compose-profile-isolation-smoke:
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; bash scripts/compose-profile-isolation-smoke-test.sh
+
 # TASK-0033D: the real, destructive doctor-detection proof -- stops
 # asterisk/db/app one at a time (restoring each before moving to the
 # next), injects secret drift and PJSIP config drift (both via safe,
@@ -499,6 +567,11 @@ doctor-failure-smoke: up
 # for `make regression` -- see scripts/readiness-smoke-test.sh's own
 # header, and readiness-failure-smoke, deliberately NOT part of `make
 # regression`, for the real failure-injection/recovery proof.
+# TASK-0034C: this suite's own contract treats `provider` as one of the
+# "core" containers required healthy (see the script's own header) -- only
+# true when the fixture is intentionally active, i.e. here. See
+# trunk-smoke's own FIXTURE_PROFILE comment above.
+readiness-smoke: FIXTURE_PROFILE = test
 readiness-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/readiness-smoke-test.sh
 
