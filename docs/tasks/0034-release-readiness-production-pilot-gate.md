@@ -1,5 +1,60 @@
 # TASK-0034 — Release Readiness & Production Pilot Gate
 
+## UPDATE (TASK-0034F)
+
+**Finding CH-6 (flat AMI ACL) is CLOSED.** TASK-0034F moved the AMI
+trust boundary off the shared, every-service `mag` network (whose
+`permit=172.28.0.0/16` ACL-trusted `db` and the dev/test-only `provider`
+fixture as a direct, structural consequence of them sharing that one
+network — not a theoretical edge case) onto a new dedicated,
+`internal: true` Compose network, `senma-control` (172.29.0.0/24),
+joined only by `app` and `asterisk`. `ASTERISK_AMI_ACL_SUBNET`/
+`ASTERISK_HOST` in `.env.example` already ship the matching narrow
+default, so a fresh install needs no operator action; an existing
+install upgrades via the new `make ami-acl-migrate` (non-destructive,
+idempotent, auto-rollback on verification failure). `make doctor` gains
+a dedicated "AMI network ACL" line (distinct from the pre-existing "AMI
+reachable" line — Asterisk returns the identical generic
+`Authentication failed` for both an ACL rejection and a wrong secret, so
+one check cannot prove the other) that fails on host publication, on
+`0.0.0.0/0`, or on the ACL matching a shared/broad network instead of
+the dedicated one. `docker/asterisk-entrypoint.sh` now rejects an unset,
+malformed, or `0.0.0.0/0` `ASTERISK_AMI_ACL_SUBNET` at first boot
+(explicit dev-only override for the last case, never a pilot/production
+default) instead of silently proceeding. A new regression suite,
+`scripts/ami-acl-smoke-test.sh` (`make ami-acl-smoke`, wired into `make
+regression`), proves live, every run: the authorized `app` caller
+authenticates; `db`/`provider` (mag-only, not joined to
+`senma-control`) cannot resolve the AMI alias at all, and are denied
+even with correct credentials against asterisk's other, still-reachable
+address; 5038 is not host-published; and both `manager reload` and a
+scoped `asterisk` restart preserve the narrowed ACL. Regression baseline
+moves from 41/41 to 42/42. One real bug in this task's own new code was
+found and fixed during live validation: `ami-acl-migrate.sh`'s original
+`asterisk`-must-be-`healthy` precondition made it unable to run on
+exactly the installation it exists to fix (that installation is
+correctly unhealthy until the migration completes) — corrected to
+require only that the container is `Up`. Every claim above is
+live-proven, not inferred — see
+`docs/tasks/0034f-production-ami-acl-scoping.md` for the full caller
+inventory, live positive/negative ACL proof (including a live
+before/after reproduction of the old ACL actually accepting `db`/
+`provider`), reload/restart proof, and CIDR-validation proof. Every
+reference to CH-6 below is left as the original evidence record (per
+this project's documentation policy — historical findings are not
+rewritten); read them together with this update, not as the current
+state.
+
+CH-6 moves from **PILOT_CONSTRAINT** to **CLOSED**. This was the last
+open constraint TASK-0034D/E left — with CH-1 (PILOT_SUPPORTED), CH-2
+(CLOSED), CH-3 (CLOSED), CH-6 (CLOSED), CH-7 (PILOT_SUPPORTED), and CH-9
+(CLOSED), and CH-8 remaining the one deliberately-deferred
+`POST_PILOT` item, **no `OPEN_CONSTRAINT` or `OPEN_BLOCKER` remains**.
+Recommendation: **TASK-0034 = COMPLETE**, release decision **PILOT_GO**
+(no longer `PILOT_GO_WITH_CONSTRAINTS`) — see the checkpoint below for
+the full reasoning, and TASK-0035 (Pilot Deployment & Soak Validation)
+as the next task.
+
 ## UPDATE (TASK-0034E)
 
 **Finding CH-2 (WSS fixture certificate; `doctor`'s cert check validated
