@@ -38,9 +38,21 @@ x-logging: &senma-default-logging
 
 services:
   app:
+    # TASK-0034D: explicit, version-derived image name/tag (TASK-0034
+    # CH-9) instead of Compose's own project-name-derived default.
+    # RELEASE_VERSION defaults to "dev" (DEVELOPMENT_ONLY, mutable) for
+    # every plain `make up`/`make dev` -- a pilot/production build
+    # overrides it via `make release-build VERSION=vX.Y.Z` (see the
+    # Makefile's own RELEASE_VERSION/GIT_COMMIT/BUILD_TIMESTAMP export
+    # and docs/tasks/0034d-release-artifact-versioning-image-provenance.md).
+    image: senma-app:${RELEASE_VERSION:-dev}
     build:
       context: .
       dockerfile: docker/app.Dockerfile
+      args:
+        RELEASE_VERSION: ${RELEASE_VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_TIMESTAMP: ${BUILD_TIMESTAMP:-unknown}
     env_file:
       - .env
     ports:
@@ -98,9 +110,17 @@ services:
     logging: *senma-default-logging
 
   asterisk:
+    # TASK-0034D: see the `app` service's identical comment above -- same
+    # RELEASE_VERSION contract, kept in agreement with `app` by
+    # `make release-build` (both built from one invocation, one version).
+    image: senma-asterisk:${RELEASE_VERSION:-dev}
     build:
       context: .
       dockerfile: docker/asterisk.Dockerfile
+      args:
+        RELEASE_VERSION: ${RELEASE_VERSION:-dev}
+        GIT_COMMIT: ${GIT_COMMIT:-unknown}
+        BUILD_TIMESTAMP: ${BUILD_TIMESTAMP:-unknown}
     env_file:
       - .env
     volumes:

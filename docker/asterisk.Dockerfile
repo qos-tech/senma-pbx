@@ -177,6 +177,28 @@ RUN chmod +x /usr/local/bin/asterisk-entrypoint.sh /usr/local/bin/log-rotate-ast
 # needs, already proven working.
 COPY docker/reconcile-pjsip.php /usr/local/bin/reconcile-pjsip.php
 
+# TASK-0034D: release identity (TASK-0034 CH-9), applied only to this
+# shipped runtime stage (the earlier build stage produces no image
+# anyone runs) and deliberately placed LAST, for the same build-cache
+# reason as docker/app.Dockerfile's identical block -- BUILD_TIMESTAMP
+# changes on every build invocation, and placing this near FROM (tried
+# first, live-confirmed) forced the entire expensive apt-get/COPY chain
+# above -- including the compiled Asterisk binaries copied from the
+# build stage -- to invalidate on every single build. Same ARG names/
+# defaults as docker/app.Dockerfile so a single compose.yaml `args:`
+# block stamps both consistently. See docs/tasks/
+# 0034d-release-artifact-versioning-image-provenance.md "BUILD
+# REPRODUCIBILITY BOUNDARY".
+ARG RELEASE_VERSION=dev
+ARG GIT_COMMIT=unknown
+ARG BUILD_TIMESTAMP=unknown
+LABEL org.opencontainers.image.title="SENMA PBX asterisk" \
+      org.opencontainers.image.version="${RELEASE_VERSION}" \
+      org.opencontainers.image.revision="${GIT_COMMIT}" \
+      org.opencontainers.image.created="${BUILD_TIMESTAMP}" \
+      org.opencontainers.image.source="https://github.com/qos-tech/mag-pbx" \
+      org.opencontainers.image.licenses="GPL-3.0-or-later"
+
 USER asterisk
 ENTRYPOINT ["asterisk-entrypoint.sh"]
 CMD ["asterisk", "-f", "-vvv"]
