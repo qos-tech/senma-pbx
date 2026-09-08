@@ -359,6 +359,74 @@ check_asterisk_ami() {
     esac
 }
 
+# TASK-0034F (closing TASK-0034 CH-6): validates the effective, LIVE
+# scope of the AMI network-ACL trust boundary -- deliberately separate
+# from check_asterisk_ami above, which can only prove "the declared
+# credential authenticates" and cannot distinguish that from "the ACL
+# also happens to be too broad" (Asterisk returns the identical generic
+# "Authentication failed" for both an ACL rejection and a wrong secret,
+# confirmed live during this task -- see docs/tasks/
+# 0034f-production-ami-acl-scoping.md PHASE 11/MANAGER ACL SEMANTICS).
+# Reads manager.conf's actual `permit=` line and compares it against the
+# dedicated `senma-control` network's own live-inspected subnet (never
+# the compose.yaml text alone, and never a hardcoded value -- Phase 27),
+# identified by the `senma-ami` alias contract every authorized caller
+# in this codebase already depends on, not by network name (a
+# project-name-derived Compose prefix is not guaranteed stable).
+check_ami_network_acl() {
+    if [ "$(container_state asterisk)" != "running" ]; then
+        record "AMI network ACL" "SKIP" "asterisk container is not running"
+        return
+    fi
+    local publishers
+    publishers="$($COMPOSE ps asterisk --format '{{.Publishers}}' 2>/dev/null)"
+    if printf '%s' "$publishers" | grep -q "5038"; then
+        record "AMI network ACL" "FAIL" "5038/tcp is host-published (publishers: $publishers) -- AMI must remain container-to-container only"
+        return
+    fi
+
+    local permit
+    permit="$($COMPOSE exec -T asterisk grep '^permit=' /etc/asterisk/manager.conf 2>/dev/null | head -1 | sed 's/^permit=//')"
+    if [ -z "$permit" ]; then
+        record "AMI network ACL" "UNKNOWN" "could not read manager.conf's permit= line (asterisk container may still be starting)"
+        return
+    fi
+    if [ "$permit" = "0.0.0.0/0" ] || [ "$permit" = "0.0.0.0/0.0.0.0" ]; then
+        record "AMI network ACL" "FAIL" "permit=$permit would allow AMI from any address -- never a safe pilot/production value"
+        return
+    fi
+
+    local asterisk_cid control_net control_subnet
+    asterisk_cid="$($COMPOSE ps -q asterisk 2>/dev/null)"
+    control_net="$(docker inspect "$asterisk_cid" --format '{{range $net,$cfg := .NetworkSettings.Networks}}{{range $cfg.Aliases}}{{if eq . "senma-ami"}}{{$net}}{{end}}{{end}}{{end}}' 2>/dev/null)"
+    if [ -z "$control_net" ]; then
+        record "AMI network ACL" "WARN" "permit=$permit; could not identify the dedicated control-plane network (no container currently aliased 'senma-ami') to confirm scope -- verify manually"
+        return
+    fi
+    control_subnet="$(docker network inspect "$control_net" --format '{{(index .IPAM.Config 0).Subnet}}' 2>/dev/null)"
+    if [ "$permit" = "$control_subnet" ]; then
+        record "AMI network ACL" "PASS" "permit=$permit matches the dedicated control-plane network ($control_net) subnet -- not host-published"
+        return
+    fi
+
+    # Not matching the dedicated network -- distinguish "still the old,
+    # broad shared-network value" (a real regression this task exists to
+    # close) from "some other custom value" (unrecognized, needs a
+    # human, not a silent PASS).
+    local shared_nets shared_net shared_subnet broad_match=""
+    shared_nets="$(docker inspect "$asterisk_cid" --format '{{range $net,$cfg := .NetworkSettings.Networks}}{{$net}} {{end}}' 2>/dev/null)"
+    for shared_net in $shared_nets; do
+        [ "$shared_net" = "$control_net" ] && continue
+        shared_subnet="$(docker network inspect "$shared_net" --format '{{(index .IPAM.Config 0).Subnet}}' 2>/dev/null)"
+        [ "$permit" = "$shared_subnet" ] && broad_match="$shared_net"
+    done
+    if [ -n "$broad_match" ]; then
+        record "AMI network ACL" "FAIL" "permit=$permit matches the SHARED '$broad_match' network (not the dedicated control-plane network) -- every service on that network is ACL-trusted, not just the authorized caller"
+    else
+        record "AMI network ACL" "WARN" "permit=$permit matches neither the dedicated control-plane network ($control_subnet) nor any other attached network -- verify this is an intentional custom topology"
+    fi
+}
+
 # =============================================================================
 # PJSIP (reconcile-check integration, TASK-0033B -- no second implementation)
 # =============================================================================
@@ -647,6 +715,7 @@ check_asterisk_cli
 check_asterisk_pjsip_module
 check_asterisk_http_wss
 check_asterisk_ami
+check_ami_network_acl
 check_pjsip_reconcile
 check_pjsip_snapshot
 check_secrets
