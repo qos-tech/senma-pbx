@@ -32,9 +32,18 @@ Confirm you have:
 ```bash
 git clone <repo>
 cd mag-pbx
-git checkout <release-tag-or-commit>   # see Phase 30 — record the exact commit
+git checkout <release-tag>   # e.g. v1.0.0 -- an annotated Git tag IS the release-version identity
 cp .env.example .env
 ```
+
+**TASK-0034D (closing Finding CH-9):** a release version is an annotated
+Git tag (`vX.Y.Z`, optionally `vX.Y.Z-rc.N`) — see docs/tasks/
+0034d-release-artifact-versioning-image-provenance.md for the full
+contract. Every SENMA-built image (`app`, `asterisk`) is stamped at build
+time with that same version plus the exact Git commit
+(`org.opencontainers.image.version`/`.revision` labels), so `make
+release-info` (step 5.5 below) can always answer "what version is this,
+which commit produced it, does the running deployment still match."
 
 ## 2. Configure environment
 
@@ -136,14 +145,56 @@ certificate is actually configured) means nothing will warn you if this
 step is skipped — treat it as a hard prerequisite of step 5, not an
 optional hardening pass.
 
-## 5. Start the stack
+## 5. Build the release artifact
 
 ```bash
+make release-build VERSION=v1.0.0   # HEAD must be exactly the vX.Y.Z tag checked out in step 1
+```
+
+This refuses to run against an uncommitted-changes working tree (there is
+no development override for a real pilot — never pass `ALLOW_DIRTY=1`
+here), refuses if HEAD is not exactly the tag named `VERSION` (formal
+release; a release-candidate build instead passes `RC=1`, see the task
+doc's Git tag contract), builds `app`/`asterisk` (never `provider`, TASK-
+0034C's dev/test-only fixture) with matching `org.opencontainers.image.
+version`/`.revision` labels, self-verifies the labels landed, and writes
+`release-manifest.json` (a generated build receipt — keep it for the
+rollback procedure below; it is never committed).
+
+```bash
+export RELEASE_VERSION=v1.0.0   # must match step 5's VERSION exactly
 export COMPOSE_FILES="-f compose.yaml -f compose.pilot.yaml"
 export SERVICES="app asterisk db"
 make pilot-up
 make ps      # confirm all services report healthy (app/asterisk/db only -- no provider)
 ```
+
+`pilot-up` refuses to run at all if `RELEASE_VERSION` is unset or still
+the mutable `dev` default (TASK-0034 CH-9's "no mutable-only release"
+invariant), and refuses again if the exact `senma-app:$RELEASE_VERSION`/
+`senma-asterisk:$RELEASE_VERSION` images aren't already present locally.
+Unlike `make up`, `pilot-up` never passes `--build` — it deploys the
+*exact* image `release-build` just produced (same image id, not a
+same-inputs rebuild: two separate builds of the identical commit still
+legally differ, since `org.opencontainers.image.created` changes between
+them — see the task doc's BUILD REPRODUCIBILITY BOUNDARY). This is why
+step 5 must run before this command, not concurrently with it, and why a
+production/pilot host should never run `make release-build` and `make
+pilot-up` for two different versions interleaved in the same shell
+session.
+
+**Keep `RELEASE_VERSION` exported for the rest of this operator shell
+session** (and every future session that manages this pilot host) —
+confirmed live: a plain `docker compose restart` in a shell where it is
+still exported preserves the running image exactly (Compose does not
+re-evaluate `image:` on a restart), but a bare `docker compose up`/
+`--force-recreate` run from a *different* shell (or after `unset
+RELEASE_VERSION`) silently falls back to the mutable `senma-app:dev` tag
+and recreates the container on it — the exact same class of footgun
+TASK-0034B already documented for `COMPOSE_FILES`/`SERVICES` below,
+just for image identity instead of port exposure. `make release-info`
+(step 5.5) is what would catch this after the fact; exporting
+`RELEASE_VERSION` once per session is what prevents it.
 
 **Keep `COMPOSE_FILES`/`SERVICES` exported for the rest of this operator
 shell session** (and every future session that manages this pilot host).
@@ -163,6 +214,16 @@ test]` on the service itself), so a bare `up` with no service filter no
 longer includes it either. `COMPOSE_FILES`/`SERVICES` remain required
 for the port-exposure half of this note only. Never export
 `COMPOSE_PROFILES` or `FIXTURE_PROFILE` on this host — see step 2.
+
+## 5.5. Verify release identity
+
+```bash
+make release-info
+```
+
+Expect `MATCH` for both `app` and `asterisk` against the manifest step 5
+wrote. `DRIFT` means the running images are not the ones just built —
+stop and investigate before proceeding; do not treat this as cosmetic.
 
 ## 6. Verify readiness
 
@@ -252,42 +313,66 @@ make doctor
 make secrets-check
 make migrate-check
 make reconcile-check
+make release-info   # TASK-0034D -- confirm MATCH before proceeding; DRIFT is a stop
 ```
 
 ---
 
 ## Upgrade procedure (existing install)
 
-On a pilot host, `COMPOSE_FILES`/`SERVICES` (step 5) must be exported in
-this shell — the closing `make up` is exactly the call that silently
-strips pilot ports if they are not (`provider` cannot start from this
-path either way, per TASK-0034C).
+`make pilot-up` (step 5) is the one supported pilot start/redeploy
+command — it already hardcodes the pilot Compose overlay and the
+`COMPOSE_PROFILES=` empty guard (`provider` cannot start from this path
+either way, per TASK-0034C), and now (TASK-0034D) also refuses to run
+unless `RELEASE_VERSION` names a real, just-built release. `COMPOSE_FILES`/
+`SERVICES` (step 5) must still be exported for `lint`/`secrets-check`/
+`migrate-check`/`reconcile-check` below — those have no pilot-specific
+target of their own.
 
 ```bash
 make backup                 # -> ./backups/senma-backup-<ts>.tar.gz — verify it completes and checksums validate
+cp release-manifest.json release-manifest.json.previous   # TASK-0034D rollback artifact identity -- see Rollback procedure below
 git fetch && git checkout <new-release-tag>
-docker compose $COMPOSE_FILES build   # or pull, if using pre-built images
+make release-build VERSION=<new-release-tag>   # TASK-0034D -- replaces a bare `docker compose build`
+export RELEASE_VERSION=<new-release-tag>
 make migrate-check          # confirm SCHEMA_BEHIND (expected) or SCHEMA_CURRENT
 make migrate                # only if SCHEMA_BEHIND
 make reconcile-check        # confirm IN_SYNC after any config-affecting change
-make up                     # recreate containers on the new image
-make doctor                 # confirm no FAIL
+make pilot-up                # recreate containers on the new release image
+make doctor                  # confirm no FAIL
+make release-info            # confirm MATCH against the new release-manifest.json
 ```
 
 ## Rollback procedure
 
 Use when an upgrade fails validation above, or a post-upgrade smoke check
-fails. On a pilot host, `COMPOSE_FILES`/`SERVICES` must be exported here
-too, for the same reason as the upgrade procedure above (port exposure
-only — `provider` cannot start here regardless, per TASK-0034C):
+fails.
+
+**Rollback artifact identity (TASK-0034D):** the previous release's
+version and manifest must already be known before a rollback starts, not
+discovered by "finding the old image" manually. This is exactly what the
+Upgrade procedure's `cp release-manifest.json release-manifest.json.previous`
+step (and the `<previous-release-tag>` Git tag itself) exist for — if
+that copy step was skipped, recover the previous version from
+`docker image ls senma-app senma-asterisk` (each build's version tag is
+never removed automatically) or from the previous deploy's own recorded
+`RELEASE_VERSION`/change log before proceeding.
 
 ```bash
 git checkout <previous-release-tag>
-docker compose $COMPOSE_FILES build
+make release-build VERSION=<previous-release-tag>   # rebuilds the previous version's images (still present locally unless pruned)
+export RELEASE_VERSION=<previous-release-tag>
 make restore FROM=./backups/senma-backup-<pre-upgrade-ts>.tar.gz CONFIRM=RESTORE
-make up
+make pilot-up
 make doctor
+make release-info   # confirm MATCH against <previous-release-tag>, not the failed upgrade's version
 ```
+
+Do not prune/remove a previous release's tagged images (`docker image rm
+senma-app:<old-version>` / `senma-asterisk:<old-version>`) until a rollback
+to it is no longer plausible — pruning them forces `release-build` to
+fully rebuild from source on rollback instead of reusing what is already
+local.
 
 Rollback restores DB, Asterisk config, and certificates together (single
 archive, single restore operation) — do not attempt to roll back the

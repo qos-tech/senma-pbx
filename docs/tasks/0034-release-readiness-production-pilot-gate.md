@@ -103,6 +103,44 @@ The overall release decision below (`PILOT_GO_WITH_CONSTRAINTS`) stands.
 No other CH finding's status changes; CH-2, CH-6, and CH-9 remain the
 open, already-accepted constraints.
 
+## UPDATE (TASK-0034D)
+
+**Finding CH-9 (no release-artifact/versioning or image-provenance
+mechanism exists) is CLOSED.** TASK-0034D establishes a deterministic
+release identity model proving source commit → release version → built
+image → image id → running deployment: an annotated Git tag (`vX.Y.Z`)
+is the sole authoritative version identity; `docker/app.Dockerfile` and
+`docker/asterisk.Dockerfile` stamp both SENMA-built images with
+`org.opencontainers.image.version`/`.revision`/`.created` labels via a
+new `make release-build VERSION=vX.Y.Z` (`scripts/release-build.sh`,
+which refuses a dirty working tree and refuses a version that doesn't
+match HEAD's own tag, self-verifies the labels it just produced, and
+records `release-manifest.json`, a generated build receipt); `make
+release-info` (`scripts/release-info.sh`) reads the currently running
+containers back and classifies each as `MATCH`/`DRIFT`/`UNKNOWN` against
+that manifest, reused (not reimplemented) by a new `make doctor` check
+and by `scripts/release-artifact-smoke-test.sh` (regression suite 40).
+`make pilot-up` was changed to never rebuild — it now refuses to run
+against the mutable `dev` tag and refuses if the exact `senma-app:
+$RELEASE_VERSION`/`senma-asterisk:$RELEASE_VERSION` images aren't
+already present locally, deploying the literal artifact `release-build`
+produced rather than an independently-timestamped second build of the
+same commit (a live-discovered, live-fixed image-id-stability defect —
+see the task doc's BUILD REPRODUCIBILITY BOUNDARY). Every reference to
+CH-9 below is left as the original evidence record (per this project's
+documentation policy — historical findings are not rewritten); read them
+together with this update, not as the current state. See
+`docs/tasks/0034d-release-artifact-versioning-image-provenance.md` for
+the full contract, evidence, and remaining debt (cross-host build
+reproducibility, base-image digest pinning, registry — none of which
+block this pilot).
+
+CH-9 moves from **PILOT_CONSTRAINT** to **CLOSED**. The overall release
+decision below (`PILOT_GO_WITH_CONSTRAINTS`) stands, now with two fewer
+open constraints than TASK-0034 originally found (CH-3 and CH-9 both
+closed, by TASK-0034C and TASK-0034D respectively) — CH-2 (WSS fixture
+certificate) and CH-6 (flat AMI ACL) are the only ones remaining.
+
 ## LEAD
 
 senma-workflow-orchestrator
