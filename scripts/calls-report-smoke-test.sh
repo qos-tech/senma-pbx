@@ -136,7 +136,7 @@ harness_require_env DB_USER DB_PASSWORD DB_NAME
 
 ASTERISK_CID="$($COMPOSE ps -q asterisk)"
 ASTERISK_NAME="$(docker inspect "$ASTERISK_CID" --format '{{.Name}}' | sed 's#^/##')"
-NETWORK_NAME="$(docker inspect "$ASTERISK_CID" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')"
+NETWORK_NAME="$(harness_asterisk_test_network "$ASTERISK_CID")"
 if [ -z "$ASTERISK_NAME" ] || [ -z "$NETWORK_NAME" ]; then
     harness_blocked "could not resolve the asterisk container's name/network via docker inspect"
 fi

@@ -160,7 +160,7 @@ pjsip_modules_running() {
 harness_retry 5 2 -- pjsip_modules_running || harness_blocked "PJSIP modules not Running -- cannot provision fixtures"
 
 ASTERISK_CID="$($COMPOSE ps -q asterisk)"
-NETWORK_NAME="$(docker inspect "$ASTERISK_CID" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')"
+NETWORK_NAME="$(harness_asterisk_test_network "$ASTERISK_CID")"
 ASTERISK_NAME="$(docker inspect "$ASTERISK_CID" --format '{{.Name}}' | sed 's#^/##')"
 [ -n "$NETWORK_NAME" ] && [ -n "$ASTERISK_NAME" ] || harness_blocked "could not resolve the asterisk container's name/network"
 

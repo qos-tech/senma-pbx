@@ -277,7 +277,7 @@ harness_require_containers app asterisk db provider
 harness_require_env DB_USER DB_PASSWORD DB_NAME TRUNK_TEST_USERNAME TRUNK_TEST_SECRET
 
 ASTERISK_CID="$($COMPOSE ps -q asterisk)"
-NETWORK_NAME="$(docker inspect "$ASTERISK_CID" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')"
+NETWORK_NAME="$(harness_asterisk_test_network "$ASTERISK_CID")"
 if [ -z "$NETWORK_NAME" ]; then
     harness_blocked "could not resolve the asterisk container's compose network"
 fi

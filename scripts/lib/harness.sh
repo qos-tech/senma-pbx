@@ -378,6 +378,38 @@ harness_require_containers() {
     fi
 }
 
+# harness_asterisk_test_network <container_id> -- prints the ONE Docker
+# network name a test-client helper container (a `docker run` SIP/RTP/
+# WSS client, an isolated verification container, etc.) should join to
+# reach the named asterisk container's telephony-facing address
+# (TASK-0034F). Asterisk is on TWO networks as of TASK-0034F: the
+# original shared `mag` network, and a new dedicated, `internal: true`,
+# AMI-only `senma-control` network (no external/gateway routing --
+# unusable for a test client regardless, and not what any existing
+# caller of this helper's predecessor pattern
+# (`{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}`) ever
+# wanted; that pattern silently assumed exactly one network and
+# produces a corrupt concatenated name like
+# "mag-pbx_magmag-pbx_senma-control" now that there are two --
+# confirmed live during TASK-0034F's own regression validation, the
+# reason this helper exists). Excludes `senma-control` by its own
+# `senma-ami` alias (the same identification technique
+# scripts/doctor.sh's own check_ami_network_acl uses), not by network
+# name/project-prefix, which is not guaranteed stable. On a topology
+# with only one network (a future revert, or any other single-network
+# setup), returns that one network unchanged.
+harness_asterisk_test_network() {
+    local cid="$1" line net aliases
+    docker inspect "$cid" --format '{{range $net,$cfg := .NetworkSettings.Networks}}{{$net}}:{{range $cfg.Aliases}}{{.}},{{end}}
+{{end}}' 2>/dev/null | while IFS=: read -r net aliases; do
+        [ -z "$net" ] && continue
+        case ",$aliases" in
+            *,senma-ami,*) continue ;;
+        esac
+        printf '%s\n' "$net"
+    done | head -1
+}
+
 # --- Asterisk restart post-recovery contract (TASK-0033E1) ------------------
 #
 # TASK-0033E discovered (docs/tasks/0033e-readiness-contract-hardening.md,

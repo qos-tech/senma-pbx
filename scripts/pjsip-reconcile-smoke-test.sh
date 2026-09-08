@@ -464,7 +464,7 @@ harness_timeout 180 docker build -q -t "$BARESIP_IMAGE" -f "$BARESIP_DOCKERFILE"
     || harness_blocked "failed to build $BARESIP_IMAGE"
 
 ASTERISK_CID="$($COMPOSE ps -q asterisk)"
-NETWORK_NAME="$(docker inspect "$ASTERISK_CID" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')"
+NETWORK_NAME="$(harness_asterisk_test_network "$ASTERISK_CID")"
 ASTERISK_NAME="$(docker inspect "$ASTERISK_CID" --format '{{.Name}}' | sed 's#^/##')"
 
 CONF_DIR="$(mktemp -d)"

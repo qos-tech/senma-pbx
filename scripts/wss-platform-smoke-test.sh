@@ -158,7 +158,7 @@ if [ -z "$ASTERISK_CID" ]; then
     harness_blocked "could not resolve the asterisk container id"
 fi
 ASTERISK_SVC_NAME="$(docker inspect "$ASTERISK_CID" --format '{{index .Config.Labels "com.docker.compose.service"}}')"
-NETWORK_NAME="$(docker inspect "$ASTERISK_CID" --format '{{range $k,$v := .NetworkSettings.Networks}}{{$k}}{{end}}')"
+NETWORK_NAME="$(harness_asterisk_test_network "$ASTERISK_CID")"
 if [ -z "$NETWORK_NAME" ] || [ "$ASTERISK_SVC_NAME" != "asterisk" ]; then
     harness_blocked "could not resolve the asterisk container's compose network/service name"
 fi
