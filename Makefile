@@ -1,4 +1,4 @@
-.PHONY: dev dev-up up pilot-config pilot-up down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke
+.PHONY: dev dev-up up pilot-config pilot-up release-build release-info release-artifact-smoke down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke
 
 COMPOSE ?= docker compose
 
@@ -44,6 +44,28 @@ SERVICES ?=
 # set it). See docs/tasks/0034c-production-fixture-compose-profile-isolation.md.
 FIXTURE_PROFILE ?=
 
+# TASK-0034D: release identity (TASK-0034 CH-9). RELEASE_VERSION defaults
+# to the literal "dev" tag -- explicitly DEVELOPMENT_ONLY/mutable (see
+# docs/tasks/0034d-release-artifact-versioning-image-provenance.md Phase
+# 7) -- for every ordinary `make up`/`make dev`/`make pilot-config`
+# build. GIT_COMMIT/BUILD_TIMESTAMP are always computed automatically, no
+# operator export required, so even a "dev" image still carries real
+# source provenance. `make release-build VERSION=vX.Y.Z` (scripts/
+# release-build.sh) is the one supported way to override RELEASE_VERSION
+# for a real release; `pilot-up` below then refuses to run unless the
+# calling shell has since exported that same RELEASE_VERSION. `export`
+# (not a recipe-local prefix, unlike COMPOSE_PROFILES above) is
+# deliberate: compose.yaml's own `${RELEASE_VERSION:-dev}`/
+# `${GIT_COMMIT:-unknown}`/`${BUILD_TIMESTAMP:-unknown}` substitutions
+# read these from the process environment `docker compose` runs in, on
+# every target below, with no per-recipe wiring needed.
+RELEASE_VERSION ?= dev
+GIT_COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo unknown)
+BUILD_TIMESTAMP := $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
+export RELEASE_VERSION
+export GIT_COMMIT
+export BUILD_TIMESTAMP
+
 dev: doctor up
 
 # TASK-0034C: developer opt-in for the `provider` fixture -- the one
@@ -80,8 +102,58 @@ up:
 pilot-config:
 	COMPOSE_PROFILES= $(COMPOSE) -f compose.yaml -f compose.pilot.yaml config
 
+# TASK-0034D: no `--build` (unlike `up`/`dev-up` above) -- pilot/
+# production must consume the exact image `make release-build` already
+# produced and recorded (Phase 9's preferred model: "build occurs in the
+# release process -> immutable tagged image exists -> pilot/production
+# Compose consumes it", not "rebuild source opportunistically on the
+# production host"), never a second, independently-timestamped rebuild
+# of the same commit (live-confirmed: two separate `docker compose
+# build` invocations of the identical commit/version still produce
+# DIFFERENT image ids, because org.opencontainers.image.created legally
+# differs between them -- see docs/tasks/
+# 0034d-release-artifact-versioning-image-provenance.md "BUILD
+# REPRODUCIBILITY BOUNDARY"). Compose only auto-builds a service that
+# has BOTH `image:` and `build:` when the named image does not already
+# exist locally -- the two guards below close that gap explicitly,
+# rather than silently allowing an unvetted just-in-time build here that
+# never went through release-build.sh's dirty-tree/tag-match checks.
 pilot-up:
-	COMPOSE_PROFILES= $(COMPOSE) -f compose.yaml -f compose.pilot.yaml up -d --build app asterisk db
+	@if [ "$(RELEASE_VERSION)" = "dev" ] || [ -z "$(RELEASE_VERSION)" ]; then \
+		echo "ERROR: pilot-up refuses to deploy the mutable 'dev' tag (TASK-0034 CH-9 -- no mutable-only release)." >&2; \
+		echo "Run 'make release-build VERSION=vX.Y.Z' first (from the exact commit tagged vX.Y.Z), then" >&2; \
+		echo "'export RELEASE_VERSION=vX.Y.Z' in this shell and retry 'make pilot-up'." >&2; \
+		exit 1; \
+	fi
+	@if ! docker image inspect "senma-app:$(RELEASE_VERSION)" >/dev/null 2>&1 || ! docker image inspect "senma-asterisk:$(RELEASE_VERSION)" >/dev/null 2>&1; then \
+		echo "ERROR: senma-app:$(RELEASE_VERSION) / senma-asterisk:$(RELEASE_VERSION) not found locally." >&2; \
+		echo "Run 'make release-build VERSION=$(RELEASE_VERSION)' first -- pilot-up never builds an image of its own." >&2; \
+		exit 1; \
+	fi
+	COMPOSE_PROFILES= $(COMPOSE) -f compose.yaml -f compose.pilot.yaml up -d app asterisk db
+
+# TASK-0034D: builds the SENMA-owned production images (app, asterisk --
+# never provider, TASK-0034 CH-3) with an explicit release version,
+# refuses a dirty/untracked working tree (ALLOW_DIRTY=1 is an explicit
+# development override, never for a real release), and validates that
+# HEAD is tagged VERSION unless RC=1 (release-candidate mode: explicit
+# version + commit, no tag required). Writes release-manifest.json (a
+# generated, gitignored build receipt -- not a second source of truth,
+# see docs/tasks/0034d-release-artifact-versioning-image-provenance.md
+# Phase 11). Never pushes anywhere (no registry is configured -- Phase
+# 34/35 of the same doc).
+release-build:
+	@test -n "$(VERSION)" || (echo "Usage: make release-build VERSION=vX.Y.Z [RC=1] [ALLOW_DIRTY=1]" >&2 && exit 1)
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; \
+	  VERSION="$(VERSION)" RC="$(RC)" ALLOW_DIRTY="$(ALLOW_DIRTY)" bash scripts/release-build.sh
+
+# TASK-0034D: read-only. Compares the currently running app/asterisk
+# containers' OCI image labels against release-manifest.json (if one
+# exists) and prints MATCH/DRIFT/UNKNOWN per service, plus the
+# third-party db image for inventory only (never SENMA-versioned). See
+# scripts/release-info.sh's own header.
+release-info:
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; bash scripts/release-info.sh
 
 down:
 	$(COMPOSE) down
@@ -547,6 +619,17 @@ doctor-smoke: up
 # See scripts/compose-profile-isolation-smoke-test.sh's own header.
 compose-profile-isolation-smoke:
 	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; bash scripts/compose-profile-isolation-smoke-test.sh
+
+# TASK-0034D: focused regression coverage for release-identity (TASK-0034
+# CH-9) -- version/revision label metadata present and in agreement
+# between the app/asterisk images `up` just built, dirty-tree rejection,
+# MATCH/DRIFT/UNKNOWN classification (including a real UNKNOWN case: the
+# third-party `db` image, which carries no SENMA OCI labels at all).
+# Depends on `up` (needs real just-built labels to inspect) but never
+# rebuilds, restarts, or mutates anything itself. See scripts/
+# release-artifact-smoke-test.sh's own header.
+release-artifact-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/release-artifact-smoke-test.sh
 
 # TASK-0033D: the real, destructive doctor-detection proof -- stops
 # asterisk/db/app one at a time (restoring each before moving to the

@@ -5,3 +5,9 @@ node_modules
 tmp
 log
 *.log
+# TASK-0034D: build-context isolation (TASK-0034 CH-9, Phase 21). Neither
+# Dockerfile COPYs the repo root wholesale (each COPYs specific docker/*
+# files only), so nothing here could previously reach an image layer --
+# this narrows what the Docker daemon even receives as build context.
+backups
+release-manifest.json
