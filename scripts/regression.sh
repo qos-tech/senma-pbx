@@ -61,6 +61,11 @@ run_suite "lint"                   "lint.sh"
 # self-contained check, no Docker dependency -- placed right after
 # lint for the same reason.
 run_suite "harness-lib-selftest"   "harness-lib-selftest.sh"
+# TASK-0034C: pure `docker compose ... config` inspection, no container-
+# state dependency at all -- placed here, right after the two other
+# Docker-independent checks, for the fastest possible fail if the
+# Compose profile isolation this task added ever regresses.
+run_suite "compose-profile-isolation-smoke" "compose-profile-isolation-smoke-test.sh"
 run_suite "preauth-security"       "preauth-security-smoke-test.sh"
 # TASK-0026C: placed right after preauth-security and before
 # authorization -- both are pre-/independent-of-authorization SQL-
