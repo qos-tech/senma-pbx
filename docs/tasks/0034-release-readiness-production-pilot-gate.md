@@ -1,5 +1,49 @@
 # TASK-0034 — Release Readiness & Production Pilot Gate
 
+## UPDATE (TASK-0034E)
+
+**Finding CH-2 (WSS fixture certificate; `doctor`'s cert check validated
+the wrong file) is CLOSED.** TASK-0034E establishes and proves a real
+production WSS certificate trust contract: `scripts/lib/wss-cert-lib.sh`
++ `scripts/wss-cert-check.sh` (`make cert-check` / `make wss-cert-check`)
+read whichever certificate the live `wss`/`ws` transport is *actually*
+configured to use straight from the database (never a hardcoded fixture
+path), classify it against an explicit trust-state vocabulary (`TRUSTED`,
+`SELF_SIGNED`, `HOSTNAME_MISMATCH`, `EXPIRED`, `NOT_YET_VALID`, `MISSING`,
+`UNREADABLE`, `PAIR_MISMATCH`, `RUNTIME_MISMATCH`, `RUNTIME_UNREACHABLE`,
+`UNKNOWN`), and — the mandatory, previously-missing proof — connect to
+the actual live WSS listener and confirm the fingerprint it presents
+matches what is configured, never inferring trust from a file path alone.
+A new `WSS_PUBLIC_HOSTNAME` `.env` setting (TASK-0034E's own smallest
+appropriate addition — no other hostname setting for this purpose existed)
+is the SAN/hostname source of truth. `--pilot` (`make cert-check
+PILOT=1`) additionally evaluates pilot acceptance and exits nonzero for
+anything not `PILOT_ACCEPTABLE` — a fixture/self-signed certificate,
+including the shipped dev default, is explicitly `NOT_ACCEPTABLE_FOR_PILOT`
+even though the WSS protocol itself works, closing exactly the gap this
+finding's own text named ("nothing will warn you if this step is
+skipped"). `make doctor`'s "TLS/WSS certificate" line now reuses this
+same check (no second parser) and reports `WARN`/`FAIL` for the real
+configured certificate instead of silently passing regardless of it.
+Proven live end to end: a real ephemeral test CA issues a certificate for
+a real pilot-style hostname; the live `wss` transport is rotated to it
+through SENMA's own real HTTP edit-form flow; `make cert-check --pilot`
+classifies it `TRUSTED`/`PILOT_ACCEPTABLE`; a real SIP-over-WSS REGISTER
+succeeds over a TLS connection with certificate verification **actually
+enabled** (never `CERT_NONE`, never `-k`/`--insecure`) — see
+`docs/tasks/0034e-production-wss-certificate-trust-runtime-verification.md`
+for the full contract, evidence, and remaining debt (native `tls`
+transport certificate lifecycle is explicitly out of this task's scope —
+unchanged from TASK-0029A). Every reference to CH-2 below is left as the
+original evidence record (per this project's documentation policy —
+historical findings are not rewritten); read them together with this
+update, not as the current state.
+
+CH-2 moves from **PILOT_CONSTRAINT** to **CLOSED**. The overall release
+decision below (`PILOT_GO_WITH_CONSTRAINTS`) stands, now with one fewer
+open constraint than TASK-0034D left — **CH-6 (flat AMI ACL) is the only
+remaining constraint.**
+
 ## UPDATE (TASK-0034A)
 
 **Finding CH-1 (Calls Report non-functional) is CLOSED.** TASK-0034A

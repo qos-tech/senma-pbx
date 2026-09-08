@@ -188,6 +188,12 @@ run_suite "wss-platform-smoke"     "wss-platform-smoke-test.sh"
 # wss-platform-smoke (the closest-related existing suite: both restart
 # the asterisk container) and before transport-smoke.
 run_suite "tls-cert-management-smoke" "tls-cert-management-smoke-test.sh"
+# TASK-0034E (closing TASK-0034 CH-2): production WSS certificate trust/
+# runtime verification -- placed right after tls-cert-management-smoke
+# (the closest-related existing suite: both rotate the live `wss`
+# transport's certificate through the real edit form) and before
+# pjsip-runtime-status-smoke.
+run_suite "wss-certificate-runtime-smoke" "wss-certificate-runtime-smoke-test.sh"
 # TASK-0029B: PJSIP runtime status visibility -- placed right after
 # tls-cert-management-smoke (the closest-related existing suite) and
 # before transport-smoke.

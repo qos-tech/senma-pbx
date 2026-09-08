@@ -59,6 +59,8 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/secrets-lib.sh
 source "$SCRIPT_DIR/lib/secrets-lib.sh"
+# shellcheck source=lib/wss-cert-lib.sh
+source "$SCRIPT_DIR/lib/wss-cert-lib.sh"
 
 COMPOSE="${SMOKE_COMPOSE:-docker compose}"
 # `VERBOSE=1 scripts/doctor.sh` and `scripts/doctor.sh --verbose` both
@@ -552,7 +554,18 @@ check_backup_destination() {
 }
 
 # =============================================================================
-# Certificate diagnostics (TASK-0029A's WSS cert, existence/parse only)
+# Certificate diagnostics (TASK-0034E, closing TASK-0034's Finding CH-2)
+#
+# Reuses scripts/wss-cert-check.sh (itself built on scripts/lib/
+# wss-cert-lib.sh) rather than re-implementing certificate parsing here
+# -- this is the SAME trust-state vocabulary and the SAME live-runtime
+# verification `make cert-check` exposes to an operator directly. Prior
+# to TASK-0034E this check was hardcoded to the dev-fixture path
+# (/etc/asterisk/keys/wss-test-cert.pem) and could never detect "pilot
+# went live still pointed at the fixture cert" -- it now reads whichever
+# certificate the live `wss`/`ws` transport is ACTUALLY configured to
+# use, straight from the database, and confirms what the live listener
+# actually presents.
 # =============================================================================
 
 check_certificate() {
@@ -560,32 +573,59 @@ check_certificate() {
         record "TLS/WSS certificate" "SKIP" "asterisk container is not running"
         return
     fi
-    local cert=/etc/asterisk/keys/wss-test-cert.pem key=/etc/asterisk/keys/wss-test-key.pem
-    local cert_exists key_exists key_mode
-    cert_exists="$($COMPOSE exec -T asterisk sh -c "[ -f '$cert' ] && echo yes || echo no" 2>/dev/null | tr -d '\r\n')"
-    key_exists="$($COMPOSE exec -T asterisk sh -c "[ -f '$key' ] && echo yes || echo no" 2>/dev/null | tr -d '\r\n')"
-    if [ "$cert_exists" != "yes" ] || [ "$key_exists" != "yes" ]; then
-        record "TLS/WSS certificate" "WARN" "cert or key file missing at $cert / $key"
+    if [ "$(container_state db)" != "running" ]; then
+        record "TLS/WSS certificate" "SKIP" "db container is not running (needed to read the configured wss transport)"
         return
     fi
-    key_mode="$($COMPOSE exec -T asterisk sh -c "stat -c %a '$key'" 2>/dev/null | tr -d '\r\n')"
-    if [ "$key_mode" != "600" ] && [ "$key_mode" != "400" ]; then
-        record "TLS/WSS certificate" "WARN" "private key mode is $key_mode (expected 600/400) -- never prints key material"
+    if [ -z "${DB_USER:-}" ] || [ -z "${DB_PASSWORD:-}" ]; then
+        record "TLS/WSS certificate" "UNKNOWN" "DB_USER/DB_PASSWORD not set (source .env first)"
         return
     fi
-    if ! $COMPOSE exec -T asterisk sh -c "openssl x509 -in '$cert' -noout" >/dev/null 2>&1; then
-        record "TLS/WSS certificate" "FAIL" "certificate does not parse as valid X.509"
+
+    local out trust fixture
+    out="$(SMOKE_COMPOSE="$COMPOSE" bash "$SCRIPT_DIR/wss-cert-check.sh" 2>/dev/null)"
+    if [ -z "$out" ]; then
+        record "TLS/WSS certificate" "UNKNOWN" "scripts/wss-cert-check.sh produced no output"
         return
     fi
-    # REQUIRED_NOW per docs/tasks/0033d-...: a single -checkend call, no
-    # added complexity over the existence/parse checks above.
-    if $COMPOSE exec -T asterisk sh -c "openssl x509 -in '$cert' -noout -checkend $((30 * 86400))" >/dev/null 2>&1; then
-        record "TLS/WSS certificate" "PASS" "exists, key permissions OK, parses, not expiring within 30 days"
-    else
-        local enddate
-        enddate="$($COMPOSE exec -T asterisk sh -c "openssl x509 -in '$cert' -noout -enddate" 2>/dev/null | cut -d= -f2)"
-        record "TLS/WSS certificate" "WARN" "expires within 30 days (notAfter: ${enddate:-unknown})"
-    fi
+    trust="$(printf '%s\n' "$out" | sed -n 's/^TRUST_STATE: //p')"
+    fixture="$(printf '%s\n' "$out" | sed -n 's/^FIXTURE: //p')"
+
+    case "$trust" in
+        "")
+            record "TLS/WSS certificate" "UNKNOWN" "no enabled ws/wss transport, or check could not run -- see 'make cert-check'"
+            ;;
+        MISSING)
+            record "TLS/WSS certificate" "WARN" "certificate or key file missing -- see 'make cert-check'"
+            ;;
+        UNREADABLE|PAIR_MISMATCH|EXPIRED|NOT_YET_VALID)
+            record "TLS/WSS certificate" "FAIL" "$trust -- see 'make cert-check' for detail (never prints key material)"
+            ;;
+        HOSTNAME_MISMATCH)
+            record "TLS/WSS certificate" "WARN" "certificate does not cover the configured WSS_PUBLIC_HOSTNAME -- see 'make cert-check'"
+            ;;
+        RUNTIME_MISMATCH)
+            record "TLS/WSS certificate" "WARN" "the configured certificate file changed but the live listener has not picked it up yet -- re-apply the HTTP/TLS config (see docs/tasks/0029a-tls-transport-certificate-management.md), then re-check"
+            ;;
+        RUNTIME_UNREACHABLE)
+            record "TLS/WSS certificate" "WARN" "could not confirm the live WSS listener's certificate (connection failed) -- see 'make cert-check'"
+            ;;
+        SELF_SIGNED*)
+            case "$fixture" in
+                yes*) record "TLS/WSS certificate" "WARN" "dev-fixture certificate in use -- must be replaced before pilot go-live (docs/operations/production-release-runbook.md step 4)" ;;
+                *) record "TLS/WSS certificate" "WARN" "self-signed certificate -- confirm this is intentional (private CA deployments should set ca_list_file)" ;;
+            esac
+            ;;
+        TRUSTED*)
+            case "$trust" in
+                *EXPIRING_SOON*) record "TLS/WSS certificate" "WARN" "trusted certificate is expiring soon -- see 'make cert-check' for the exact date" ;;
+                *) record "TLS/WSS certificate" "PASS" "trusted certificate, live runtime confirmed" ;;
+            esac
+            ;;
+        *)
+            record "TLS/WSS certificate" "UNKNOWN" "unrecognized trust state '$trust' -- see 'make cert-check'"
+            ;;
+    esac
 }
 
 # =============================================================================

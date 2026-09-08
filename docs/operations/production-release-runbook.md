@@ -120,30 +120,48 @@ self-signed certificate the Asterisk container generates at first boot
 (`/etc/asterisk/keys/wss-test-cert.pem`). This keeps `make dev` working
 with zero admin action, but it is not a production certificate.
 
-Before accepting real WSS traffic:
+**TASK-0034E (closing TASK-0034 CH-2)** replaced the old "doctor
+validates the wrong file" gap with a real, runtime-aware certificate
+trust gate. Before accepting real WSS traffic:
 
-1. Obtain a real certificate/key pair for the pilot's public hostname.
-2. In the admin UI, edit the `wss` PJSIP transport and point
-   `cert_file`/`priv_key_file` at the new files (same mechanism a
-   development install uses — see `docs/tasks/0029a-tls-transport-certificate-management.md`).
-3. Confirm via `make doctor`'s certificate check — but note (Phase 18/34
-   finding) that check currently only validates whatever file sits at the
-   dev-fixture path, not whichever file the `wss` transport is actually
-   configured to use. Manually confirm the transport's configured path
-   points at the real certificate until a dedicated follow-up closes that
-   gap.
-4. If WSS is not part of this pilot's scope, disable the `wss` transport
+1. Set `WSS_PUBLIC_HOSTNAME` in `.env` to the pilot's real public WSS
+   hostname (the exact name clients will connect to and the certificate's
+   SAN must cover). This is the one authoritative hostname setting for
+   this purpose — do not invent another.
+2. Obtain a real certificate/key pair for that hostname — a public CA, or
+   a private/enterprise CA the pilot has decided to trust (set
+   `ca_list_file` on the transport to that CA's bundle; `make cert-check`
+   honors it as the trust anchor). If the certificate has an intermediate
+   chain, use the fullchain (leaf + intermediates) as `cert_file` —
+   Asterisk serves exactly the file it is pointed at, verbatim.
+3. In the admin UI, edit the `wss` PJSIP transport and point
+   `cert_file`/`priv_key_file`/`ca_list_file` at the new files (same
+   mechanism a development install uses — see
+   `docs/tasks/0029a-tls-transport-certificate-management.md`).
+4. Run the mandatory release gate:
+   ```bash
+   make cert-check PILOT=1
+   ```
+   Expect `PILOT_ACCEPTANCE: PILOT_ACCEPTABLE`. Any other result
+   (`NOT_ACCEPTABLE_FOR_PILOT`, with the specific reason(s) printed) is a
+   **STOP** — do not proceed to step 5 until it passes. This connects to
+   the actual live WSS listener and confirms the certificate it presents
+   matches what is configured — a certificate path saved in the database
+   is not, by itself, proof of anything (see
+   `docs/tasks/0034e-production-wss-certificate-trust-runtime-verification.md`).
+   `make doctor`'s own "TLS/WSS certificate" line reuses this same check
+   and will show `WARN`/`FAIL` for the same underlying reasons.
+5. If WSS is not part of this pilot's scope, disable the `wss` transport
    explicitly rather than leaving the fixture certificate live.
 
-**Do this before step 5.** `make pilot-up` (TASK-0034B) publishes port
-8089 to the host, making the `wss` transport actually reachable from
+**Do this before step 5 (below).** `make pilot-up` (TASK-0034B) publishes
+port 8089 to the host, making the `wss` transport actually reachable from
 outside the Docker network for the first time — if the fixture
 certificate hasn't been replaced by then, it is genuinely
 internet-reachable on a known, non-secret private key, not merely a
-theoretical risk. The gap in step 3 above (`doctor` cannot verify which
-certificate is actually configured) means nothing will warn you if this
-step is skipped — treat it as a hard prerequisite of step 5, not an
-optional hardening pass.
+theoretical risk. `make cert-check PILOT=1` (step 4 above) is what now
+catches this automatically — treat a clean pass as a hard prerequisite of
+the next step, not an optional hardening pass.
 
 ## 5. Build the release artifact
 
@@ -313,7 +331,8 @@ make doctor
 make secrets-check
 make migrate-check
 make reconcile-check
-make release-info   # TASK-0034D -- confirm MATCH before proceeding; DRIFT is a stop
+make release-info      # TASK-0034D -- confirm MATCH before proceeding; DRIFT is a stop
+make cert-check PILOT=1 # TASK-0034E -- if WSS is in pilot scope; confirm PILOT_ACCEPTABLE, NOT_ACCEPTABLE_FOR_PILOT is a stop
 ```
 
 ---
