@@ -246,20 +246,29 @@ slib_db_root_auth_check() {
 slib_ami_auth_check() {
     local container="$1" user="$2" secret="$3" out status
     # shellcheck disable=SC2016
-    # Connects to the container's OWN service-network address, not
-    # 127.0.0.1/loopback: manager.conf's ACL (docker/asterisk-config/
-    # manager.conf) permits only the pinned `mag` subnet
-    # (172.28.0.0/16) and denies everything else, including loopback --
-    # confirmed live during this task's own validation (a
-    # correct-credential login over 127.0.0.1 was rejected with
+    # Connects to the container's OWN address on the dedicated
+    # `senma-control` network (TASK-0034F, closing TASK-0034 CH-6), not
+    # 127.0.0.1/loopback and not a plain "$(hostname)" lookup: this
+    # container is on two networks (`mag` and `senma-control`), and
+    # `getent hosts "$(hostname)"` would return an ambiguous mix of
+    # addresses across both -- manager.conf's ACL now permits only
+    # `senma-control`'s own pinned subnet (172.29.0.0/24 by default) and
+    # denies everything else, including loopback and the `mag`-network
+    # address -- confirmed live (a correct-credential login over
+    # 127.0.0.1, or over the `mag`-network address, is rejected with
     # "Authentication failed" purely on ACL grounds, not the secret).
-    # `getent hosts "$(hostname)"` resolves this container's own
-    # Compose-assigned address on that network without hardcoding it.
+    # `$ASTERISK_HOST` names the `senma-ami` alias that exists on
+    # `senma-control` alone (same alias the app container's own AMI
+    # client, and manager.conf's own ACL, are both scoped to) --
+    # inherited automatically from this container's own environment
+    # (env_file: .env on the asterisk service), so `docker compose exec`
+    # sees it with no extra plumbing.
     local remote_script='
 trap "" PIPE
 read -r AMI_USER
 read -r AMI_SECRET
-SELF_IP="$(getent hosts "$(hostname)" | awk "{print \$1}" | head -1)"
+[ -n "${ASTERISK_HOST:-}" ] || { echo "AMI_CONNECT_ERROR"; exit 2; }
+SELF_IP="$(getent hosts "$ASTERISK_HOST" | awk "{print \$1}" | head -1)"
 [ -n "$SELF_IP" ] || { echo "AMI_CONNECT_ERROR"; exit 2; }
 exec 3<>/dev/tcp/"$SELF_IP"/5038 || { echo "AMI_CONNECT_ERROR"; exit 2; }
 IFS= read -r -t 5 banner <&3 || { echo "AMI_CONNECT_ERROR"; exit 2; }

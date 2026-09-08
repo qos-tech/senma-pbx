@@ -191,6 +191,26 @@ if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
     : "${AMI_PASSWORD:?AMI_PASSWORD must be set}"
     : "${ASTERISK_AMI_ACL_SUBNET:?ASTERISK_AMI_ACL_SUBNET must be set}"
 
+    # TASK-0034F (Phase 29): fail fast, clearly, on an unsafe or
+    # malformed AMI ACL rather than let a typo/misconfiguration silently
+    # widen (or simply break) manager.conf's own trust boundary. Plain
+    # regex, not a full IPv4-semantics validator (no octet-range check)
+    # -- deliberately narrow scope: this exists to catch "not a CIDR at
+    # all" and the one specific unsafe value below, not to be a general
+    # network-config linter.
+    case "$ASTERISK_AMI_ACL_SUBNET" in
+        [0-9]*.[0-9]*.[0-9]*.[0-9]*/[0-9]*) : ;;
+        *)
+            echo "[asterisk-entrypoint] FATAL: ASTERISK_AMI_ACL_SUBNET='${ASTERISK_AMI_ACL_SUBNET}' is not a valid IPv4 CIDR (expected e.g. 172.29.0.0/24)" >&2
+            exit 1
+            ;;
+    esac
+    if [ "$ASTERISK_AMI_ACL_SUBNET" = "0.0.0.0/0" ] && [ "${AMI_ACL_ALLOW_UNSAFE_SUBNET:-0}" != "1" ]; then
+        echo "[asterisk-entrypoint] FATAL: ASTERISK_AMI_ACL_SUBNET=0.0.0.0/0 would permit AMI from any address -- never a safe pilot/production default." >&2
+        echo "[asterisk-entrypoint] Set the real dedicated-network subnet instead (see .env.example). Set AMI_ACL_ALLOW_UNSAFE_SUBNET=1 only for a deliberate, isolated development experiment -- never on a pilot/production host." >&2
+        exit 1
+    fi
+
     sed -i \
         -e "s|__AMI_USER__|${AMI_USER}|g" \
         -e "s|__AMI_PASSWORD__|${AMI_PASSWORD}|g" \

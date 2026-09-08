@@ -106,6 +106,12 @@ services:
       start_period: 15s
     networks:
       - mag
+      # TASK-0034F (closing TASK-0034 CH-6): `app` also joins the
+      # dedicated `senma-control` network -- see that network's own
+      # definition below for the full rationale. `app` needs no alias
+      # here (nothing resolves TO app over this network; it is only ever
+      # the client, reaching OUT to asterisk's `senma-ami` alias).
+      - senma-control
     restart: unless-stopped
     logging: *senma-default-logging
 
@@ -184,8 +190,33 @@ services:
       # deserves faster operator-visible detection, not more tolerance).
       retries: 6
       start_period: 15s
+    # TASK-0034F (closing TASK-0034 CH-6): map form (not the plain "-
+    # mag" list form the other services still use) is required here
+    # because `senma-control` carries a per-network alias -- Compose
+    # does not allow mixing list and map entries under one `networks:`
+    # key.
     networks:
-      - mag
+      mag: {}
+      # `senma-control` is a dedicated, `internal: true` (no external
+      # routing) Docker network shared ONLY by `app` and `asterisk` --
+      # see its own definition below. `manager.conf`'s AMI ACL
+      # (docker/asterisk-config/manager.conf,
+      # `permit=__AMI_ACL_SUBNET__`) is scoped to THIS network's own
+      # pinned subnet, not `mag`'s -- `db` and `provider` remain on
+      # `mag` only, so their addresses fall outside the permitted range
+      # and cannot authenticate to AMI even though they can still
+      # complete a plain TCP connection to `asterisk`'s `mag`-facing
+      # address (manager.conf's own `bindaddr = 0.0.0.0` binds every
+      # interface -- see PHASE 12/BIND-ADDRESS SCOPE in docs/tasks/
+      # 0034f-production-ami-acl-scoping.md for why this remains correct
+      # when combined with the narrowed ACL and no host publication).
+      # The explicit `senma-ami` alias (not the bare `asterisk` service
+      # name, which remains valid but ambiguous once this container is
+      # on two networks) is what `ASTERISK_HOST` now points at -- see
+      # .env.example.
+      senma-control:
+        aliases:
+          - senma-ami
     restart: unless-stopped
     logging: *senma-default-logging
 
@@ -303,14 +334,37 @@ services:
 networks:
   mag:
     # TASK-0005: pinned explicitly (rather than left to Docker's
-    # auto-allocated pool) so Asterisk's manager.conf AMI ACL has a
-    # stable, verified target. An unpinned network on this host was
-    # observed to come up as 172.18.0.0/16, not Docker's default-bridge
-    # 172.17.0.0/16 the legacy manager.conf assumed -- confirming that
-    # value would have been wrong to reuse here.
+    # auto-allocated pool) for a stable, verified target -- an unpinned
+    # network on this host was observed to come up as 172.18.0.0/16, not
+    # Docker's default-bridge 172.17.0.0/16 the legacy manager.conf
+    # assumed, confirming that value would have been wrong to reuse
+    # here. Shared by every service (app/asterisk/db/provider) for
+    # general connectivity -- HTTP publishing, DB access, ODBC,
+    # trunk-simulator SIP. TASK-0034F: no longer the AMI ACL's own
+    # target (see `senma-control` below) -- this network remains
+    # deliberately BROAD, matching what it is actually used for.
     ipam:
       config:
         - subnet: 172.28.0.0/16
+
+  # TASK-0034F (closing TASK-0034 CH-6): dedicated control-plane network
+  # for the app<->asterisk AMI relationship only -- see docs/tasks/
+  # 0034f-production-ami-acl-scoping.md for the full rationale (why
+  # narrowing manager.conf's `permit=` CIDR alone cannot work: every
+  # container on one shared bridge network draws from the SAME subnet,
+  # so a narrower CIDR would either still cover everyone or exclude
+  # legitimate callers unpredictably depending on Docker's own ephemeral
+  # IP assignment -- neither is acceptable, and hardcoding a specific
+  # ephemeral container IP is explicitly the kind of brittle config this
+  # task's own instructions rule out). `internal: true` additionally
+  # denies this network any external/gateway routing -- it exists
+  # exclusively to carry app<->asterisk AMI traffic, so it never needs
+  # one. Distinct, non-overlapping subnet from `mag` (172.28.0.0/16).
+  senma-control:
+    internal: true
+    ipam:
+      config:
+        - subnet: 172.29.0.0/24
 
 volumes:
   mag-db:

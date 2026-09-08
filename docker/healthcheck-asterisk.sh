@@ -78,9 +78,21 @@ fi
 
 : "${AMI_USER:?AMI_USER must be set}"
 : "${AMI_PASSWORD:?AMI_PASSWORD must be set}"
-SELF_IP="$(getent hosts "$(hostname)" 2>/dev/null | awk '{print $1}' | head -1)"
+: "${ASTERISK_HOST:?ASTERISK_HOST must be set}"
+# TASK-0034F: resolve via ASTERISK_HOST (the `senma-ami` alias on the
+# dedicated `senma-control` network -- see compose.yaml/.env.example),
+# not "$(hostname)". This container is now on two networks (`mag` and
+# `senma-control`); `getent hosts "$(hostname)"` would return an
+# ambiguous mix of addresses across both, and connecting via the wrong
+# one produces a source address the narrowed AMI ACL correctly rejects
+# -- ASTERISK_HOST names the one specific, single-network alias every
+# other authorized AMI caller in this codebase now also uses (the app
+# container's own AMI client, scripts/lib/secrets-lib.sh's
+# slib_ami_auth_check), so this self-check exercises the exact same
+# path a real caller does, not a separate/differently-privileged one.
+SELF_IP="$(getent hosts "$ASTERISK_HOST" 2>/dev/null | awk '{print $1}' | head -1)"
 if [ -z "$SELF_IP" ]; then
-    echo "FAIL: could not resolve own address for AMI check"
+    echo "FAIL: could not resolve ASTERISK_HOST ($ASTERISK_HOST) for AMI check"
     exit 1
 fi
 AMI_RESULT="$(
