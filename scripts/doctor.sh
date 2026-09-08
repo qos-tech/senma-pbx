@@ -135,20 +135,36 @@ check_docker_daemon() {
 }
 
 check_container() {
-    local svc="$1" state health
+    # TASK-0034C: `provider` (compose.yaml) is a DEVELOPMENT_ONLY/TEST_ONLY
+    # fixture gated behind Compose profiles -- MISSING is its expected,
+    # correct state on any host where nobody opted into `dev`/`test`
+    # (including a normal `make dev` and every pilot host), not a defect.
+    # A RUNNING provider is not wrong either (a developer/regression run
+    # may have opted in deliberately) but is worth calling out by name so
+    # an operator glancing at `make doctor` on a suspect host immediately
+    # sees "fixture active", not just "running" indistinguishable from
+    # app/asterisk/db. Classification logic itself (PASS/WARN/FAIL) is
+    # unchanged for every state -- only the reason text gains an
+    # annotation for this one known fixture service.
+    local svc="$1" state health fixture_note=""
+    [ "$svc" = "provider" ] && fixture_note=" -- DEVELOPMENT_ONLY/TEST_ONLY fixture (TASK-0034C); confirm this is intentional before a production/pilot release"
     state="$(container_state "$svc")"
     if [ "$state" = "MISSING" ]; then
-        record "Container: $svc" "SKIP" "no container for this service (run 'make up' to create it)"
+        if [ "$svc" = "provider" ]; then
+            record "Container: $svc" "SKIP" "no container for this service -- expected unless 'dev'/'test' was explicitly opted into (make dev-up, or FIXTURE_PROFILE=dev/test)"
+        else
+            record "Container: $svc" "SKIP" "no container for this service (run 'make up' to create it)"
+        fi
         return
     fi
     health="$(container_health "$svc")"
     case "$state" in
         running)
             case "$health" in
-                healthy|"") record "Container: $svc" "PASS" "running${health:+, $health}" ;;
-                starting)   record "Container: $svc" "WARN" "running, health check still starting" ;;
-                unhealthy)  record "Container: $svc" "FAIL" "running but unhealthy" ;;
-                *)          record "Container: $svc" "WARN" "running, health state: $health" ;;
+                healthy|"") record "Container: $svc" "PASS" "running${health:+, $health}${fixture_note}" ;;
+                starting)   record "Container: $svc" "WARN" "running, health check still starting${fixture_note}" ;;
+                unhealthy)  record "Container: $svc" "FAIL" "running but unhealthy${fixture_note}" ;;
+                *)          record "Container: $svc" "WARN" "running, health state: $health${fixture_note}" ;;
             esac
             ;;
         restarting) record "Container: $svc" "FAIL" "restarting (crash-looping) -- check 'docker compose logs $svc'" ;;
