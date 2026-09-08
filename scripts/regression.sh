@@ -66,6 +66,15 @@ run_suite "harness-lib-selftest"   "harness-lib-selftest.sh"
 # Docker-independent checks, for the fastest possible fail if the
 # Compose profile isolation this task added ever regresses.
 run_suite "compose-profile-isolation-smoke" "compose-profile-isolation-smoke-test.sh"
+# TASK-0034D: real-container release-identity proof (Finding CH-9 closure)
+# -- placed right after compose-profile-isolation-smoke, the closest
+# existing sibling (both are lightweight, Docker-identity-adjacent, non-
+# destructive checks). Needs the real app/asterisk images this run's own
+# `up` prerequisite just built (labels, revision) -- not pure `config`
+# inspection like its neighbor above -- but never rebuilds, restarts, or
+# mutates anything itself. See scripts/release-artifact-smoke-test.sh's
+# own header.
+run_suite "release-artifact-smoke" "release-artifact-smoke-test.sh"
 run_suite "preauth-security"       "preauth-security-smoke-test.sh"
 # TASK-0026C: placed right after preauth-security and before
 # authorization -- both are pre-/independent-of-authorization SQL-

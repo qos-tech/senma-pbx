@@ -425,6 +425,31 @@ check_secrets() {
 }
 
 # =============================================================================
+# Release identity (TASK-0034D integration -- no second implementation)
+# =============================================================================
+
+check_release_identity() {
+    if [ "$(container_state app)" != "running" ] && [ "$(container_state asterisk)" != "running" ]; then
+        record "Release artifact identity" "SKIP" "app/asterisk not running"
+        return
+    fi
+    local out rc
+    out="$(bash "$SCRIPT_DIR/release-info.sh" --summary 2>&1)"
+    rc=$?
+    case "$rc" in
+        0)
+            if printf '%s' "$out" | grep -q "UNKNOWN"; then
+                record "Release artifact identity" "SKIP" "no release-manifest.json recorded yet -- expected for a dev build; run 'make release-build VERSION=vX.Y.Z' before a pilot/production deploy" "$out"
+            else
+                record "Release artifact identity" "PASS" "MATCH -- running images match the recorded release (see 'make release-info')" "$out"
+            fi
+            ;;
+        1) record "Release artifact identity" "FAIL" "DRIFT -- run 'make release-info' for detail" "$out" ;;
+        *) record "Release artifact identity" "UNKNOWN" "release-info.sh exited $rc" "$out" ;;
+    esac
+}
+
+# =============================================================================
 # Storage
 # =============================================================================
 
@@ -585,6 +610,7 @@ check_asterisk_ami
 check_pjsip_reconcile
 check_pjsip_snapshot
 check_secrets
+check_release_identity
 check_disk_free
 check_volumes
 check_logs
