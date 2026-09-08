@@ -258,6 +258,15 @@ run_suite "doctor-smoke" "doctor-smoke-test.sh"
 # (readiness-failure-smoke-test.sh / `make readiness-failure-smoke`) is
 # deliberately NOT run here.
 run_suite "readiness-smoke" "readiness-smoke-test.sh"
+# TASK-0034F (closing TASK-0034 CH-6): safe, non-mutating coverage for
+# the AMI network-ACL trust boundary -- placed right after
+# readiness-smoke (same infra/lifecycle-adjacent, non-destructive
+# category, and AMI is already part of readiness-smoke's own
+# invariant). Never mutates persisted state; the one scoped restart it
+# performs is the same class of operation readiness-smoke's own step 6
+# already exercises -- see scripts/ami-acl-smoke-test.sh's own header
+# for exactly what it does and does not do.
+run_suite "ami-acl-smoke"          "ami-acl-smoke-test.sh"
 # TASK-0033F: safe, non-mutating -- migrate.php --check reports
 # SCHEMA_CURRENT, re-applying is a no-op, checksum integrity, doctor
 # integration. The real destructive proof (fresh/partial-bootstrap,
