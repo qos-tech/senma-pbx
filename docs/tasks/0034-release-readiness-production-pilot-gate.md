@@ -68,6 +68,41 @@ The overall release decision below (`PILOT_GO_WITH_CONSTRAINTS`) stands,
 now with one fewer open constraint: CH-7 moves from **PILOT_CONSTRAINT**
 to **PILOT_SUPPORTED (with a documented, adjustable capacity limit)**.
 
+## UPDATE (TASK-0034C)
+
+**Finding CH-3 (`provider` fixture has no Compose profile gate) is
+CLOSED.** TASK-0034B had already mitigated the *specific* reproduced
+footgun (its own `up`-target exposure-reversal finding) with the opt-in
+`COMPOSE_FILES`/`SERVICES` Makefile variables, but explicitly left CH-3's
+own underlying gap open — the `provider` service itself still had no
+structural gate, and TASK-0034B's own REMAINING DEBT said so in as many
+words. TASK-0034C closes it for real: `provider` (`compose.yaml`) now
+carries `profiles: [dev, test]`, so Compose itself — not an operator's
+memory of which service list to type, and not a runbook instruction —
+refuses to create it unless `dev` or `test` is explicitly activated. This
+holds for a bare `docker compose up`, `make up`, `make pilot-up`, and
+`--force-recreate` alike, all reproduced live. A new opt-in Makefile
+variable, `FIXTURE_PROFILE` (empty by default, mirroring the
+`COMPOSE_FILES`/`SERVICES` pattern), lets exactly the callers that need
+the fixture ask for it explicitly: `make dev-up` (new, `FIXTURE_PROFILE=
+dev`, the one supported interactive-developer opt-in) and the three
+suites that actually require `provider` — `trunk-smoke`,
+`pjsip-runtime-status-smoke`, `readiness-smoke` — plus `regression`
+itself (`FIXTURE_PROFILE=test` on each). Every other target, including
+`pilot-config`/`pilot-up` (which additionally hardcode `COMPOSE_PROFILES=`
+empty, defeating an operator's shell that already exports
+`COMPOSE_PROFILES=dev`/`=test` from an unrelated project or a forgotten
+session), is unaffected. See
+`docs/tasks/0034c-production-fixture-compose-profile-isolation.md` for
+the full fixture inventory, architecture rationale, and evidence.
+
+CH-3 moves from **PILOT_CONSTRAINT** to **CLOSED** — the constraint's own
+text ("Recommend a small follow-up to add a Compose profile so this can't
+be started by accident") is now literally true, not merely mitigated.
+The overall release decision below (`PILOT_GO_WITH_CONSTRAINTS`) stands.
+No other CH finding's status changes; CH-2, CH-6, and CH-9 remain the
+open, already-accepted constraints.
+
 ## LEAD
 
 senma-workflow-orchestrator

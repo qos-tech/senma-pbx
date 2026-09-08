@@ -57,10 +57,17 @@ Edit `.env`:
   topology (it should not be, for a production pilot; see Phase 4/35).
 
 **Do not start the `provider` service in production.** It is a SIP trunk
-simulator for local development/regression only. The current `compose.yaml`
-has no profile gate excluding it — until that follow-up lands, `make
-pilot-up` (step 5 below) starts only the services a pilot needs
-explicitly (`app asterisk db`), never `provider`.
+simulator for local development/regression only. `compose.yaml` gates it
+behind a Compose profile (`profiles: [dev, test]`, TASK-0034C, closing
+Finding CH-3) — a plain `docker compose up`, `make up`, or `make
+pilot-up` (step 5 below) never creates it, with or without
+`--force-recreate`, whether or not this repository's own Makefile
+wrapper is used. `make pilot-up` additionally hardcodes `COMPOSE_PROFILES=`
+empty in its own recipe, so an operator's shell that happens to already
+export `COMPOSE_PROFILES=dev` or `=test` (from an unrelated project, or a
+forgotten previous session) cannot change that. **Never export
+`COMPOSE_PROFILES=dev` or `COMPOSE_PROFILES=test`, and never set
+`FIXTURE_PROFILE=dev`/`=test`, in a shell that manages this pilot host.**
 
 **`compose.yaml` alone does not expose SIP/WSS to the host** — only the
 app's HTTP port is published, by design, so a plain development
@@ -78,7 +85,7 @@ plain `make up`/`make dev` for a pilot deployment:
 
 ```bash
 make pilot-config   # review the merged, published-port configuration first
-make pilot-up       # starts app/asterisk/db only -- never the provider fixture (CH-3)
+make pilot-up       # starts app/asterisk/db only -- provider is Compose-profile-gated (CH-3), cannot start here
 ```
 
 If the pilot adds a `tls` transport (not seeded by default — an
@@ -145,11 +152,17 @@ Every `make` target below that depends on `up` — `lint`, `migrate-check`,
 these two variables unset, that re-run silently falls back to plain
 `docker compose up -d --build` against `compose.yaml` alone: it recreates
 `asterisk` **without** the pilot ports published in step 5 (silently
-undoing Finding CH-7's fix) and starts the `provider` dev-only
-trunk-simulator fixture (CH-3) that step 2 said must never run in
-production — both confirmed live during TASK-0034B. `make doctor` does
-not depend on `up` and is unaffected either way. See
+undoing Finding CH-7's fix) — confirmed live during TASK-0034B. `make
+doctor` does not depend on `up` and is unaffected either way. See
 `docs/tasks/0034b-production-network-exposure-hardening.md`.
+
+**The `provider` dev-only trunk-simulator fixture (CH-3) cannot start
+from this path regardless of `COMPOSE_FILES`/`SERVICES`** — TASK-0034C
+closed that structurally with a Compose profile gate (`profiles: [dev,
+test]` on the service itself), so a bare `up` with no service filter no
+longer includes it either. `COMPOSE_FILES`/`SERVICES` remain required
+for the port-exposure half of this note only. Never export
+`COMPOSE_PROFILES` or `FIXTURE_PROFILE` on this host — see step 2.
 
 ## 6. Verify readiness
 
@@ -230,8 +243,8 @@ run the individual read-only gates in this order and treat any failure as
 a stop. **On a pilot host, `COMPOSE_FILES`/`SERVICES` (step 5) must still
 be exported in the shell running these** — otherwise `lint`,
 `secrets-check`, and `migrate-check`/`reconcile-check`'s `up` prerequisite
-silently drop the pilot's published ports and start `provider` (see
-step 5's note):
+silently drop the pilot's published ports (see step 5's note; `provider`
+cannot start from this path either way, per TASK-0034C):
 
 ```bash
 make lint
@@ -247,7 +260,8 @@ make reconcile-check
 
 On a pilot host, `COMPOSE_FILES`/`SERVICES` (step 5) must be exported in
 this shell — the closing `make up` is exactly the call that silently
-strips pilot ports and starts `provider` if they are not.
+strips pilot ports if they are not (`provider` cannot start from this
+path either way, per TASK-0034C).
 
 ```bash
 make backup                 # -> ./backups/senma-backup-<ts>.tar.gz — verify it completes and checksums validate
@@ -264,7 +278,8 @@ make doctor                 # confirm no FAIL
 
 Use when an upgrade fails validation above, or a post-upgrade smoke check
 fails. On a pilot host, `COMPOSE_FILES`/`SERVICES` must be exported here
-too, for the same reason as the upgrade procedure above:
+too, for the same reason as the upgrade procedure above (port exposure
+only — `provider` cannot start here regardless, per TASK-0034C):
 
 ```bash
 git checkout <previous-release-tag>
