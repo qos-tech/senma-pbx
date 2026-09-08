@@ -1,4 +1,4 @@
-.PHONY: dev dev-up up pilot-config pilot-up release-build release-info release-artifact-smoke down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke
+.PHONY: dev dev-up up pilot-config pilot-up release-build release-info release-artifact-smoke down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate
 
 COMPOSE ?= docker compose
 
@@ -604,6 +604,18 @@ rotate-db-root-password: up
 
 rotate-ami-password: up
 	@set -a; . ./.env; set +a; bash scripts/rotate-secrets.sh --only ami-password
+
+# TASK-0034F (closing TASK-0034 CH-6): reconciles an EXISTING install's
+# already-generated manager.conf permit=/setup.conf ip_sock onto the
+# values currently declared in .env (ASTERISK_AMI_ACL_SUBNET/
+# ASTERISK_HOST) -- both are FIRST_BOOT_SEED files an ordinary `.env`
+# edit + `make up` never touches on their own (same class of gap
+# rotate-secrets/rotate-ami-password already solves for AMI_PASSWORD).
+# Idempotent (reports ALREADY_CURRENT if nothing to do); rolls back to
+# the previous coherent state on any post-migration verification
+# failure. See docs/tasks/0034f-production-ami-acl-scoping.md MIGRATION.
+ami-acl-migrate: up
+	@set -a; . ./.env; set +a; bash scripts/ami-acl-migrate.sh
 
 # TASK-0033C: safe, non-mutating regression coverage for the
 # consistency-check contract itself (asserts MATCH on this dev
