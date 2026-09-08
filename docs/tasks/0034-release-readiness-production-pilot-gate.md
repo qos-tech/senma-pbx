@@ -1,5 +1,130 @@
 # TASK-0034 — Release Readiness & Production Pilot Gate
 
+## UPDATE (TASK-0034G)
+
+**Final release-candidate certification: `APPROVE_WITH_CONSTRAINTS`.
+`TASK-0034` moves to `PILOT_GO_WITH_CONSTRAINTS`.**
+TASK-0034F closed the last open product constraint (CH-6) but its own
+final canonical regression ran in a sandbox where `docker compose build
+app` stalled on package/image download while host-side `curl` worked —
+classified there as an environment/build-context limitation, not a
+SENMA defect, pending one clean execution in a capable build
+environment. TASK-0034G is that execution, run live on this project's
+own development host (macOS + Docker Desktop, linux/aarch64 VM — see
+below for exactly how this differs from the Debian 14 pilot target).
+
+**Root cause of the original stall, found and proven, not assumed:**
+`docker-credential-desktop` (the macOS Docker Desktop CLI credential
+helper, `credsStore: "desktop"` in `~/.docker/config.json`) hangs
+indefinitely when the Docker CLI resolves registry credentials for a
+pull — reproduced directly (`docker-credential-desktop get` still
+running after 5s on a bounded kill-test) and indirectly (`docker pull
+hello-world`, a few KB, and `docker pull php:8.4-apache` both stalled
+with zero progress for several minutes). This is **not** a network
+problem: host `curl` reached `registry-1.docker.io`/`auth.docker.io` in
+under 0.5s, a running container using an already-cached image reached
+`registry-1.docker.io` directly over HTTPS in seconds, and `apt-get`
+inside a live BuildKit stage reached Debian's mirrors in 3.8s. The
+credential helper most likely blocks on a macOS Keychain/IPC round-trip
+this automated, non-interactive session cannot service. **Workaround
+(session-scoped, not a repository change):** an isolated `DOCKER_CONFIG`
+directory with `{"auths":{}}` (no `credsStore`) plus a copy of
+`~/.docker/cli-plugins` (needed so the `docker compose` plugin still
+resolves once `DOCKER_CONFIG` is redirected) — pulls that had stalled
+for minutes completed in 2-3 seconds once applied. This is an
+environment/tooling limitation of this specific interactive session, not
+a SENMA product defect, and reproduces/explains TASK-0034F's finding
+precisely. **Recommendation for the real Debian 14 pilot host or a CI
+runner:** confirm neither uses an interactive, GUI-Keychain-backed
+credential helper for anonymous/public-registry pulls before relying on
+`make release-build` unattended; if one is configured, either remove
+`credsStore` from that environment's Docker config or pre-seed pulls
+via a service account /non-interactive credential store.
+
+With the workaround applied, the full required chain ran clean: real
+`make release-build VERSION=v0.1.0-rc.1 RC=1` (app + Asterisk-from-source,
+no stale images used as proof — pre-existing image IDs were recorded
+first and the build produced new, self-verified, HEAD-matching image
+IDs for both services) → `release-manifest.json` valid → `make
+pilot-up` deployed the exact built artifacts (no rebuild) →
+`make release-info` MATCH → provider absent, correct port
+publication (5060/udp+tcp, 8089/tcp, RTP 10000-10199/udp published;
+5038 and 3306 not) → **`release-artifact-smoke`: PASS 12/12** (the
+suite TASK-0034F could not exercise) → **two consecutive full
+regression runs, 42/42 PASS each**, immediately back-to-back, no reset
+or manual repair between them → `make doctor` 0 FAIL (1 known WARN: dev
+WSS fixture cert; 1 expected SKIP: no manifest present once the stack
+returned to plain dev `up`) → `secrets-check` MATCH → `migrate-check`
+SCHEMA_CURRENT → `reconcile-check` IN_SYNC → pilot redeployed from the
+built artifacts a second time → restart proof MATCH → force-recreate
+(`--force-recreate --no-build`) proof: **identical running image IDs
+before and after**, MATCH, provider still absent, AMI/DB still
+unpublished. Full detail, every command, and the complete evidence
+table are in `docs/tasks/0034g-final-release-candidate-environment-
+certification.md`.
+
+**Two new, narrow, pre-existing gaps surfaced by this exercise** (found
+during certification, not fixed in it, per this task's own
+certification-only mandate — see that document's REMAINING DEBT for
+full detail): (1) `ami-acl-smoke`'s Makefile target does not set
+`FIXTURE_PROFILE=test` the way its sibling provider-dependent targets
+(`trunk-smoke`, `pjsip-runtime-status-smoke`, `readiness-smoke`,
+`regression`) do, so it BLOCKS when invoked standalone outside `make
+regression`; (2) `readiness-smoke-test.sh`'s first check takes an
+unretried snapshot of container health immediately after its own `up`
+prerequisite returns, which races Asterisk's 15s healthcheck
+`start_period` when the target is invoked standalone right after a
+fresh rebuild-triggered recreate (reproduced 3/3 in isolation) — it does
+not manifest inside the full `make regression` chain (PASS both times),
+where containers have long since stabilized by the time that suite
+runs. Neither blocks this certification's result; both are `FOLLOW_UP_DEBT`, unrelated to the WSS-certificate constraint below.
+
+**CH-2 (WSS dev-fixture certificate) remains CLOSED at the implementation
+level — this is not a code/mechanism regression.** `make cert-check
+PILOT=1` correctly returned `NOT_ACCEPTABLE_FOR_PILOT` in this
+certification environment, which deliberately still runs the shipped
+self-signed dev-fixture certificate with no `WSS_PUBLIC_HOSTNAME` set.
+TASK-0034E already proved, live, that the trust mechanism itself
+correctly accepts and verifies a real, trusted certificate
+(`TRUSTED`/`PILOT_ACCEPTABLE`, real REGISTER with TLS verification
+actually enabled) — that finding is unchanged and is not being reopened.
+What TASK-0034G's own certification run cannot certify is that the
+**actual pilot environment** is provisioned with such a certificate,
+because this run's environment is a development host, not the pilot
+target. **This is an environment-provisioning gap, not a product
+defect**, and it is the one condition this task's own final-decision
+rule ("no release blocker, no release constraint" for outright
+`PILOT_GO`) is not yet met on.
+
+**One remaining, objective, non-code constraint blocks unconditional
+`PILOT_GO`:**
+
+> Provision a production/pilot-acceptable WSS certificate on the actual
+> pilot environment, and obtain `make cert-check PILOT=1` → `PASS`
+> (i.e. `PILOT_ACCEPTABLE`) on that environment.
+
+Once that provisioning step is done and the gate passes there, **TASK-
+0034 can close as plain `PILOT_GO` with no further product/code
+change** — the mechanism is already proven; only the real environment's
+own certificate material is outstanding.
+
+No `OPEN_BLOCKER` remains. Exactly one `OPEN_CONSTRAINT` remains (the
+WSS certificate provisioning above). **TASK-0034 = `PILOT_GO_WITH_CONSTRAINTS`.**
+Recommended next task: TASK-0035 — Pilot Deployment & Soak Validation,
+which should carry the WSS certificate provisioning step as an explicit
+prerequisite/early task (not started here).
+
+**Summary of this certification's own gate results** (full detail in
+`docs/tasks/0034g-final-release-candidate-environment-certification.md`):
+release/build certification PASS; `release-artifact-smoke` PASS 12/12;
+full regression 42/42 PASS, 42/42 PASS (two consecutive, no repair
+between runs); `release-info` MATCH (pre-restart, post-restart, and
+post-force-recreate). The two narrow harness/Makefile gaps this
+certification surfaced — (1) `ami-acl-smoke` standalone without
+`FIXTURE_PROFILE=test`, and (2) `readiness-smoke-test.sh`'s timing race
+immediately after a rebuild — remain `FOLLOW_UP_DEBT`; neither blocks
+this certification's own result.
+
 ## UPDATE (TASK-0034F)
 
 **Finding CH-6 (flat AMI ACL) is CLOSED.** TASK-0034F moved the AMI
