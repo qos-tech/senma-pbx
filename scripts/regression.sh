@@ -218,6 +218,23 @@ run_suite "transport-smoke"        "transport-smoke-test.sh"
 run_suite "transport-shared-runtime-ux-smoke" "transport-shared-runtime-ux-smoke-test.sh"
 run_suite "dialplan-legacy-closure" "dialplan-legacy-closure-smoke-test.sh"
 run_suite "restart-smoke"          "restart-smoke-test.sh"
+# TASK-0034I: placed right after restart-smoke (same infra/lifecycle-
+# adjacent category -- this suite restarts and force-recreates the
+# `asterisk` service itself, same as restart-smoke does, to prove
+# /var/lib/asterisk/{moh,sounds} persistence). Uses only a test-owned
+# marker file, cleaned up unconditionally. See scripts/
+# asterisk-runtime-storage-smoke-test.sh's own header and docs/tasks/
+# 0034i-system-status-dependency-runtime-resource-closure.md.
+run_suite "asterisk-runtime-storage-smoke" "asterisk-runtime-storage-smoke-test.sh"
+# TASK-0034I: proves the System Status ("Inspector") page reflects the
+# real runtime after this task's fixes -- placed after
+# asterisk-runtime-storage-smoke (which provisions/proves the
+# underlying resources this page reports on) and before backup-smoke.
+# Resets the local dev `admin` password to the same known value
+# authorization-smoke/http-smoke already use (scripts/smoke-test.sh's
+# own TEST_PASSWORD convention), and toggles only the empty, test-owned
+# MOH directory this task provisions -- never real customer content.
+run_suite "system-status-runtime-smoke" "system-status-runtime-smoke-test.sh"
 # TASK-0033A: lightweight, non-destructive backup/restore validation --
 # placed after restart-smoke (both are infra/lifecycle-adjacent rather
 # than a specific controller's CRUD flow) and before the external-*
