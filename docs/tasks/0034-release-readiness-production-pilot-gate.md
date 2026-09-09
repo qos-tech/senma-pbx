@@ -1,5 +1,66 @@
 # TASK-0034 — Release Readiness & Production Pilot Gate
 
+## UPDATE (TASK-0034H)
+
+**Pilot host WSS certificate provisioning attempted: `TASK-0034H = BLOCK`.
+`TASK-0034` stays `PILOT_GO_WITH_CONSTRAINTS` (unchanged from TASK-0034G)
+— not promoted to `COMPLETE`.**
+
+TASK-0034G left exactly one `OPEN_CONSTRAINT`: provision a real,
+trusted WSS certificate for the actual pilot host's real public hostname,
+then prove `make cert-check PILOT=1` → `PILOT_ACCEPTABLE` and a verified
+WSS SIP REGISTER there. TASK-0034H was routed to close that constraint.
+
+Before touching configuration, this session verified there is no real
+pilot host distinct from this development machine's own Docker Desktop
+stack, no real public hostname recorded anywhere in this repository, and
+no access to a public or enterprise CA — the production runbook itself
+documents real-certificate provisioning as an operator action outside
+the codebase, not something a session performs unattended. This matches
+this task's own documented stop condition ("trusted certificate cannot
+be provisioned") and its Critical rule ("do not weaken the TASK-0034E
+certificate gate to make the environment pass"). Rather than invent a
+hostname or generate a throwaway CA and present it as a real pilot
+certificate, this session asked the user directly whether real pilot
+infrastructure already exists. **The user confirmed it does not**, and
+explicitly directed: do not simulate a production CA/certificate; return
+`TASK-0034H = BLOCK` and `TASK-0034 = PILOT_GO_WITH_CONSTRAINTS`; make no
+product code changes.
+
+With that decision made, this session re-confirmed live (not merely
+cited) that nothing has drifted or regressed since TASK-0034G, same
+commit lineage, same day: `git status`/`git diff --check` clean
+throughout; `make cert-check PILOT=1` byte-for-byte identical to
+TASK-0034G's own reading (`NOT_ACCEPTABLE_FOR_PILOT` — dev-fixture
+certificate, no `WSS_PUBLIC_HOSTNAME` configured — `RUNTIME_MATCH: MATCH`,
+`PAIR_MATCH: yes`, stable across an AMI-triggered Asterisk restart);
+`make ami-acl-smoke` PASS 9/9; `make secrets-check` MATCH; `make
+migrate-check` SCHEMA_CURRENT; `make reconcile-check` IN_SYNC; `make
+doctor` 1 FAIL (the already-documented TASK-0034G "F1" release-manifest/
+dev-mode DRIFT, not new) + 1 WARN (the already-known dev-fixture
+certificate notice, exactly the gap this task exists to close). Full
+regression, `release-artifact-smoke`, restart, and force-recreate proofs
+were **not** re-run — reused from TASK-0034G as justified (same commit
+lineage, same day, unrelated to the certificate gap) per this project's
+own "don't rerun unnecessarily; justify reuse" precedent.
+
+**CH-2 remains CLOSED at the implementation level — unaffected, not
+reopened.** The certificate-trust mechanism TASK-0034E proved and
+TASK-0034G reconfirmed is, once again, reconfirmed here: stable,
+correctly rejecting the fixture, correctly matching runtime to
+configured fingerprint. What remains outstanding is exactly what
+TASK-0034G already named: **provisioning a real certificate on a real
+pilot host — an infrastructure/operator action, not a code task.**
+
+No `OPEN_BLOCKER`. Exactly one `OPEN_CONSTRAINT` remains, carried forward
+unchanged: real pilot WSS certificate provisioning. **TASK-0034 =
+`PILOT_GO_WITH_CONSTRAINTS`.** Recommended next task, unchanged: TASK-0035
+— Pilot Deployment & Soak Validation, carrying real WSS certificate
+provisioning as its explicit early prerequisite.
+
+Full detail, every command, and the complete evidence in
+`docs/tasks/0034h-pilot-host-wss-certificate-provisioning-final-go-gate.md`.
+
 ## UPDATE (TASK-0034G)
 
 **Final release-candidate certification: `APPROVE_WITH_CONSTRAINTS`.
