@@ -32,10 +32,17 @@ class PHPExtensions extends Snep_Inspector_Test {
 
     /**
      * Array de extensões a serem verificadas.
+     *
+     * TASK-0034I: 'gd' removed -- FALSE_POSITIVE/LEGACY_UNUSED. Zero live
+     * call sites (verified: no imagecreate/imagepng/etc. call anywhere
+     * under snep/lib/Snep or snep/modules); the only vendored code that
+     * would need it (Zend_Captcha_Image, Zend_Barcode_Renderer_Image) is
+     * never instantiated by SENMA. docker/app.Dockerfile deliberately
+     * does not install it. See docs/tasks/
+     * 0034i-system-status-dependency-runtime-resource-closure.md.
      * @var Array
      */
     public $extensions = array('pdo_mysql',
-        'gd',
         'json'
     );
 

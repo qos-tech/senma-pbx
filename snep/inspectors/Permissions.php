@@ -49,13 +49,17 @@ class Permissions extends Snep_Inspector_Test {
          // Pega array do setup.conf do Zend_Registry.
         $config = Zend_Registry::get('config');
 
-        // Pega language em uso
-        $lang = ($config->system->language === "en" ? "" : $config->system->language) ;
-
+        // TASK-0034I: this used to also require '<path.base>/sounds/moh'
+        // and '<path.base>/sounds/<lang>' -- app-tree paths with zero
+        // live readers or writers (verified: no controller, manager, or
+        // view references either; no Apache alias exposes '/sounds' at
+        // all). Real MOH/AST sound storage lives under
+        // $config->system->path->asterisk->{moh,sounds} instead
+        // (Snep_SoundFiles_Manager, inspectors/Sounds.php), a completely
+        // different filesystem location this check was never pointed at.
+        // See docs/tasks/0034i-system-status-dependency-runtime-resource-closure.md.
         // Define array de paths a serem verificados
-        $paths = array('includes/setup.conf' => array('exists' => 1, 'writable' => 1, 'readable' => 1),
-                        'sounds/moh' => array('exists' => 1, 'writable' => 1, 'readable' => 1),
-                        'sounds/'.$lang => array('exists' => 1, 'writable' => 1, 'readable' => 1) );
+        $paths = array('includes/setup.conf' => array('exists' => 1, 'writable' => 1, 'readable' => 1));
 
         // Registra erro como falso
         $result['permissions']['error'] = 0;

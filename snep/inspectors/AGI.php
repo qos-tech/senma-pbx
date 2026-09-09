@@ -32,17 +32,38 @@ class AGI extends Snep_Inspector_Test {
 
     /**
      * Array de arquivos e permissões exigidas.
+     *
+     * TASK-0034I: this used to also require
+     * '/var/lib/asterisk/agi-bin/snep' and '/var/lib/asterisk/moh' --
+     * both Asterisk-container paths this check has no way to see: the
+     * Inspector runs as PHP inside the `app` container, which (before
+     * this task) had no visibility into /var/lib/asterisk at all
+     * (confirmed live: file_exists() on either path always returned
+     * false, independent of whether Asterisk's own copy existed). The
+     * real, app-visible AGI requirement -- the bind-mounted
+     * $config->system->path->base . '/agi' source tree PHP/Apache
+     * actually serve AGI scripts from -- is added dynamically in
+     * getTests() below instead, since it depends on the runtime config
+     * path. The MOH directory has its own dedicated check
+     * (inspectors/Sounds.php, "Music on Hold class") and does not
+     * belong under an "AGI environment" label.
+     *
+     * Also removed: snep-iax2.conf, snep-iax2-trunks.conf, snep-sip.conf,
+     * snep-sip-trunks.conf. TASK-0028C (docs/tasks/
+     * 0028c-pjsip-legacy-runtime-closure.md) already classified these
+     * exact 4 files DEAD_NOT_INCLUDED/GENERATED_EMPTY_LEGACY -- chan_sip
+     * and chan_iax2 are absent from this Asterisk 22/PJSIP-only build,
+     * nothing #includes them, and that task deliberately left
+     * Snep_InterfaceConf still generating them (a documented, standalone
+     * decision, not reversed here). Gating System Status on their
+     * presence asserted they were REQUIRED_RUNTIME, which contradicts
+     * that established classification -- see docs/tasks/
+     * 0034i-system-status-dependency-runtime-resource-closure.md.
      * @var Array
      */
-    public $paths = array('/var/lib/asterisk/agi-bin/snep' => array('exists' => 1, 'writable' => 1, 'readable' => 1),
-                          '/var/lib/asterisk/moh' => array('exists' => 1, 'writable' => 1, 'readable' => 1),
-                          '/etc/asterisk/snep/snep-authconferences.conf' => array('exists' => 1, 'writable' => 1, 'readable' => 1),
+    public $paths = array('/etc/asterisk/snep/snep-authconferences.conf' => array('exists' => 1, 'writable' => 1, 'readable' => 1),
                           '/etc/asterisk/snep/snep-conferences.conf' => array('exists' => 1, 'writable' => 1, 'readable' => 1),
-                          '/etc/asterisk/snep/snep-features.conf' => array('exists' => 1, 'writable' => 1, 'readable' => 1),
-                          '/etc/asterisk/snep/snep-iax2.conf' => array('exists' => 1, 'writable' => 1, 'readable' => 1),
-						  '/etc/asterisk/snep/snep-iax2-trunks.conf' => array('exists' => 1, 'writable' => 1, 'readable' => 1),
-						  '/etc/asterisk/snep/snep-sip.conf' => array('exists' => 1, 'writable' => 1, 'readable' => 1),
-                          '/etc/asterisk/snep/snep-sip-trunks.conf' => array('exists' => 1, 'writable' => 1, 'readable' => 1)
+                          '/etc/asterisk/snep/snep-features.conf' => array('exists' => 1, 'writable' => 1, 'readable' => 1)
     );
 
     /**
@@ -61,8 +82,19 @@ class AGI extends Snep_Inspector_Test {
         $result['agi']['error'] = 0;
         $result['agi']['message'] = '';
 
+        // TASK-0034I: the real, app-visible AGI script source -- computed
+        // here (not in the static $paths property above) since it
+        // depends on the runtime config path.base value. astagidir
+        // resolves AGI calls via a symlink Asterisk's own container
+        // maintains (asterisk-entrypoint.sh); this side only needs to
+        // confirm the source tree it serves that symlink's target from
+        // is actually present/readable/writable.
+        $config = Zend_Registry::get('config');
+        $paths = $this->paths;
+        $paths[$config->system->path->base . '/agi'] = array('exists' => 1, 'writable' => 1, 'readable' => 1);
+
         // Percorre array de arquivos
-        foreach ($this->paths as $path => $agi) {
+        foreach ($paths as $path => $agi) {
 
             // Verifica existencia do mesmo
             if ($agi['exists']) {
