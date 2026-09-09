@@ -157,6 +157,41 @@ copy_astdb() {
 }
 step "copying astdb.sqlite3" copy_astdb || true
 
+# --- 6. /var/lib/asterisk/moh (named volume, CUSTOMER_MANAGED) --------------
+# TASK-0034I: before this task the app had no way to write here at all
+# (see docs/tasks/0034i-system-status-dependency-runtime-resource-closure.md),
+# so this was never reachable, hence never backed up. Now that
+# Snep_SoundFiles_Manager/MusicOnHoldController can actually add MOH
+# classes and audio through the UI, an admin's uploaded hold-music files
+# are real customer data this backup must not silently drop. Optional/
+# graceful like astdb.sqlite3 above: a volume from before this task
+# (asterisk container not yet recreated with the fixed entrypoint) will
+# not have this directory yet, which is not a backup failure.
+tar_asterisk_moh() {
+    $COMPOSE run --rm --no-deps -T \
+        -v "$STAGE_DIR/fs:/backup-output" \
+        --entrypoint sh asterisk -c \
+        'test -d /var/lib/asterisk/moh && tar czf /backup-output/asterisk-moh.tar.gz -C /var/lib/asterisk/moh . || echo "[backup] /var/lib/asterisk/moh not present yet -- skipping (asterisk container needs recreating with the TASK-0034I image)"'
+}
+step "archiving /var/lib/asterisk/moh" tar_asterisk_moh || true
+
+# --- 7. /var/lib/asterisk/sounds (named volume, mixed SYSTEM_PROVIDED +-----
+#        CUSTOMER_MANAGED "AST" sound uploads) ------------------------------
+# TASK-0034I: same reachability history as moh above. Backed up whole
+# (system-provided core-sound WAVs are REGENERABLE from the vendored
+# snep/install/sounds/*.tar.gz on next first-boot seed, so duplicating
+# them here is not harmful, just slightly larger -- and there is no
+# reliable way to separate them from admin-uploaded custom prompts
+# living in the exact same per-language directories without a metadata
+# scheme this task does not introduce).
+tar_asterisk_sounds() {
+    $COMPOSE run --rm --no-deps -T \
+        -v "$STAGE_DIR/fs:/backup-output" \
+        --entrypoint sh asterisk -c \
+        'test -d /var/lib/asterisk/sounds && tar czf /backup-output/asterisk-sounds.tar.gz -C /var/lib/asterisk/sounds . || echo "[backup] /var/lib/asterisk/sounds not present yet -- skipping (asterisk container needs recreating with the TASK-0034I image)"'
+}
+step "archiving /var/lib/asterisk/sounds" tar_asterisk_sounds || true
+
 if [ "$FAILED" -eq 1 ]; then
     blib_die "one or more backup steps failed -- aborting before writing manifest/checksums (no partial artifact left at $DEST)"
 fi
@@ -172,6 +207,8 @@ blib_write_manifest "$STAGE_DIR/manifest.txt" "$STAGE_DIR" \
     "arquivos|fs/arquivos.tar.gz" \
     "asterisk_etc|fs/asterisk-etc.tar.gz" \
     $( [ -f "$STAGE_DIR/fs/astdb.sqlite3" ] && echo "asterisk_astdb|fs/astdb.sqlite3" ) \
+    $( [ -f "$STAGE_DIR/fs/asterisk-moh.tar.gz" ] && echo "asterisk_moh|fs/asterisk-moh.tar.gz" ) \
+    $( [ -f "$STAGE_DIR/fs/asterisk-sounds.tar.gz" ] && echo "asterisk_sounds|fs/asterisk-sounds.tar.gz" ) \
     || blib_die "writing manifest failed"
 
 blib_log "==> writing checksums"
@@ -198,7 +235,9 @@ echo "================================================================"
 echo "SENMA backup complete: $FINAL_ARCHIVE ($SIZE_HUMAN)"
 echo "Contains: full database dump, setup.conf, arquivos/, the complete"
 echo "Asterisk generated-config volume (including TLS private key and"
-echo "AMI/DB credentials), and astdb.sqlite3 if present."
+echo "AMI/DB credentials), astdb.sqlite3 if present, and the Music-on-Hold"
+echo "/ custom sound-prompt directories (/var/lib/asterisk/{moh,sounds})"
+echo "if present."
 echo
 echo "THIS ARTIFACT IS SENSITIVE -- it contains database rows, SIP"
 echo "secrets, and a TLS private key. Mode is already restricted to 600"

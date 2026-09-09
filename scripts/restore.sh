@@ -293,6 +293,51 @@ else
     blib_log "==> backup did not include astdb.sqlite3 -- nothing to restore (Asterisk creates it lazily)"
 fi
 
+# TASK-0034I: /var/lib/asterisk/{moh,sounds} -- CUSTOMER_MANAGED content
+# (admin-uploaded MOH/AST sound files, see docs/tasks/
+# 0034i-system-status-dependency-runtime-resource-closure.md). The wipe
+# in Phase C above removes the whole mag-asterisk-var volume, so an
+# archive predating this task (no asterisk-moh.tar.gz/asterisk-sounds.tar.gz)
+# would otherwise restore onto a target with NEITHER directory -- not a
+# regression from the restore's own perspective (nothing existed to lose
+# at backup time), but the real asterisk-entrypoint.sh first-boot guards
+# will correctly (re)provision both from scratch (empty moh, freshly
+# reseeded core sounds) the next time the asterisk service actually
+# starts, same as any genuinely fresh install.
+if [ -f "$STAGE_DIR/fs/asterisk-moh.tar.gz" ]; then
+    restore_asterisk_moh() {
+        $COMPOSE run --rm --no-deps -T \
+            -v "$STAGE_DIR/fs:/restore-input:ro" \
+            --entrypoint sh asterisk -c '
+                set -e
+                mkdir -p /var/lib/asterisk/moh
+                tar xzf /restore-input/asterisk-moh.tar.gz -C /var/lib/asterisk/moh
+                chgrp -R senma-config /var/lib/asterisk/moh
+                chmod 2775 /var/lib/asterisk/moh /var/lib/asterisk/moh/tmp /var/lib/asterisk/moh/backup 2>/dev/null || true
+            '
+    }
+    step "restoring /var/lib/asterisk/moh" restore_asterisk_moh
+else
+    blib_log "==> backup did not include /var/lib/asterisk/moh -- nothing to restore (asterisk-entrypoint.sh will provision an empty one on next start)"
+fi
+
+if [ -f "$STAGE_DIR/fs/asterisk-sounds.tar.gz" ]; then
+    restore_asterisk_sounds() {
+        $COMPOSE run --rm --no-deps -T \
+            -v "$STAGE_DIR/fs:/restore-input:ro" \
+            --entrypoint sh asterisk -c '
+                set -e
+                mkdir -p /var/lib/asterisk/sounds
+                tar xzf /restore-input/asterisk-sounds.tar.gz -C /var/lib/asterisk/sounds
+                chgrp senma-config /var/lib/asterisk/sounds /var/lib/asterisk/sounds/pt_BR 2>/dev/null || true
+                chmod 2775 /var/lib/asterisk/sounds /var/lib/asterisk/sounds/pt_BR 2>/dev/null || true
+            '
+    }
+    step "restoring /var/lib/asterisk/sounds" restore_asterisk_sounds
+else
+    blib_log "==> backup did not include /var/lib/asterisk/sounds -- nothing to restore (asterisk-entrypoint.sh will reseed the vendored core sounds on next start)"
+fi
+
 if [ "$FAILED" -eq 1 ]; then
     blib_die "restoring filesystem/volume state failed -- target is now in a PARTIAL, inconsistent state. Do not start services. Re-run restore from a known-good archive, or investigate the failure above before proceeding."
 fi
