@@ -66,6 +66,20 @@ services:
       # shared senma-config group), not the Docker mount flag. See
       # docker/asterisk-entrypoint.sh and docs/tasks/0009-first-pjsip-call.md.
       - asterisk-etc:/etc/asterisk
+      # TASK-0034I: same named volume the `asterisk` service already mounts
+      # at this exact path -- NOT a second/competing persistence model.
+      # Snep_SoundFiles_Manager (MusicOnHoldController/SoundFilesController)
+      # reads/writes $config->system->path->asterisk->{moh,sounds}
+      # (/var/lib/asterisk/{moh,sounds}) directly from PHP running in THIS
+      # container; before this task the app container had no visibility
+      # into /var/lib/asterisk at all (confirmed live: `ls /var/lib/asterisk`
+      # failed with ENOENT), which is the actual root cause of the System
+      # Status "moh directory missing" report -- the directory is checked
+      # from a container that structurally cannot see it, independent of
+      # whether it exists on the Asterisk side. Write access is gated by
+      # Unix permissions (senma-config group, see asterisk-entrypoint.sh),
+      # not by the mount flag, matching the asterisk-etc precedent above.
+      - mag-asterisk-var:/var/lib/asterisk
     depends_on:
       db:
         condition: service_healthy
@@ -141,6 +155,22 @@ services:
       # before this task (only its snep/snep-*.conf includes were). See
       # docker/asterisk-entrypoint.sh.
       - ./snep/install/etc/asterisk:/snep-asterisk-dialplan-src:ro
+      # TASK-0034I: the vendored, GPL-inherited Asterisk core-sound WAV
+      # packages (part of the original SNEP 3.07 import, snep/install/
+      # sounds/*.tar.gz) -- IMAGE_IMMUTABLE/SYSTEM_PROVIDED content, not
+      # customer data. Bind-mounted read-only, same "vendored source of
+      # truth, never copied into the image" pattern as
+      # snep-asterisk-config-src/snep-asterisk-dialplan-src above, rather
+      # than a Dockerfile COPY -- keeps the build context narrowing this
+      # repo already relies on (see .dockerignore's own TASK-0034D note)
+      # intact. asterisk-entrypoint.sh extracts these into the
+      # mag-asterisk-var volume on first boot only (see SOUNDS SEEDING
+      # there) -- Asterisk's own dialplan (snep-features.conf) calls
+      # Playback() of several named prompts (beep, do-not-disturb,
+      # activated, de-activated) that silently resolve to nothing without
+      # this content; live evidence: /var/lib/asterisk/sounds did not
+      # exist at all before this task.
+      - ./snep/install/sounds:/snep-sounds-src:ro
       # TASK-0009: the SENMA AGI entrypoints, bind-mounted (not copied into
       # the image) at the SAME absolute path the app container already
       # uses -- several config values (voicemail.conf's externnotify,

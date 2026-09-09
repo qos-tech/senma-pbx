@@ -66,6 +66,92 @@ if [ ! -d "$ASTERISK_DOCS_DEST" ]; then
     cp -r "$ASTERISK_DOCS_BAKED"/. "$ASTERISK_DOCS_DEST/"
 fi
 
+# TASK-0034I: SOUNDS SEEDING. /var/lib/asterisk/sounds did not exist at
+# all before this task (confirmed live) -- this Docker build never
+# installed Asterisk's core sound prompts anywhere, unlike the legacy
+# (non-Docker) SNEP installer, which extracted these same vendored
+# tarballs (snep/install/sounds/*.tar.gz, part of the original SNEP 3.07
+# import) into astvarlibdir. Consequence, also confirmed live: the
+# generated dialplan (snep-features.conf's *21/*22/*23 do-not-disturb/
+# call-forward toggles, *33XXXX recording beep) calls Playback() of
+# named prompts (do-not-disturb, activated, de-activated, beep) that
+# silently resolve to nothing without this content -- Asterisk logs a
+# missing-sound warning and continues, so this was never a fatal error,
+# just silent audio. SYSTEM_PROVIDED/IMAGE_IMMUTABLE content (the
+# official Asterisk sound packages, not customer data), so it is seeded
+# the same guarded, first-boot-only, non-destructive way as the XML
+# documentation immediately above -- never re-extracted over an already
+# -seeded (and potentially operator-customized, see
+# Snep_SoundFiles_Manager's "AST"-type sounds) directory. Only "en"
+# (matching this repo's own dev default setup.conf `language = "en"`)
+# and "pt_BR" (the locale every other generated string/prompt reference
+# in this codebase assumes -- e.g. snep-features.conf's own `astcc-
+# unavail` Playback() target exists only in the pt_BR package, not
+# either English one) are seeded; "es" and the English "extra sounds"
+# superset are NOT (REMAINING DEBT -- see docs/tasks/
+# 0034i-system-status-dependency-runtime-resource-closure.md).
+SENMA_SOUNDS_SRC=/snep-sounds-src
+ASTERISK_SOUNDS_DIR=/var/lib/asterisk/sounds
+# Bare (no language subdirectory) is Asterisk's own convention for its
+# default/fallback language -- matches how the vendored en tarball's
+# members are laid out (flat *.wav, no leading directory, verified via
+# `tar tzf`). Group-writable so Snep_SoundFiles_Manager's own "AST" sound
+# uploads (which always target $sound_path/$lang, i.e. this exact
+# directory when the configured language is "en") can add files here,
+# same as every operator-writable path in this script.
+if [ ! -d "$ASTERISK_SOUNDS_DIR" ]; then
+    echo "[asterisk-entrypoint] seeding Asterisk core sound prompts (en) into the astvarlibdir volume"
+    mkdir -p "$ASTERISK_SOUNDS_DIR"
+    tar -xzf "$SENMA_SOUNDS_SRC/asterisk-core-sounds-en-wav-current.tar.gz" -C "$ASTERISK_SOUNDS_DIR"
+    chgrp "$SENMA_CONFIG_GROUP" "$ASTERISK_SOUNDS_DIR"
+    chmod 2775 "$ASTERISK_SOUNDS_DIR"
+fi
+if [ ! -d "$ASTERISK_SOUNDS_DIR/pt_BR" ]; then
+    echo "[asterisk-entrypoint] seeding Asterisk core sound prompts (pt_BR) into the astvarlibdir volume"
+    mkdir -p "$ASTERISK_SOUNDS_DIR/pt_BR"
+    tar -xzf "$SENMA_SOUNDS_SRC/asterisk-core-sounds-pt_BR-wav.tgz" -C "$ASTERISK_SOUNDS_DIR/pt_BR"
+    chgrp "$SENMA_CONFIG_GROUP" "$ASTERISK_SOUNDS_DIR/pt_BR"
+    chmod 2775 "$ASTERISK_SOUNDS_DIR/pt_BR"
+fi
+# SoundFilesController::addAction()/editAction() need <lang-root>/tmp
+# and <lang-root>/backup to exist (upload staging + edit-history backup
+# -- "en" treated as Asterisk's own no-subdirectory default, so its
+# lang-root IS the bare $ASTERISK_SOUNDS_DIR, confirmed by reading that
+# controller). Deliberately UNCONDITIONAL/idempotent, not nested inside
+# the seed guards above: a volume already seeded by an earlier version
+# of this script (before these two subfolders were added here) would
+# otherwise never retrofit them, since the outer directory already
+# exists and its own guard would short-circuit. mkdir -p is a no-op if
+# already present; chgrp/chmod are cheap enough to reapply every boot
+# and self-heal ownership if anything else ever created these first.
+for lang_root in "$ASTERISK_SOUNDS_DIR" "$ASTERISK_SOUNDS_DIR/pt_BR"; do
+    mkdir -p "$lang_root/tmp" "$lang_root/backup"
+    chgrp "$SENMA_CONFIG_GROUP" "$lang_root/tmp" "$lang_root/backup"
+    chmod 2775 "$lang_root/tmp" "$lang_root/backup"
+done
+
+# TASK-0034I: MOH DIRECTORY. CUSTOMER_MANAGED, starts empty -- no default
+# MOH audio is seeded (no MOH-specific tarball is vendored in this repo,
+# and inventing/bundling arbitrary music is explicitly out of scope; see
+# the task doc's MOH DECISION). This only provisions the directory
+# snep-musiconhold.conf's own [default] class already points at
+# (directory=/var/lib/asterisk/moh, written by
+# Snep_SoundFiles_Manager::addClass()) plus the tmp/backup subfolders
+# every MOH class directory needs (inspectors/Sounds.php's own
+# requirement -- see snep/lib/Snep/SoundFiles/Manager.php's addClass(),
+# which creates these same two subfolders for every class an admin adds
+# through the UI). Group-owned senma-config/2775, matching the identical
+# $ASTERISK_ETC/snep pattern below -- this directory is the one
+# astvarlibdir path www-data (via the app container's own
+# mag-asterisk-var mount, see compose.yaml) must be able to write into.
+ASTERISK_MOH_DIR=/var/lib/asterisk/moh
+if [ ! -d "$ASTERISK_MOH_DIR" ]; then
+    echo "[asterisk-entrypoint] provisioning the default Music-on-Hold class directory"
+    mkdir -p "$ASTERISK_MOH_DIR/tmp" "$ASTERISK_MOH_DIR/backup"
+    chgrp -R "$SENMA_CONFIG_GROUP" "$ASTERISK_MOH_DIR"
+    chmod 2775 "$ASTERISK_MOH_DIR" "$ASTERISK_MOH_DIR/tmp" "$ASTERISK_MOH_DIR/backup"
+fi
+
 # TASK-0009: astagidir (asterisk.conf) stays at the default
 # /var/lib/asterisk/agi-bin. extensions.conf/snep-features.conf call AGI
 # scripts as "snep/<script>.php" (a "snep/" prefix baked into the
@@ -111,6 +197,21 @@ fi
 if [ ! -f "$ASTERISK_ETC/http.conf" ]; then
     echo "[asterisk-entrypoint] seeding http.conf (WSS platform enablement, TASK-0028Z)"
     cp "$ASTERISK_CONFIG_SRC/http.conf" "$ASTERISK_ETC/http.conf"
+fi
+
+# TASK-0034I: same independent-guard treatment as http.conf above -- an
+# existing dev/pilot volume already has asterisk.conf populated, so the
+# first-boot block below never runs again on it, and it would otherwise
+# never receive musiconhold.conf at all (this is the exact root cause of
+# "moh show classes" being empty and "No music on hold classes
+# configured, disabling music on hold." on every boot, confirmed live,
+# even though /etc/asterisk/snep/snep-musiconhold.conf's own [default]
+# class was present and correct the whole time -- nothing ever
+# #included it). See docs/tasks/
+# 0034i-system-status-dependency-runtime-resource-closure.md.
+if [ ! -f "$ASTERISK_ETC/musiconhold.conf" ]; then
+    echo "[asterisk-entrypoint] seeding musiconhold.conf (TASK-0034I, closes the MOH #include gap)"
+    cp "$ASTERISK_CONFIG_SRC/musiconhold.conf" "$ASTERISK_ETC/musiconhold.conf"
 fi
 
 if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
