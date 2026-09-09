@@ -198,6 +198,23 @@ done
 CERT_SHA_BEFORE="$($COMPOSE exec -T asterisk sha256sum /etc/asterisk/keys/wss-test-cert.pem 2>/dev/null | awk '{print $1}')"
 TRANSPORT_COUNT_BEFORE="$(db_query "SELECT COUNT(*) FROM pjsip_transports;")"
 
+# TASK-0034J (D5): owned MOH customer-fixture proof, mirroring the
+# CERT_SHA_BEFORE/AFTER pattern above exactly. TASK-0034I's own DR run
+# proved the backup/restore *mechanism* moves /var/lib/asterisk/moh
+# (confirmed in that run's log), but never asserted a specific named
+# file survives byte-for-byte -- this closes that gap the same way the
+# TLS certificate is already proven, never touching real customer audio.
+MOH_FIXTURE_NAME="${FIXTURE_MARKER}-moh.raw"
+MOH_FIXTURE_PATH="/var/lib/asterisk/moh/${MOH_FIXTURE_NAME}"
+if $COMPOSE exec -T asterisk sh -c "printf '%s' '${FIXTURE_MARKER}-$(date +%s%N)' > '${MOH_FIXTURE_PATH}'"; then
+    harness_register_best_effort_cleanup "MOH DR-smoke fixture" \
+        "$COMPOSE exec -T asterisk rm -f '${MOH_FIXTURE_PATH}' >/dev/null 2>&1"
+    harness_ok "MOH customer fixture created" "$MOH_FIXTURE_PATH"
+else
+    harness_blocked "could not create the MOH DR-smoke fixture at ${MOH_FIXTURE_PATH}"
+fi
+MOH_SHA_BEFORE="$($COMPOSE exec -T asterisk sha256sum "$MOH_FIXTURE_PATH" 2>/dev/null | awk '{print $1}')"
+
 log "==> building baresip test image"
 harness_timeout 180 docker build -q -t "$BARESIP_IMAGE" -f "$BARESIP_DOCKERFILE" docker >&2 \
     || harness_blocked "failed to build $BARESIP_IMAGE"
@@ -357,6 +374,22 @@ if [ -n "$CERT_SHA_BEFORE" ] && [ "$CERT_SHA_AFTER" = "$CERT_SHA_BEFORE" ]; then
     harness_ok "TLS certificate restored byte-identical" "sha256 matches pre-destruction ($CERT_SHA_AFTER)"
 else
     harness_bad "TLS certificate restored byte-identical" "before=$CERT_SHA_BEFORE after=$CERT_SHA_AFTER"
+fi
+
+# TASK-0034J (D5): MOH customer fixture, same byte-identity proof as the
+# TLS certificate above -- see the fixture's own creation comment.
+MOH_SHA_AFTER="$($COMPOSE exec -T asterisk sha256sum "$MOH_FIXTURE_PATH" 2>/dev/null | awk '{print $1}')"
+if [ -n "$MOH_SHA_BEFORE" ] && [ "$MOH_SHA_AFTER" = "$MOH_SHA_BEFORE" ]; then
+    harness_ok "MOH customer fixture restored byte-identical" "sha256 matches pre-destruction ($MOH_SHA_AFTER)"
+else
+    harness_bad "MOH customer fixture restored byte-identical" "before=$MOH_SHA_BEFORE after=$MOH_SHA_AFTER"
+fi
+
+MOH_FIXTURE_OWNER="$($COMPOSE exec -T asterisk stat -c '%U:%G' "$MOH_FIXTURE_PATH" 2>/dev/null | tr -d '\r')"
+if [ "$MOH_FIXTURE_OWNER" = "asterisk:senma-config" ]; then
+    harness_ok "MOH customer fixture ownership correct after restore" "$MOH_FIXTURE_OWNER"
+else
+    harness_bad "MOH customer fixture ownership correct after restore" "expected 'asterisk:senma-config', got '$MOH_FIXTURE_OWNER'"
 fi
 
 KEY_MODE="$($COMPOSE exec -T asterisk stat -c '%a' /etc/asterisk/keys/wss-test-key.pem 2>/dev/null | tr -d '\r')"
