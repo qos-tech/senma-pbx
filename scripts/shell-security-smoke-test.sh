@@ -141,18 +141,33 @@ FATALS_BEFORE="$(fatal_count)"
 log "==> baseline PHP Fatal Error count: ${FATALS_BEFORE}"
 
 # TASK-0026D finding, unrelated to shell injection, documented in
-# docs/tasks/0026d-shell-execution-hardening.md: /var/lib/asterisk does
-# not exist at all in the app container (confirmed: `path.asterisk.sounds`/
-# `path.asterisk.moh` in includes/setup.conf both point under it, and
-# neither ever gets created -- no bind mount, no named volume, no
-# entrypoint step provisions it, unlike the asterisk/provider containers'
-# own mag-asterisk-var volume). Sound Files/Music on Hold's upload flows
-# have therefore never been able to complete in this dev environment
-# regardless of this task's changes. Provisioning the missing directory
-# tree here is test-precondition scaffolding (like any smoke fixture
-# needing a real place to write), not a product fix -- left in place
-# afterward since it is baseline environment scaffolding every future
-# run needs too, not a per-run fixture.
+# docs/tasks/0026d-shell-execution-hardening.md: /var/lib/asterisk did
+# not exist at all in the app container (confirmed then: `path.asterisk.
+# sounds`/`path.asterisk.moh` in includes/setup.conf both point under
+# it, and neither ever got created -- no bind mount, no named volume, no
+# entrypoint step provisioned it, unlike the asterisk/provider
+# containers' own mag-asterisk-var volume). Sound Files/Music on Hold's
+# upload flows could therefore never complete in this dev environment.
+#
+# TASK-0034I closed that real product/infra gap directly (compose.yaml
+# now mounts mag-asterisk-var into `app` too; docker/asterisk-entrypoint.sh
+# provisions /var/lib/asterisk/{moh,sounds{,/pt_BR}}/{tmp,backup} as
+# asterisk:senma-config, mode 2775 -- see docs/tasks/
+# 0034i-system-status-dependency-runtime-resource-closure.md). This
+# scaffolding's own `chown -R www-data:www-data` (still present until
+# this task) actively fought that fix -- it ran on every regression pass
+# and reassigned these directories away from their real owner, which a
+# non-root `asterisk` container process can then never reclaim
+# (confirmed live: this exact suite's own run left
+# /var/lib/asterisk/moh www-data:www-data-owned, which then failed
+# scripts/asterisk-runtime-storage-smoke-test.sh's ownership/
+# effective-write-permission checks in the very same regression run).
+# `mkdir -p` remains, defensively, for a dev volume/image predating
+# TASK-0034I's entrypoint fix -- but ownership is no longer forced to
+# www-data: www-data is already a senma-config member (docker/
+# app.Dockerfile) and these directories are already group-writable
+# (mode 2775) once the real entrypoint has provisioned them, which is
+# the normal case now.
 SOUNDS_ROOT="/var/lib/asterisk/sounds"
 MOH_ROOT="/var/lib/asterisk/moh"
 SYS_LANG="$(app_exec "grep '^language' /var/www/html/snep/includes/setup.conf | sed 's/.*\"\\(.*\\)\".*/\\1/'" | tr -d '\r')"
@@ -165,15 +180,13 @@ SYS_LANG="${SYS_LANG:-pt_BR}"
 SOUNDS_LANG_SUBDIR=""
 [ "$SYS_LANG" != "en" ] && SOUNDS_LANG_SUBDIR="$SYS_LANG"
 SOUNDS_LANG_ROOT="${SOUNDS_ROOT}${SOUNDS_LANG_SUBDIR:+/$SOUNDS_LANG_SUBDIR}"
-# chown to www-data: confirmed live that a root-owned 0755 directory
-# here silently defeats every upload/mkdir this suite exercises (PHP
-# runs as www-data) -- move_uploaded_file()/mkdir() just fail with a
-# logged PHP Warning and the calling action's pre-existing (unrelated)
-# control flow continues past that failure with no explicit early
-# return, so the request can still 302 as if it had succeeded. Ownership
-# is part of the same never-provisioned gap, not a separate one.
-app_exec "mkdir -p '${SOUNDS_LANG_ROOT}/tmp' '${SOUNDS_LANG_ROOT}/backup' '${MOH_ROOT}' && chown -R www-data:www-data '${SOUNDS_ROOT}' '${MOH_ROOT}'"
-log "==> provisioned missing sound-files/MOH directory scaffolding (${SOUNDS_LANG_ROOT}, ${MOH_ROOT}) -- pre-existing Docker-topology gap, not a shell-injection finding, see docs/tasks/0026d-shell-execution-hardening.md"
+# TASK-0034I: no chown here anymore -- see the header comment above.
+# `mkdir -p` is a harmless no-op once asterisk-entrypoint.sh has already
+# provisioned these paths (the normal case); it remains only as a
+# defensive fallback for a dev volume/image predating that fix, and
+# never overrides ownership on paths that already exist.
+app_exec "mkdir -p '${SOUNDS_LANG_ROOT}/tmp' '${SOUNDS_LANG_ROOT}/backup' '${MOH_ROOT}'"
+log "==> confirmed sound-files/MOH directory scaffolding present (${SOUNDS_LANG_ROOT}, ${MOH_ROOT}) -- provisioned by docker/asterisk-entrypoint.sh as of TASK-0034I, see docs/tasks/0034i-system-status-dependency-runtime-resource-closure.md"
 
 MARKER="/tmp/task0026d-marker-$$-${RANDOM}"
 harness_register_best_effort_cleanup "shell-injection marker file (should never exist)" "app_exec \"rm -f '$MARKER'\""
