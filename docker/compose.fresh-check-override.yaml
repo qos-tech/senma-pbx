@@ -1,0 +1,48 @@
+# TASK-0034J (D1): network-subnet override for the isolated fresh-install
+# verification stack only (scripts/fresh-install-proof-smoke-test.sh).
+#
+# Root cause this file closes: compose.yaml pins the `mag`/`senma-control`
+# networks to fixed subnets (172.28.0.0/16, 172.29.0.0/24) -- a deliberate
+# TASK-0005/TASK-0034F decision for the PRIMARY dev/pilot stack, not
+# reversed here. That pin applies identically regardless of Compose
+# project name, so a second, genuinely isolated stack started
+# CONCURRENTLY with the primary stack (as a real fresh-install proof
+# must, per TASK-0034J's own "do not reuse the current dev state"
+# instruction) always collided with the primary stack's own already-
+# bound subnet on the same Docker host -- this was TASK-0034I's actual,
+# reproducible root cause ("Pool overlaps with other one on this address
+# space"), previously misdocumented as an unrelated external conflict.
+#
+# This overlay is applied ONLY by the isolated fresh-check project (a
+# distinct `-p`/COMPOSE_PROJECT_NAME, never the primary `mag-pbx`
+# project) and only picks two currently-free /16 and /24 ranges on this
+# host (see scripts/fresh-install-proof-smoke-test.sh's own preflight
+# check, which verifies no live Docker network already claims 172.30 or
+# 172.31 before proceeding, and BLOCKS rather than guessing if one does).
+# The primary stack's own compose.yaml pins are untouched.
+#
+# asterisk's ASTERISK_AMI_ACL_SUBNET must match the senma-control subnet
+# below, not the primary stack's .env value (172.29.0.0/24) -- both
+# `app` and `asterisk` load `env_file: .env` (compose.yaml), which reads
+# the literal file on disk, NOT this script's shell-exported overrides;
+# an explicit `environment:` entry here is required to actually win
+# (Compose gives service-level `environment:` precedence over
+# `env_file:` for the same key). Without this, manager.conf's `permit=`
+# ACL (TASK-0034F) still expects 172.29.0.0/24, the isolated app
+# container's real IP lands on 172.31.0.0/24, and AMI login is
+# (correctly) rejected -- confirmed live while developing this script,
+# not a fresh-install product defect.
+networks:
+  mag:
+    ipam:
+      config:
+        - subnet: 172.30.0.0/16
+  senma-control:
+    ipam:
+      config:
+        - subnet: 172.31.0.0/24
+
+services:
+  asterisk:
+    environment:
+      ASTERISK_AMI_ACL_SUBNET: 172.31.0.0/24
