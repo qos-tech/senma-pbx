@@ -82,14 +82,28 @@ fi
 # the same guarded, first-boot-only, non-destructive way as the XML
 # documentation immediately above -- never re-extracted over an already
 # -seeded (and potentially operator-customized, see
-# Snep_SoundFiles_Manager's "AST"-type sounds) directory. Only "en"
-# (matching this repo's own dev default setup.conf `language = "en"`)
-# and "pt_BR" (the locale every other generated string/prompt reference
-# in this codebase assumes -- e.g. snep-features.conf's own `astcc-
-# unavail` Playback() target exists only in the pt_BR package, not
-# either English one) are seeded; "es" and the English "extra sounds"
-# superset are NOT (REMAINING DEBT -- see docs/tasks/
-# 0034i-system-status-dependency-runtime-resource-closure.md).
+# Snep_SoundFiles_Manager's "AST"-type sounds) directory. "en" (a fully
+# first-class SENMA-supported language -- Snep_Locale::$supportedLanguages,
+# snep/lang/en.mo -- not merely optional) and "pt_BR" (the vendored
+# dialplan's own [globals] default, extensions.conf) are seeded; "es" is
+# NOT (POST_PILOT debt: also a supported UI language, but not this
+# deployment's default/active one, and this repo vendors no "es-extra"
+# package at all, so full Spanish prompt coverage is not achievable from
+# vendored content alone -- see docs/tasks/
+# 0034j-runtime-resource-follow-up-debt-closure.md D2).
+#
+# TASK-0034J (D2) correction of a TASK-0034I finding: `astcc-unavail` is
+# NOT called by any deployed dialplan (confirmed via grep across
+# snep/install/etc/asterisk/snep/*.conf) -- 0034I's own inventory of
+# snep-features.conf's Playback() targets was wrong to include it, and
+# it is irrelevant to English/Spanish coverage either way. The prompts
+# actually Playback()'d are `beep` (present in the "core" en package,
+# seeded immediately below) and `do-not-disturb`/`activated`/
+# `de-activated` (absent from the "core" en package, confirmed via
+# `tar tzf`, but present in the vendored "extra sounds" en superset) --
+# those three are seeded individually further below rather than the
+# whole ~1400-file/36MB extra package, matching this task's own "no
+# large media bundle without justification" instruction.
 SENMA_SOUNDS_SRC=/snep-sounds-src
 ASTERISK_SOUNDS_DIR=/var/lib/asterisk/sounds
 # Bare (no language subdirectory) is Asterisk's own convention for its
@@ -106,6 +120,21 @@ if [ ! -d "$ASTERISK_SOUNDS_DIR" ]; then
     chgrp "$SENMA_CONFIG_GROUP" "$ASTERISK_SOUNDS_DIR"
     chmod 2775 "$ASTERISK_SOUNDS_DIR"
 fi
+
+# TASK-0034J (D2): the three English prompts snep-features.conf actually
+# calls that the "core" package above does not carry. Per-file guard
+# (not nested inside the directory-existence check above) so an already-
+# seeded volume from before this task also retrofits them on its next
+# boot, matching the tmp/backup retrofit pattern further below.
+for prompt in do-not-disturb activated de-activated; do
+    if [ ! -f "$ASTERISK_SOUNDS_DIR/$prompt.wav" ]; then
+        echo "[asterisk-entrypoint] seeding missing English prompt: $prompt.wav (asterisk-extra-sounds-en)"
+        tar -xzf "$SENMA_SOUNDS_SRC/asterisk-extra-sounds-en-wav-current.tar.gz" -C "$ASTERISK_SOUNDS_DIR" "$prompt.wav"
+        chgrp "$SENMA_CONFIG_GROUP" "$ASTERISK_SOUNDS_DIR/$prompt.wav"
+        chmod 664 "$ASTERISK_SOUNDS_DIR/$prompt.wav"
+    fi
+done
+
 if [ ! -d "$ASTERISK_SOUNDS_DIR/pt_BR" ]; then
     echo "[asterisk-entrypoint] seeding Asterisk core sound prompts (pt_BR) into the astvarlibdir volume"
     mkdir -p "$ASTERISK_SOUNDS_DIR/pt_BR"
