@@ -252,6 +252,13 @@ class ParametersController extends Zend_Controller_Action {
 
             $writer->write();
             Snep_Locale::setExtensionsLanguage($formData['language']) ;
+            // TASK-0034K: keep the acting admin's own UI in sync with the
+            // global PBX language they just set (Snep_Locale::
+            // resolveUiLanguage() prefers a session override over
+            // setup.conf, so without this an admin with an earlier
+            // pre-auth UI-only choice active would keep seeing the old
+            // language after explicitly changing the global default).
+            $_SESSION[Snep_Locale::UI_LANGUAGE_SESSION_KEY] = $formData['language'];
 
             // redirect
             $this->_redirect('/');
@@ -291,6 +298,8 @@ class ParametersController extends Zend_Controller_Action {
         $writer->write();
 
         Snep_Locale::setExtensionsLanguage($_POST["language"]) ;
+        // TASK-0034K: see the identical comment in indexAction() above.
+        $_SESSION[Snep_Locale::UI_LANGUAGE_SESSION_KEY] = $_POST["language"];
 
         $module = $this->_request->getPost('module');
         $this->_redirect($module);

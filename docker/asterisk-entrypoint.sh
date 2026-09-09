@@ -392,6 +392,30 @@ else
     [ "$_SENMA_COHERENT" = "1" ] || exit 1
 fi
 
+# TASK-0034K: Snep_Locale::setExtensionsLanguage() (www-data, via the app
+# container) rewrites this file's SNEP_LANGUAGE global in place --
+# extensions.conf lives directly under $ASTERISK_ETC (0755, owned solely
+# by asterisk:asterisk -- TASK-0009 deliberately never widens this
+# directory itself, only the $ASTERISK_ETC/snep subtree above), so it
+# needs its own narrow per-file grant rather than inheriting one from a
+# directory. Same chgrp/chmod treatment already used for
+# $ASTERISK_ETC/snep/*.conf, applied to this one file instead of a whole
+# directory -- the app's rewrite is an in-place file_put_contents() (only
+# needs file write permission, never directory write, so this alone is
+# sufficient -- see Snep_Locale::setExtensionsLanguage()'s own docblock).
+# Deliberately unconditional/idempotent, outside the first-boot guard
+# above, so a dev/pilot volume already seeded before this task also
+# self-heals on its next start (confirmed live before this fix: the
+# unauthenticated-GET reproduction in docs/tasks/0034k-call-language-
+# authority-pre-auth-locale-hardening.md showed setup.conf mutating while
+# extensions.conf's SNEP_LANGUAGE silently never changed -- root-caused to
+# exactly this permission gap, pre-existing since TASK-0009, affecting
+# every caller, not only the pre-auth one this task closes).
+if [ -f "$ASTERISK_ETC/extensions.conf" ]; then
+    chgrp "$SENMA_CONFIG_GROUP" "$ASTERISK_ETC/extensions.conf"
+    chmod 664 "$ASTERISK_ETC/extensions.conf"
+fi
+
 # TASK-0033D: bounded-growth watcher for /var/log/asterisk/{full,queue_log}
 # -- no cron/systemd exists in this image, so this is backgrounded here
 # as a sibling process to Asterisk (still under this container's PID 1

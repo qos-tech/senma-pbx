@@ -27,7 +27,7 @@ BACKUP=/tmp/task0026b-setup.conf
 TEST_USER="admin"
 TEST_PASSWORD="SmokeTest123!"
 
-harness_require_containers app db
+harness_require_containers app db asterisk
 harness_require_env DB_USER DB_PASSWORD DB_NAME
 
 # TASK-0034: this suite's own "admin login" check below assumes
@@ -63,6 +63,60 @@ for lang in en pt_BR es; do
     code=$(curl -sS -o /dev/null -w '%{http_code}' "$BASE_URL/index.php/default/auth/login?indexChooseLanguage=$lang")
     if [ "$code" = 302 ]; then harness_ok "valid language $lang" "HTTP $code"; else harness_bad "valid language $lang" "HTTP $code"; fi
 done
+
+# TASK-0034K: AuthController::loginAction()'s indexChooseLanguage handler
+# used to write setup.conf's global system.language AND call
+# Snep_Locale::setExtensionsLanguage() (rewriting extensions.conf's
+# SNEP_LANGUAGE + forcing a live Asterisk dialplan reload) directly from
+# this same unauthenticated GET -- reachable by any anonymous visitor, no
+# CSRF applicability (no session exists yet), no authorization check. See
+# docs/tasks/0034k-call-language-authority-pre-auth-locale-hardening.md
+# for the live reproduction that found this. It is now a pure
+# session-scoped UI_LOCALE preference (Snep_Locale::resolveUiLanguage()):
+# this proves (a) the choice actually lands in the session, and (b)
+# setup.conf, extensions.conf and the live Asterisk global are all
+# byte-for-byte untouched by a VALID language choice too -- the loop just
+# above only ever checked HTTP 302, and the invalid-language check further
+# below predates this task and only ever covered the *invalid* case (a
+# valid one used to legitimately mutate all three).
+EXT_CONF=/etc/asterisk/extensions.conf
+ANON_JAR="$tmp/anon.cookies"
+$COMPOSE exec -T app cp "$CFG" /tmp/task0034k-before-setup.conf
+$COMPOSE exec -T asterisk cp "$EXT_CONF" /tmp/task0034k-before-extensions.conf
+GLOBALS_BEFORE="$($COMPOSE exec -T asterisk asterisk -rx 'dialplan show globals' 2>&1)"
+
+code=$(curl -sS -c "$ANON_JAR" -o /dev/null -w '%{http_code}' "$BASE_URL/index.php/default/auth/login?indexChooseLanguage=es")
+SESSID="$(awk '$6=="PHPSESSID"{print $7}' "$ANON_JAR" 2>/dev/null)"
+if [ "$code" = 302 ] && [ -n "$SESSID" ]; then
+    harness_ok 'anonymous language choice succeeds (UI only)' "HTTP $code"
+else
+    harness_bad 'anonymous language choice succeeds (UI only)' "HTTP $code, no session cookie issued"
+fi
+
+if [ -n "$SESSID" ] && $COMPOSE exec -T app sh -c "grep -q 'snep_ui_language.*\"es\"' /tmp/sess_$SESSID" 2>/dev/null; then
+    harness_ok 'anonymous choice is session-scoped, not global' "PHPSESSID=$SESSID's own session carries snep_ui_language=es"
+else
+    harness_bad 'anonymous choice is session-scoped, not global' "session file for PHPSESSID=$SESSID missing snep_ui_language"
+fi
+
+if $COMPOSE exec -T app cmp /tmp/task0034k-before-setup.conf "$CFG"; then
+    harness_ok 'anonymous valid-language choice never mutates setup.conf' "byte-identical before/after"
+else
+    harness_bad 'anonymous valid-language choice never mutates setup.conf' "setup.conf changed after a VALID indexChooseLanguage value"
+fi
+
+if $COMPOSE exec -T asterisk cmp /tmp/task0034k-before-extensions.conf "$EXT_CONF"; then
+    harness_ok 'anonymous valid-language choice never propagates to extensions.conf' "byte-identical before/after"
+else
+    harness_bad 'anonymous valid-language choice never propagates to extensions.conf' "extensions.conf changed after an anonymous request"
+fi
+
+GLOBALS_AFTER="$($COMPOSE exec -T asterisk asterisk -rx 'dialplan show globals' 2>&1)"
+if [ "$GLOBALS_BEFORE" = "$GLOBALS_AFTER" ]; then
+    harness_ok 'anonymous valid-language choice never reaches the live dialplan' "SNEP_LANGUAGE global unchanged"
+else
+    harness_bad 'anonymous valid-language choice never reaches the live dialplan' "dialplan globals changed:\n$GLOBALS_BEFORE\n---\n$GLOBALS_AFTER"
+fi
 
 $COMPOSE exec -T app cp "$CFG" /tmp/task0026b-before.conf
 code=$(curl -sS -o "$tmp/bad" -w '%{http_code}' "$BASE_URL/index.php/default/auth/login?indexChooseLanguage=invalid-task0026b")

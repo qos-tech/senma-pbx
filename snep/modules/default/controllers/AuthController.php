@@ -49,16 +49,29 @@ class AuthController extends Zend_Controller_Action {
 
 
 
+        // TASK-0034K: this used to write setup.conf's global
+        // system.language AND call Snep_Locale::setExtensionsLanguage()
+        // (rewriting extensions.conf's SNEP_LANGUAGE + forcing a live
+        // Asterisk dialplan reload) directly from an unauthenticated GET --
+        // reachable by any anonymous visitor (or a forged link/image), no
+        // CSRF applicability (no session exists yet), no authorization
+        // check. See docs/tasks/0034k-call-language-authority-pre-auth-
+        // locale-hardening.md for the live reproduction.
+        //
+        // An anonymous "view the login page in my language" choice is a
+        // UI_LOCALE concern, not a PBX_DEFAULT_CALL_LANGUAGE (global
+        // telephony config) mutation -- those are now kept structurally
+        // separate: this only ever sets a session-scoped preference
+        // (Snep_Locale::resolveUiLanguage() consults it on every
+        // subsequent request, ahead of setup.conf's persisted value).
+        // Nothing here writes setup.conf, calls setExtensionsLanguage(),
+        // or touches Asterisk. The authenticated, CSRF-protected global
+        // write path (ParametersController::indexAction()/
+        // languageAction()) is unchanged and remains the only way to
+        // change the actual PBX call language.
          if (isset($_GET["indexChooseLanguage"]) && Snep_Locale::isSupportedLanguage($_GET["indexChooseLanguage"])) {
 
-            $configFile = APPLICATION_PATH . "/includes/setup.conf";
-            $config = new Zend_Config_Ini($configFile, null, true);
-            $config->system->language = $_GET["indexChooseLanguage"];
-            $writer = new Zend_Config_Writer_Ini(array('config' => $config,
-                'filename' => $configFile));
-            $writer->write();
-
-            Snep_Locale::setExtensionsLanguage($_GET["indexChooseLanguage"]) ;
+            $_SESSION[Snep_Locale::UI_LANGUAGE_SESSION_KEY] = $_GET["indexChooseLanguage"];
 
             $this->_redirect('/');
 

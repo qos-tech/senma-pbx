@@ -38,9 +38,46 @@ define("TRANSLATIONS_PATH", APPLICATION_PATH . DIRECTORY_SEPARATOR . "lang");
 class Snep_Locale {
     private static $supportedLanguages = array('en', 'pt_BR', 'es');
 
+    /**
+     * TASK-0034K: the $_SESSION key an anonymous/pre-auth "view this page
+     * in my language" choice is stored under. Deliberately NEVER written
+     * to setup.conf and NEVER passed to setExtensionsLanguage() -- see
+     * resolveUiLanguage() below and AuthController::loginAction(). This is
+     * a per-viewer UI preference, not the PBX_DEFAULT_CALL_LANGUAGE
+     * authority (that remains setup.conf's system.language, changed only
+     * through ParametersController's authenticated, CSRF-protected
+     * actions). See docs/tasks/0034k-call-language-authority-pre-auth-
+     * locale-hardening.md.
+     */
+    const UI_LANGUAGE_SESSION_KEY = 'snep_ui_language';
+
     public static function isSupportedLanguage($language) {
         return is_string($language) && in_array($language, self::$supportedLanguages, true);
     }
+
+    /**
+     * TASK-0034K: resolves the UI translation language for the CURRENT
+     * request/viewer. A session-scoped override (set only by
+     * AuthController::loginAction()'s pre-auth language links, or mirrored
+     * by ParametersController when an authenticated admin changes the
+     * global default -- see those callers) always wins over the
+     * persisted, global setup.conf value when present and still
+     * allowlisted; otherwise falls back to $configuredLanguage
+     * (setup.conf's system.language, the PBX_DEFAULT_CALL_LANGUAGE
+     * authority). Never consulted by setExtensionsLanguage() -- a UI-only
+     * override must never influence the dialplan/call-language authority.
+     *
+     * @param string $configuredLanguage setup.conf's system.language
+     * @return string
+     */
+    private static function resolveUiLanguage($configuredLanguage) {
+        if (isset($_SESSION[self::UI_LANGUAGE_SESSION_KEY])
+            && self::isSupportedLanguage($_SESSION[self::UI_LANGUAGE_SESSION_KEY])) {
+            return $_SESSION[self::UI_LANGUAGE_SESSION_KEY];
+        }
+        return $configuredLanguage;
+    }
+
     /**
      * Singleton instance.
      *
@@ -103,7 +140,7 @@ class Snep_Locale {
     public function __construct() {
         $config = Snep_Config::getConfig();
         $locale = $this->locale = $config->system->locale;
-        $language = $this->language = $config->system->language;
+        $language = $this->language = self::resolveUiLanguage($config->system->language);
         $timezone = $this->timezone = $config->system->timezone;
 
         if(!Zend_Locale::isLocale($locale)) {
@@ -229,26 +266,71 @@ class Snep_Locale {
      * and declared static to match its existing :: call sites
      * (AuthController.php, ParametersController.php). See
      * docs/tasks/0002-php84-compatibility-baseline.md.
+     *
+     * TASK-0034K: this is the ONE supported mechanism that mutates the
+     * global PBX_DEFAULT_CALL_LANGUAGE authority (setup.conf's
+     * system.language propagated into extensions.conf's SNEP_LANGUAGE
+     * global, then a live Asterisk dialplan reload). Two changes from the
+     * original implementation:
+     *   1. hasIdentity() guard -- structural enforcement that this can
+     *      only ever run for an authenticated caller, so a future call
+     *      site added without first checking auth fails closed instead of
+     *      silently reopening the pre-auth global-mutation defect this
+     *      task closes (AuthController::loginAction() no longer calls
+     *      this at all -- see its own docblock).
+     *   2. the extensions.conf rewrite is now an in-place
+     *      file_get_contents()/file_put_contents() pair instead of a
+     *      shelled-out `sed ... > file.dpkg-new; mv file.dpkg-new file`.
+     *      Root cause: that temp-file+rename pattern needs *directory*
+     *      write permission on /etc/asterisk, which TASK-0009 deliberately
+     *      never grants www-data (only /etc/asterisk/snep is
+     *      senma-config-group-writable, by design -- see
+     *      docker/asterisk-entrypoint.sh). It silently no-oped under every
+     *      Docker topology this method has ever shipped with (confirmed
+     *      live: `exec()`'s return value/stderr were never checked, so the
+     *      permission-denied sed/mv failure was never surfaced -- see
+     *      docs/tasks/0034k-call-language-authority-pre-auth-locale-
+     *      hardening.md's pre-auth reproduction). An in-place rewrite of
+     *      an already-existing file only needs *file* write permission,
+     *      which docker/asterisk-entrypoint.sh now grants narrowly (same
+     *      chgrp senma-config/chmod 664 pattern already used for
+     *      $ASTERISK_ETC/snep/*.conf) without widening the rest of
+     *      /etc/asterisk -- preserving TASK-0009's boundary. Failures are
+     *      now also reported (bool return) instead of swallowed.
+     *
+     * @param string $lang
+     * @return bool true if the language was validated, persisted and
+     *   propagated; false otherwise (unsupported value, no authenticated
+     *   identity, or the extensions.conf rewrite failed).
      */
     public static function setExtensionsLanguage($lang) {
         if (!self::isSupportedLanguage($lang)) {
             return false;
         }
+        if (!Zend_Auth::getInstance()->hasIdentity()) {
+            return false;
+        }
+
         $config = "/etc/asterisk/extensions.conf";
-        $config_tmp = $config . '.dpkg-new' ;
-        $option='SNEP_LANGUAGE' ;
-        $value=$lang;
-        
-        $shell_cmd='sed "s,^'.$option.' *=.*,'.$option.'='.$value.'," < "'.$config.'" > "'.$config_tmp.'";
-        chown --reference '.$config.' '.$config_tmp.' ;
-        chmod --reference '.$config .' '.$config_tmp.' ;
-        mv "'.$config_tmp.'" "'.$config.'"';
-        exec($shell_cmd);
+        $contents = file_get_contents($config);
+        if ($contents === false) {
+            return false;
+        }
+
+        $updated = preg_replace('/^SNEP_LANGUAGE *=.*$/m', 'SNEP_LANGUAGE=' . $lang, $contents, 1, $replacements);
+        if ($updated === null || $replacements !== 1) {
+            return false;
+        }
+
+        if (file_put_contents($config, $updated) === false) {
+            return false;
+        }
 
         // Forcing asterisk to reload the configs
         $asteriskAmi = PBX_Asterisk_AMI::getInstance();
         $asteriskAmi->Command("dialplan reload");
-        
+
+        return true;
     }
 
      /**
