@@ -143,6 +143,79 @@ if [ "$code" = 302 ] && redirects_to_permission_error; then pass 'permission rem
 code="$(request "$ADMIN_JAR" GET /index.php/default/users/permission/id/$id)"
 if [ "$code" = 200 ] && grep -q 'name="user"' "$BODY"; then pass 'admin privileged path works' "HTTP $code"; else fail 'admin privileged path works' "HTTP $code"; fi
 
+echo '==> TASK-0034L: ParametersController::indexAction() POST authorization boundary'
+# Reproduces and closes the read-permission-gates-write gap TASK-0034J
+# (D3 follow-up) flagged: before this task, Snep_PermissionPlugin
+# classified ANY action literally named "index" as 'read', regardless of
+# HTTP method -- so a user granted only default_parameters_read could
+# still POST through ParametersController::indexAction() and rewrite
+# setup.conf (13+ fields, including DB/AMI credentials) and propagate the
+# PBX call language. This is distinct from the F16 check above, which
+# only ever proved the ZERO-permission case against the sibling
+# languageAction() -- never the read-permission-granted case against
+# indexAction(). See docs/tasks/0034l-parameters-controller-authorization-
+# boundary-hardening.md. $id/$RESTRICTED_JAR are reset to zero
+# permissions by the revoke immediately above, a clean baseline.
+CFG=/var/www/html/snep/includes/setup.conf
+EMP_BEFORE="$($COMPOSE exec -T app grep '^emp_nome' "$CFG")"
+
+# emp_nome (company display name) is a harmless, reversible field --
+# deliberately not language, which TASK-0034K already exercised
+# end-to-end; this proves the boundary itself, not the language pipeline.
+parameters_save() {
+    # $1=jar $2=emp_nome value $3=csrf token
+    request "$1" POST /index.php/default/parameters/index \
+        "emp_nome=$2&debug=&show_help=&hide_routes=&language=en&locale=pt_BR&timezone=America%2FSao_Paulo&peers_digits=4&ip_sock=senma-ami&user_sock=snep&pass_sock=change-me-for-local-development&mail=noreply%40sneplivre.com.br&linelimit=50&conference_app=C&db_dbname=snep&db_host=db&db_username=snep&db_password=change-me-for-local-development&application=mixmonitor&flag=b&record_mp3=&record_format=wav&path_voz=%2Fvar%2Fwww%2Fhtml%2Fsnep%2Farquivos%2F&path_voz_bkp=%2Fvar%2Fwww%2Fhtml%2Fsnep%2Farquivos%2F&valor_controle_qualidade=250&snep_csrf_token=$3"
+}
+
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$id "user=$id&default_parameters_read=1&snep_csrf_token=$ADMIN_CSRF")"
+if [ "$code" = 302 ]; then pass 'admin grants read-only Parameters permission' "HTTP $code"; else fail 'admin grants read-only Parameters permission' "HTTP $code"; fi
+
+code="$(request "$RESTRICTED_JAR" GET /index.php/default/parameters)"
+RESTRICTED_CSRF="$(grep -o 'name="csrf-token" content="[^"]*"' "$BODY" | sed -E 's/.*content="([^"]*)".*/\1/')"
+if [ "$code" = 200 ] && [ -n "$RESTRICTED_CSRF" ]; then pass 'read-only user can render Parameters' "HTTP $code"; else fail 'read-only user can render Parameters' "HTTP $code"; fi
+
+code="$(parameters_save "$RESTRICTED_JAR" 'TASK0034L-SHOULD-BE-DENIED' "$RESTRICTED_CSRF")"
+EMP_AFTER_DENIED="$($COMPOSE exec -T app grep '^emp_nome' "$CFG")"
+if [ "$code" = 302 ] && redirects_to_permission_error && [ "$EMP_BEFORE" = "$EMP_AFTER_DENIED" ]; then
+    pass 'read-only user cannot mutate Parameters via indexAction POST' "HTTP $code, Location: permission/error, setup.conf unchanged"
+else
+    fail 'read-only user cannot mutate Parameters via indexAction POST' "HTTP $code, setup.conf before=[$EMP_BEFORE] after=[$EMP_AFTER_DENIED]"
+fi
+
+# GET must not mutate, regardless of permission -- structural
+# (indexAction() only ever processes $this->_request->getPost()), proven
+# here with the fully-privileged admin session so a failure could only be
+# the GET/POST branch itself, not an authorization side effect.
+code="$(request "$ADMIN_JAR" GET "/index.php/default/parameters/index?emp_nome=TASK0034L-GET-SHOULD-NOT-APPLY")"
+EMP_AFTER_GET="$($COMPOSE exec -T app grep '^emp_nome' "$CFG")"
+if [ "$code" = 200 ] && [ "$EMP_BEFORE" = "$EMP_AFTER_GET" ]; then
+    pass 'GET to parameters/index never mutates' "HTTP $code, setup.conf unchanged"
+else
+    fail 'GET to parameters/index never mutates' "HTTP $code, setup.conf before=[$EMP_BEFORE] after=[$EMP_AFTER_GET]"
+fi
+
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$id "user=$id&default_parameters_read=1&default_parameters_write=1&snep_csrf_token=$ADMIN_CSRF")"
+if [ "$code" = 302 ]; then pass 'admin grants Parameters write permission' "HTTP $code"; else fail 'admin grants Parameters write permission' "HTTP $code"; fi
+
+code="$(request "$RESTRICTED_JAR" GET /index.php/default/parameters)"
+RESTRICTED_CSRF="$(grep -o 'name="csrf-token" content="[^"]*"' "$BODY" | sed -E 's/.*content="([^"]*)".*/\1/')"
+code="$(parameters_save "$RESTRICTED_JAR" 'TASK0034L-SHOULD-SUCCEED' "$RESTRICTED_CSRF")"
+EMP_AFTER_WRITE="$($COMPOSE exec -T app grep '^emp_nome' "$CFG")"
+if [ "$code" = 302 ] && printf '%s' "$EMP_AFTER_WRITE" | grep -q 'TASK0034L-SHOULD-SUCCEED'; then
+    pass 'write-authorized user can mutate Parameters via indexAction POST' "HTTP $code, setup.conf updated"
+else
+    fail 'write-authorized user can mutate Parameters via indexAction POST' "HTTP $code, setup.conf=[$EMP_AFTER_WRITE]"
+fi
+
+ORIGINAL_EMP_NOME="$(printf '%s' "$EMP_BEFORE" | sed -E 's/^emp_nome = "(.*)"$/\1/')"
+code="$(parameters_save "$RESTRICTED_JAR" "$ORIGINAL_EMP_NOME" "$RESTRICTED_CSRF")"
+EMP_RESTORED="$($COMPOSE exec -T app grep '^emp_nome' "$CFG")"
+if [ "$EMP_BEFORE" = "$EMP_RESTORED" ]; then pass 'emp_nome restored to its original value' "$EMP_RESTORED"; else fail 'emp_nome restored to its original value' "expected [$EMP_BEFORE] got [$EMP_RESTORED]"; fi
+
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$id "user=$id&snep_csrf_token=$ADMIN_CSRF")"
+if [ "$code" = 302 ]; then pass 'Parameters permissions revoked back to baseline' "HTTP $code"; else fail 'Parameters permissions revoked back to baseline' "HTTP $code"; fi
+
 echo '==> Restart persistence'
 $COMPOSE restart app >/dev/null
 for _ in $(seq 1 30); do

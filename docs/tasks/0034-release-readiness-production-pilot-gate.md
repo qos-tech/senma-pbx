@@ -856,6 +856,7 @@ All items below were reviewed against their original docs and reclassified for p
 | No queue/group delete-dependency warnings | 0031/0032 | POST_PILOT |
 | `IpStatusController` shows PJSIP extensions as N.D. | 0029b | POST_PILOT — cosmetic, isolated-as-legacy |
 | App/DB/CDR-report SQL-injection boundary work | 0026 series | Closed — see §16 |
+| `ParametersController::indexAction()` POST gated only by `default_parameters_read` (a user granted read-only Parameters access could rewrite `setup.conf` -- 13+ fields including DB/AMI credentials -- and propagate the PBX language) | found 0034J (D3 follow-up), closed 0034L | Closed — `Snep_PermissionPlugin` now requires `default_parameters_write` for a POST to that action; see `docs/tasks/0034l-parameters-controller-authorization-boundary-hardening.md` |
 
 ---
 

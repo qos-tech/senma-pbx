@@ -91,6 +91,43 @@ class Snep_PermissionPlugin extends Zend_Controller_Plugin_Abstract {
         'default_music-on-hold'   => array('file'),
     );
 
+    /**
+     * TASK-0034L: controllers whose "index" action ALSO processes a
+     * mutating POST -- not a read-only filter/search submission -- so
+     * "index" cannot blanket-default to 'read' for them the way it safely
+     * does everywhere else. Checked ONLY when the actual request is a
+     * POST; a GET to the same action is still 'read', identical to every
+     * other controller's index action, completely unchanged. Key:
+     * "<module>_<controller>".
+     *
+     * ParametersController::indexAction()'s POST branch rewrites
+     * setup.conf (13+ fields, including DB and AMI credentials) and
+     * propagates the PBX call language via
+     * Snep_Locale::setExtensionsLanguage() -- confirmed live-reachable by
+     * a user granted only default_parameters_read (TASK-0034J's D3
+     * follow-up finding; see docs/tasks/0034l-parameters-controller-
+     * authorization-boundary-hardening.md). default_parameters_write
+     * already exists and is already correctly required by
+     * ParametersController::languageAction() (added by TASK-0026A
+     * specifically for that sibling action -- see resources.xml's own
+     * comment on the "parameters" resource) -- reused here, not a new
+     * permission.
+     *
+     * Deliberately NOT a blanket "POST to any index action requires
+     * write" rule: a full-repo scan (TASK-0034L) found many other
+     * controllers whose indexAction() also reads $_request->getPost()
+     * (reports/audit/logs/etc.), but only ever as a read-only filter/
+     * search submission -- none evidenced as a real mutation, and
+     * reclassifying them without individually verifying each one first
+     * was explicitly out of this task's scope (would risk locking
+     * existing read-permission users out of legitimate filter/search
+     * forms). Adding a controller here must be individually justified,
+     * the same way each entry in $readActions above already is.
+     */
+    private static $writeOnPostIndex = array(
+        'default_parameters' => true,
+    );
+
     public function __construct() {
 
     }
@@ -148,7 +185,10 @@ class Snep_PermissionPlugin extends Zend_Controller_Plugin_Abstract {
             return;
         }
 
-        if ($action == 'index') {
+        if ($action == 'index' && $request->isPost() && isset(self::$writeOnPostIndex[$key])) {
+            // TASK-0034L: see $writeOnPostIndex's own docblock above.
+            $type = 'write';
+        } elseif ($action == 'index') {
             $type = 'read';
         } elseif (isset(self::$readActions[$key]) && in_array($action, self::$readActions[$key], true)) {
             $type = 'read';
