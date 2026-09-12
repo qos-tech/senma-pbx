@@ -147,6 +147,13 @@ run_suite "disclosure-path-security" "disclosure-path-security-smoke-test.sh"
 run_suite "legacy-maintenance-exposure-security" "legacy-maintenance-exposure-security-smoke-test.sh"
 run_suite "authorization-coverage" "authorization-coverage-check.sh"
 run_suite "authorization-smoke"    "authorization-smoke-test.sh"
+# TASK-0034M: CnlController's upload-authorization/upload-security
+# surface gets its own suite (CSRF/zip-slip/symlink/legitimate-import) --
+# too much upload-specific fixture machinery to fold into
+# authorization-smoke-test.sh's own lighter per-controller checks. Placed
+# right after authorization-smoke for the same "independent trust-
+# boundary proof" reasoning as its neighbors above.
+run_suite "cnl-upload-authorization-security" "cnl-upload-authorization-security-smoke-test.sh"
 run_suite "http-smoke"             "smoke-test.sh"
 # TASK-0027A: fixed-timestamp proof of harness_cdr_report_window(),
 # which call-smoke/trunk-smoke's own CDR report-readback checks depend
