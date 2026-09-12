@@ -651,13 +651,15 @@ leftover files, no session leakage observed across either repeated run.
    classification); narrow window (dead once an install completes
    registration once); `RegisterController`'s GET-mutates behavior and
    its own inaccurate `$alwaysAllow` comment should be corrected in the
-   same task.
+   same task. **Closed by TASK-0034O** (see
+   `docs/tasks/0034o-itc-vendor-registration-authorization-boundary-audit-hardening.md`).
 2. **TASK-0034N-CANDIDATE-2** — `Zend_Validate_File_Upload`/
    `CnlController` PHP 8.4 `count()` TypeErrors (UPLOAD-SUBSYSTEM
-   CAVEAT above). Recommend high priority: this makes CNL import
-   completely non-functional for every role today, independent of this
-   task's authorization fix, and is a two-line, well-understood,
-   behavior-preserving compatibility repair.
+   CAVEAT above). **Closed by TASK-0034N** (see
+   `docs/tasks/0034n-cnl-php84-upload-compatibility-import-runtime-repair.md`).
+   Was high-priority at the time of this task: CNL import was completely
+   non-functional for every role, independent of this task's
+   authorization fix.
 3. `CnlController`'s missing `unlink()` cleanup of its own uploaded/
    extracted `/tmp` files (PHASE 6) -- minor housekeeping debt, not a
    security defect.
@@ -681,8 +683,17 @@ leftover files, no session leakage observed across either repeated run.
 
 1. ITC vendor-registration write surface (`IndexController`/
    `RegisterController`) -- different mechanism, see above.
+   **Closed by TASK-0034O** (authorization boundary + standalone core /
+   optional ITC architecture; see
+   `docs/tasks/0034o-itc-vendor-registration-authorization-boundary-audit-hardening.md`).
+   Residual non-ITC alwaysAllow writes (`IndexController::addAction`,
+   GET `?dashboard_add=`) remain as FOLLOW_UP_DEBT on that task.
 2. `Zend_Validate_File_Upload`/`CnlController` PHP 8.4 `count()`
-   TypeErrors -- separately-scoped compatibility defect, see above.
+   TypeErrors -- **Closed by TASK-0034N** (see
+   `docs/tasks/0034n-cnl-php84-upload-compatibility-import-runtime-repair.md`).
+   Was separately-scoped compatibility defect at the time of this task;
+   the dedicated follow-up landed and the focused CNL suite now requires
+   the full success shape.
 3. `CnlController`'s missing upload/extraction cleanup.
 4. `CnlController`'s zip-slip guard has no explicit symlink-entry
    rejection (currently safe empirically, not by documented contract).
@@ -708,6 +719,9 @@ known-debt table (historical findings preserved, nothing overwritten):
   `PILOT_CONSTRAINT`** (narrow window, dead after one-time registration,
   but real and unauthenticated-adjacent in spirit -- any authenticated
   user, zero grants required) pending TASK-0034N-CANDIDATE-1.
+  **Closed by TASK-0034O** (write-gated POST via `$writeOnPostIndex` +
+  `resources.xml` write children; RegisterController GET no longer
+  rewrites `itc_consumers`).
 - `Zend_Validate_File_Upload`/`CnlController` PHP 8.4 compatibility
   defect: **new finding, classified `PILOT_BLOCKER`** for the CNL-import
   feature specifically (the feature is completely non-functional for

@@ -55,7 +55,16 @@ if [ -z "$ARCHIVE" ]; then
 fi
 harness_ok "artifact exists" "$(basename "$ARCHIVE")"
 
-ARCHIVE_MODE="$(stat -f '%Lp' "$ARCHIVE" 2>/dev/null || stat -c '%a' "$ARCHIVE" 2>/dev/null)"
+# GNU coreutils `stat -f` means --file-system and does NOT fail on Linux,
+# so the BSD form must not be tried first (it returns a multi-line
+# filesystem dump that is not a mode). Prefer GNU -c, fall back to BSD -f.
+if ARCHIVE_MODE="$(stat -c '%a' "$ARCHIVE" 2>/dev/null)" && [ -n "$ARCHIVE_MODE" ]; then
+    :
+elif ARCHIVE_MODE="$(stat -f '%Lp' "$ARCHIVE" 2>/dev/null)" && [ -n "$ARCHIVE_MODE" ]; then
+    :
+else
+    ARCHIVE_MODE=""
+fi
 if [ "$ARCHIVE_MODE" = "600" ]; then
     harness_ok "artifact permissions restrictive" "mode 600"
 else

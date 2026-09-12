@@ -188,4 +188,24 @@ class Snep_Register_Manager {
         }
     }
 
+    /**
+     * isEnabled - TASK-0034O: ITC / future vendor-portal integration is
+     * OPTIONAL. SENMA core must start, log in, and open the normal
+     * dashboard without any ITC configuration, registration row, or
+     * reachable external portal. Explicit opt-in only:
+     *   setup.conf [system] itc_enabled = "true"
+     * Absent or any other value => disabled (standalone core mode).
+     * Does not delete ITC tables/controllers; it only gates whether the
+     * historical registration interstitial and external calls run.
+     *
+     * @return boolean
+     */
+    public static function isEnabled() {
+        $config = Zend_Registry::get('config');
+        if (!isset($config->system->itc_enabled)) {
+            return false;
+        }
+        return ((string) $config->system->itc_enabled === 'true');
+    }
+
 }

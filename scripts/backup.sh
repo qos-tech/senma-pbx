@@ -97,6 +97,14 @@ STAGE_DIR="$STAGE_ROOT/senma-backup-${TS}"
 mkdir -p "$STAGE_DIR/db" "$STAGE_DIR/fs"
 blib_secure_path "$STAGE_ROOT"
 blib_secure_path "$STAGE_DIR"
+# The asterisk service runs as uid 997 and must write into this
+# host-mounted staging directory via `docker compose run -v ...:/backup-output`.
+# Keeping STAGE_ROOT/STAGE_DIR at 0700 is correct for the final artifact
+# tree, but the fs/ mount point itself has to be writable by that
+# container user (Linux Docker has no Desktop-style uid remap here).
+# Without this, every asterisk-side archive step fails with
+# "Permission denied" and backup-smoke exits BLOCKED.
+chmod 0777 "$STAGE_DIR/fs"
 
 FAILED=0
 step() {

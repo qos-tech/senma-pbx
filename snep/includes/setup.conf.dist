@@ -54,7 +54,16 @@ path.log = "/var/log/snep/"
 path.asterisk.conf = "/etc/asterisk"
 path.asterisk.sounds = "/var/lib/asterisk/sounds"
 path.asterisk.moh = "/var/lib/asterisk/moh"
-itc_required = "true"
+; TASK-0034O: ITC / future vendor-portal integration is OPTIONAL.
+; SENMA core is standalone by default. Set itc_enabled = "true" only to
+; opt into the historical Opens ITC registration interstitial and
+; external portal calls. When false/absent: login lands on the normal
+; dashboard with no ITC prompt and no outbound ITC request.
+itc_enabled = "false"
+; When itc_enabled=true, itc_required controls whether the interstitial
+; shows a "register later" (noregister) escape. Kept for the optional
+; integration path only; irrelevant while itc_enabled=false.
+itc_required = "false"
 itc_distro = "1"
 itc_address = "https://api.opens.com.br/api/v1/"
 locale = "pt_BR"

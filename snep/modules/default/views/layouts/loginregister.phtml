@@ -8,8 +8,12 @@ echo $this->doctype();
 		<link href="<?php echo $this->baseUrl(); ?>/css/snep.css" rel="stylesheet">
 		<link href="<?php echo $this->baseUrl(); ?>/css/register.css" rel="stylesheet">
 		<meta http-equiv="Content-Type" content="text/html;charset=utf-8" />
+		<!-- TASK-0034O: same CSRF gap as register.phtml -- this layout is
+		     used for the ITC re-login form after a 401/404 from the vendor. -->
+		<meta name="csrf-token" content="<?php echo $this->escape($this->csrfToken); ?>">
 
 		<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/jquery.min.js"></script>
+		<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/csrf.js"></script>
 		<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/validate/jquery.validate.js"></script>
 		<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/validate/validate-snep.js"></script>
     </head>

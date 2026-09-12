@@ -8,8 +8,15 @@ echo $this->doctype();
 		<link href="<?php echo $this->baseUrl(); ?>/css/snep.css" rel="stylesheet">
 		<link href="<?php echo $this->baseUrl(); ?>/css/register.css" rel="stylesheet">
 		<meta http-equiv="Content-Type" content="text/html; charset=UTF-8" />
+		<!-- TASK-0034O: register layout previously omitted the CSRF meta
+		     that layouts/layout.phtml emits, so every authenticated POST
+		     from this interstitial was rejected by Snep_CsrfPlugin (403)
+		     even for a legitimate admin. Bootstrap already assigns
+		     $this->csrfToken on every view. -->
+		<meta name="csrf-token" content="<?php echo $this->escape($this->csrfToken); ?>">
 
 		<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/jquery.min.js"></script>
+		<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/csrf.js"></script>
 		<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/validate/jquery.validate.js"></script>
 		<script src="<?php echo $this->baseUrl(); ?>/includes/javascript/validate/validate-snep.js"></script>
     </head>

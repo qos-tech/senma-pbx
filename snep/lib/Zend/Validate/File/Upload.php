@@ -161,7 +161,10 @@ class Zend_Validate_File_Upload extends Zend_Validate_Abstract
      */
     public function isValid($value, $file = null)
     {
-        $this->_messages = null;
+        // PHP 8.0+: count(null) is a TypeError. Older PHP treated it as 0.
+        // Reset to an empty array (the declared type on Zend_Validate_Abstract)
+        // so a successful upload (error=0, is_uploaded_file true) still returns true.
+        $this->_messages = array();
         if (array_key_exists($value, $this->_files)) {
             $files[$value] = $this->_files[$value];
         } else {

@@ -154,7 +154,13 @@ run_suite "authorization-smoke"    "authorization-smoke-test.sh"
 # right after authorization-smoke for the same "independent trust-
 # boundary proof" reasoning as its neighbors above.
 run_suite "cnl-upload-authorization-security" "cnl-upload-authorization-security-smoke-test.sh"
+# TASK-0034O: ITC vendor-registration $alwaysAllow write-surface contract
+# (authenticated-open GET; write-gated POST; CSRF; Register GET no longer
+# mutates itc_consumers). Placed next to the CNL authz suite as the other
+# TASK-0034M follow-up that closed a distinct authorization mechanism.
+run_suite "itc-registration-authorization-security" "itc-registration-authorization-security-smoke-test.sh"
 run_suite "http-smoke"             "smoke-test.sh"
+
 # TASK-0027A: fixed-timestamp proof of harness_cdr_report_window(),
 # which call-smoke/trunk-smoke's own CDR report-readback checks depend
 # on -- placed immediately before them so a regression in the shared

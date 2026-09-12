@@ -32,6 +32,15 @@ class RegisterController extends Zend_Controller_Action {
      */
     public function indexAction() {
 
+        // TASK-0034O: when ITC is not explicitly enabled, this controller
+        // must not block or redirect the operator into a registration
+        // workflow. Preserve the controller for future optional portal
+        // use; do not mutate session/DB on the disabled path.
+        if (!Snep_Register_Manager::isEnabled()) {
+            $this->_redirect('/');
+            return;
+        }
+
         $this->view->breadcrumb = Snep_Breadcrumb::renderPath(array(
                     $this->view->translate("Register Snep")));
 
@@ -64,9 +73,15 @@ class RegisterController extends Zend_Controller_Action {
                     $this->view->uuid = $data['uuid'];
                     $distributions = $response->details->distributions;
 
-                    // Update distributions in database
-                    Snep_Register_Manager::removeDistributions();
-                    Snep_Register_Manager::addDistributions($distributions);
+                    // TASK-0034O: previously this GET path always called
+                    // Snep_Register_Manager::removeDistributions()/
+                    // addDistributions() -- a persistent DB rewrite on
+                    // every page view, reachable by any authenticated
+                    // user via $alwaysAllow. Display still uses the live
+                    // ITC response above; distribution sync is deferred
+                    // to the POST login branch below (which now also
+                    // requires default_register_write).
+                    $this->view->distributions = $distributions;
                     break;
                 case 500:
                     $this->view->error_message = $this->view->translate("Internal Server Error. Please try later.");

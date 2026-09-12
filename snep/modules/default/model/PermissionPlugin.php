@@ -45,7 +45,11 @@ class Snep_PermissionPlugin extends Zend_Controller_Plugin_Abstract {
      * docs/tasks/0026a-authorization-default-deny.md.
      */
     private static $alwaysAllow = array(
-        'default_index'          => true, // dashboard; open to all authenticated users (pre-existing hardcoded bypass)
+        // Dashboard GET (and the pre-ITC-registration interstitial GET) stay
+        // open to every authenticated user. TASK-0034O: POST mutations on
+        // indexAction (ITC register/confirm/login/opensnep/noregister) are
+        // NOT covered by this bypass anymore -- see $writeOnPostIndex.
+        'default_index'          => true,
         'default_auth'           => true, // login/logout/redefine/recuperation must stay reachable (pre-existing hardcoded bypass)
         'default_error'          => true, // shared error-rendering partial used by every other controller's failure paths (pre-existing hardcoded bypass)
         'default_installer'      => true, // no backing controller exists; kept only for behavioral parity with the previous bypass list
@@ -55,7 +59,12 @@ class Snep_PermissionPlugin extends Zend_Controller_Plugin_Abstract {
         'default_information'    => true, // dashboard greeting widget ("Welcome to Snep, <user>")
         'default_newversion'     => true, // read-only vendor version-check display, content-hardened by TASK-0024/0025
         'default_notifications'  => true, // low-stakes, self-service vendor notice feed (view/dismiss only, no PBX or account data); gating it would silently break for every non-superuser profile today since profiles_permissions has zero rows
-        'default_register'       => true, // read-only install/registration status display
+        // ITC registration status page: GET remains authenticated-open so
+        // any logged-in user can view status. TASK-0034O corrected the
+        // previous "read-only" claim -- POST (and the former GET-side
+        // distribution rewrite, now removed from GET) require
+        // default_register_write via $writeOnPostIndex.
+        'default_register'       => true,
         'default_simulator'      => true, // read-only dialplan simulation against already-existing routing rules
         'default_snep'           => true, // legacy dead redirect to "/", no real behavior
     );
@@ -174,6 +183,25 @@ class Snep_PermissionPlugin extends Zend_Controller_Plugin_Abstract {
         // architect (no runtime-contract change; only the caller's
         // authorization boundary is tightened).
         'default_conference-rooms' => true,
+        // TASK-0034O: IndexController::indexAction()'s POST branch (while
+        // $_SESSION['registered']!=true && $_SESSION['noregister']!=true)
+        // writes system-wide ITC vendor-registration state via
+        // Snep_Register_Manager::registerITC()/addDistributions()/
+        // noregister() and Snep_Notifications::addNotification(). The
+        // controller is on $alwaysAllow (dashboard GET must stay open to
+        // every authenticated user); this entry exists so the alwaysAllow
+        // short-circuit below still demands default_index_write for POST.
+        // default_index had no write child before this task -- added in
+        // resources.xml alongside this entry. Empty grants + non-superuser
+        // => deny (same fresh-install shape as parameters/cnl).
+        'default_index' => true,
+        // TASK-0034O: RegisterController::indexAction()'s POST branch
+        // re-authenticates against the vendor ITC and rewrites
+        // itc_register api/client keys plus itc_consumers rows. Same
+        // alwaysAllow + writeOnPostIndex shape as default_index above.
+        // The previous $alwaysAllow comment ("read-only") was factually
+        // wrong; GET no longer mutates (controller change in this task).
+        'default_register' => true,
     );
 
     public function __construct() {
@@ -214,8 +242,18 @@ class Snep_PermissionPlugin extends Zend_Controller_Plugin_Abstract {
         $action = $request->getActionName();
         $key = $module . '_' . $controller;
 
+        // TASK-0034O: $alwaysAllow still means "any authenticated user may
+        // REACH this controller" for ordinary GET/read traffic, but an
+        // opt-in $writeOnPostIndex entry can still require write for POST
+        // to index -- the same shape TASK-0034L/M already use for
+        // non-alwaysAllow controllers. Controllers on $alwaysAllow that
+        // are NOT listed in $writeOnPostIndex remain fully open when
+        // authenticated (notifications dismiss, docs, etc. -- unchanged).
         if (isset(self::$alwaysAllow[$key])) {
-            return;
+            if (!($action == 'index' && $request->isPost() && isset(self::$writeOnPostIndex[$key]))) {
+                return;
+            }
+            // Fall through: classify as write and enforce below.
         }
 
         if (isset(self::$aliasResource[$key])) {
@@ -235,6 +273,8 @@ class Snep_PermissionPlugin extends Zend_Controller_Plugin_Abstract {
 
         if ($action == 'index' && $request->isPost() && isset(self::$writeOnPostIndex[$key])) {
             // TASK-0034L: see $writeOnPostIndex's own docblock above.
+            // TASK-0034O: also reached for alwaysAllow controllers that
+            // opted into $writeOnPostIndex (default_index / default_register).
             $type = 'write';
         } elseif ($action == 'index') {
             $type = 'read';

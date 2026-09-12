@@ -193,18 +193,37 @@ class AuthController extends Zend_Controller_Action {
                             $_SESSION['active_user'] = $extension['name'];
                             $_SESSION['vinculos_user'] = "";
 
-                            $registered = $db->query("SELECT uuid,registered_itc,noregister FROM itc_register")->fetch();
+                            // TASK-0034O: ITC table hydrate/seed is OPTIONAL.
+                            // When Snep_Register_Manager::isEnabled() is false
+                            // (standalone default), login must not SELECT or
+                            // INSERT itc_register / itc_consumers, and must
+                            // not depend on any ITC row existing. Ephemeral
+                            // session placeholders (including an in-memory
+                            // uuid never written to itc_register) keep
+                            // layout/host-inspect consumers notice-free
+                            // without ITC DB activity. When explicitly
+                            // enabled, preserve the historical register-row
+                            // hydrate and uuid seed behavior.
+                            if (Snep_Register_Manager::isEnabled()) {
+                                $registered = $db->query("SELECT uuid,registered_itc,noregister FROM itc_register")->fetch();
 
-                            $_SESSION['registered'] = $registered['registered_itc'];
-                            $_SESSION['uuid'] = $registered['uuid'];
-                            $_SESSION['noregister'] = $registered['noregister'];
+                                $_SESSION['registered'] = $registered['registered_itc'];
+                                $_SESSION['uuid'] = $registered['uuid'];
+                                $_SESSION['noregister'] = $registered['noregister'];
 
-                            if(!isset($_SESSION['uuid'])){
-
-                                $v4uuid = self::v4();
-                                $_SESSION['uuid'] = $v4uuid;
-                                Snep_Auth_Manager::adduuid($v4uuid);
-
+                                if (!isset($_SESSION['uuid'])) {
+                                    $v4uuid = self::v4();
+                                    $_SESSION['uuid'] = $v4uuid;
+                                    Snep_Auth_Manager::adduuid($v4uuid);
+                                }
+                            } else {
+                                $_SESSION['registered'] = false;
+                                $_SESSION['noregister'] = false;
+                                // Ephemeral session identity only -- never
+                                // persisted to itc_register while ITC is
+                                // disabled. Keeps layout/host-inspect URL
+                                // shape without any ITC DB dependency.
+                                $_SESSION['uuid'] = self::v4();
                             }
 
                             $this->_redirect('/');

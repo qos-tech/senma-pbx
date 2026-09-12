@@ -85,6 +85,17 @@ fi
 chown www-data:www-data "$SETUP_CONF"
 chmod 664 "$SETUP_CONF"
 
+# TASK-0034O / TASK-0034I: System Status (inspectors/AGI.php) requires the
+# bind-mounted AGI source tree to be writable by www-data. Host-side
+# umask/ownership drift after recreate must not leave the directory
+# read-only for the app user -- that falsely reds "Environment for AGI
+# SNEP" and fails system-status-runtime-smoke mid-regression.
+AGI_DIR=/var/www/html/snep/agi
+if [ -d "$AGI_DIR" ]; then
+    chown -R www-data:www-data "$AGI_DIR" || true
+    chmod u+rwX "$AGI_DIR" || true
+fi
+
 # TASK-0026H (F27): idempotent -- only acts while the seeded admin row
 # still holds the install-time sentinel (see
 # snep/install/database/system_data.sql and docker/bootstrap-admin.php's

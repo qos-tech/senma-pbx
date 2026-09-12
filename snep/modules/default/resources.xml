@@ -15,7 +15,23 @@
     <resource id="installer" order="allow"></resource>
 
     <group id="index" label="Dashboard" font="sn-dashboard">
-        <resource id="index" label="Dashboard" font="sn-dashboard"></resource>
+        <!-- TASK-0034O: write child added so PermissionPlugin's
+             $writeOnPostIndex['default_index'] entry (ITC vendor-
+             registration POST mutations on IndexController::indexAction)
+             has a real default_index_write resource to require. GET
+             dashboard / registration interstitial remains authenticated-
+             open via $alwaysAllow. -->
+        <resource id="index" label="Dashboard" font="sn-dashboard">
+            <resource id="write"></resource>
+        </resource>
+        <!-- TASK-0034O: RegisterController was previously alwaysAllow-
+             only with a false "read-only" comment. Registered here so
+             $writeOnPostIndex['default_register'] can demand
+             default_register_write for POST; GET status view stays
+             authenticated-open via $alwaysAllow. -->
+        <resource id="register" label="ITC Registration" font="sn-dashboard">
+            <resource id="write"></resource>
+        </resource>
     </group>
 
     <group id="status" label="Status" font="sn-status">
