@@ -1,0 +1,60 @@
+---
+description: Architecture and current modernization state of SENMA PBX
+alwaysApply: true
+---
+
+# SENMA current architecture
+
+## Telephony
+
+- Supported runtime is PJSIP.
+- chan_sip is not part of the supported runtime.
+- WSS is provided through Asterisk HTTP.
+- Native SIP TLS and WSS TLS have different lifecycle semantics.
+- PJSIP generated configuration is reconciled from DB state.
+- Extension number, peers.name, and PJSIP endpoint identity follow the established SENMA invariants.
+
+## Operations
+
+- Backup/restore/DR exists.
+- Secret rotation exists.
+- Readiness and doctor tooling exist.
+- DB migration lifecycle exists.
+- PJSIP DB-to-runtime reconciliation exists.
+- Release artifact provenance exists.
+- Production pilot Compose overlay exists.
+- Development provider fixture is profile-gated.
+- Production WSS certificate runtime verification exists.
+- Operational commands must preserve pilot topology and runtime state.
+
+## Release / Pilot
+
+- Production/pilot deployment uses an explicit release identity.
+- Release identity links Git commit, release version, OCI image metadata, image identity, and running deployment.
+- Development fixtures must never become production-active without explicit opt-in.
+- Pilot networking exposes only the explicitly supported SIP/WSS/RTP paths.
+- AMI and DB must not be publicly exposed.
+
+## Security
+
+- Read permissions must not imply write capability.
+- Mutating operations require an explicit server-side authorization boundary.
+- GET requests must not mutate persistent or runtime state unless explicitly justified.
+- CSRF protection does not replace authorization.
+- Private keys, credentials, and secret-bearing config must never be exposed in UI, logs, diagnostics, or task output.
+
+## Testing
+
+- Regression suite is authoritative.
+- Investigate every failure before classifying it as unrelated.
+- Never hide a failure because a similar flake existed historically.
+- Focused tests should run before canonical gates.
+- Two consecutive clean regression passes are required when the task defines that gate.
+- Do not manually repair or reset the stack between consecutive regression passes unless the task explicitly allows it.
+
+## Task history
+
+- Detailed architecture decisions and historical evidence live under `docs/tasks/`.
+- Before editing an established subsystem, inspect the current task and the relevant predecessor task documents.
+- Treat current runtime evidence as stronger than historical assumptions or comments.
+- Do not reopen previously settled architecture decisions without new evidence.

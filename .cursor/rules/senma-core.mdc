@@ -1,0 +1,83 @@
+---
+description: Core engineering workflow and decision rules for SENMA PBX
+alwaysApply: true
+---
+
+# SENMA core engineering rules
+
+Read `CLAUDE.md` and `AGENTS.md` before making changes.
+
+## Evidence first
+
+Prefer, in this order:
+
+1. current live runtime behavior;
+2. current generated/runtime configuration;
+3. current source code;
+4. current task documentation;
+5. historical documentation/comments.
+
+Do not let historical assumptions override direct current evidence.
+
+## Task discipline
+
+Before changing code:
+
+1. inspect the current task;
+2. inspect relevant predecessor tasks under `docs/tasks/`;
+3. inventory the current implementation;
+4. reproduce the defect or verify the current condition;
+5. determine root cause;
+6. define the intended contract;
+7. make the smallest coherent change.
+
+## Scope
+
+Stay inside the current task.
+
+Do not:
+- perform opportunistic refactors;
+- modernize unrelated code;
+- rename unrelated symbols;
+- change architecture outside the task;
+- fix unrelated debt unless it directly blocks the task.
+
+Classify unrelated findings as follow-up debt.
+
+## Safety
+
+Never weaken:
+- authentication;
+- authorization;
+- CSRF;
+- SQL safety;
+- secret handling;
+- filesystem ownership;
+- runtime validation;
+
+just to make a test pass.
+
+## Customer-owned state
+
+Treat existing customer configuration, certificates, files, database records, and runtime state as owned state.
+
+Do not overwrite, delete, or normalize them without explicit ownership proof.
+
+## Runtime changes
+
+When a change affects runtime state:
+- prove the pre-change behavior;
+- apply the smallest supported reload/restart mechanism;
+- prove convergence afterward;
+- avoid blind fixed sleeps when bounded observable polling is available.
+
+## Failure handling
+
+A failing regression is evidence.
+
+Investigate it before calling it:
+- flaky;
+- unrelated;
+- pre-existing.
+
+Document the evidence supporting that classification.

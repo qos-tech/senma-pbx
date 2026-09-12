@@ -1,0 +1,130 @@
+---
+description: Testing, validation, regression and checkpoint rules for SENMA PBX
+alwaysApply: true
+---
+
+# SENMA testing rules
+
+## Focused validation first
+
+Run focused tests relevant to the changed area before full regression.
+
+Examples include:
+- security suites;
+- PJSIP suites;
+- WSS/TLS suites;
+- migration tests;
+- readiness tests;
+- backup/restore tests;
+- controller authorization tests.
+
+Do not rely only on exit code when the task requires semantic proof.
+
+## Regression authority
+
+The canonical regression suite is authoritative.
+
+When required by the task:
+
+```bash
+make lint
+make regression
+make regression
+```
+
+Two consecutive full PASS runs are required.
+
+A sequence such as:
+
+```text
+PASS
+FAIL
+PASS
+```
+
+does not count as two consecutive PASS runs.
+
+Run again until two consecutive valid PASS runs exist, unless the task explicitly defines another rule.
+
+## No repair between consecutive runs
+
+Do not manually:
+- restart services;
+- recreate containers;
+- repair ODBC;
+- reload Asterisk;
+- reset DB state;
+- clean fixtures;
+
+between consecutive canonical regression runs unless the regression itself owns that lifecycle or the task explicitly permits it.
+
+## Test isolation
+
+Fixtures must:
+- have explicit ownership;
+- use deterministic identifiers;
+- clean themselves on success and failure;
+- avoid deleting unknown/customer data.
+
+Respect dependency/FK cleanup order.
+
+## Runtime proofs
+
+If a task affects telephony, use real runtime evidence where appropriate:
+- registration;
+- actual call;
+- CDR write/readback;
+- live Asterisk state;
+- live TLS/WSS endpoint;
+- AMI action.
+
+Config presence alone is not runtime proof.
+
+## Security proofs
+
+For security-related tasks, validate the full matrix where applicable:
+
+- unauthenticated;
+- zero-permission;
+- read-only;
+- write-authorized;
+- superuser;
+- missing/invalid CSRF;
+- direct endpoint access.
+
+Denied requests must prove state remains unchanged.
+
+## Canonical final gates
+
+Unless the task says otherwise:
+
+```bash
+make lint
+make regression
+make regression
+git diff --check
+git status --short
+```
+
+Operational/release tasks may additionally require:
+
+```bash
+make doctor
+make secrets-check
+make migrate-check
+make reconcile-check
+```
+
+## Result reporting
+
+Use exact status:
+
+- PASS
+- FAIL
+- BLOCKED
+- PARTIAL
+- NOT_RUN
+
+Never turn an incomplete or interrupted run into PASS.
+
+If a run is killed or interrupted, report it separately and rerun.

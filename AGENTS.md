@@ -1,33 +1,77 @@
-# SENMA PBX Agent Notes
+# SENMA PBX Agent Instructions
 
-The canonical project instructions are in `CLAUDE.md`.
+Read and follow `CLAUDE.md` before making changes.
 
-Any coding agent working on this repository should read `CLAUDE.md` before making changes.
+This repository uses a checkpoint-driven engineering workflow.
 
-The current primary milestone is Docker bootstrap. Avoid expanding scope into PHP 8.4,
-Asterisk 22, PJSIP or PostgreSQL migration unless a task explicitly targets those phases.
+## Core behavior
 
-<!-- nexus:start -->
-## Nexus Studio
+- Prefer evidence from the current runtime over assumptions, comments, or historical behavior.
+- Reproduce bugs before fixing them whenever practical.
+- Keep changes small, isolated, reversible, and within the current task scope.
+- Do not perform opportunistic refactors.
+- Preserve customer-owned configuration and data.
+- Do not weaken security controls to make tests pass.
+- Do not silently reinterpret existing architecture decisions.
 
-This project is tracked by Nexus Studio. Its state lives in `.nexus/`:
-`board.yaml` is the board, `issues/` the cards, `specs/<ISSUE>/` their specs,
-`features/<KEY>/` a feature's planning docs, and `method/` the workflows and
-agents you follow. Read `.nexus/method/NEXUS-PATHS.md` for the path contract.
+## Task execution
 
-**The board has one writer, the app.** Never edit `board.yaml`. Record work by
-updating the spec's tasks and appending a comment to the issue.
+Before implementing:
 
-**What a person wrote is not yours to rewrite.** An issue's description and its
-acceptance criteria, and anything a person wrote in a spec, are the INPUT to
-your work. Do not reword, reorder, shorten, tidy or remove them. If something
-there is wrong or missing, say so in your comment and ADD alongside it. Append
-your comment; never replace the comments already on the issue.
+1. Read the current task.
+2. Inspect relevant predecessor task documents under `docs/tasks/`.
+3. Inventory the current implementation.
+4. Reproduce the issue or verify the current state.
+5. Identify the root cause.
+6. Define the supported contract.
+7. Implement the smallest coherent fix.
+8. Run focused validation.
+9. Run canonical gates when required.
 
-**Use the code index before searching by hand.** This project is indexed by
-codegraph: run `codegraph explore "<symbols or question>"` to get the relevant
-source and its call paths in one call, instead of grepping and reading files.
+## Git
 
-**Use memory.** Check what the project already remembers before asking the
-person to repeat context, and record decisions worth keeping.
-<!-- nexus:end -->
+- Never commit automatically.
+- Never push automatically.
+- Never amend or rebase unless explicitly authorized.
+- Never use `git add .`.
+- Use explicit staging.
+- If the working tree contains unrelated changes, do not touch or stage them.
+
+## Validation
+
+Canonical gates normally include:
+
+```bash
+make lint
+make regression
+make regression
+git diff --check
+git status --short
+```
+
+Some tasks also require:
+
+```bash
+make doctor
+make secrets-check
+make migrate-check
+make reconcile-check
+```
+
+Two consecutive clean regression passes are required when defined by the task.
+
+Do not manually repair or reset the stack between consecutive regression runs unless the task explicitly allows it.
+
+## Reporting
+
+Use precise result states such as:
+
+- PASS
+- FAIL
+- BLOCKED
+- PARTIAL
+- NOT_RUN
+
+Do not report a test as passed if it did not complete successfully.
+
+Do not create commits unless the user explicitly authorizes them.
