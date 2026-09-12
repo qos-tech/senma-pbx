@@ -123,9 +123,57 @@ class Snep_PermissionPlugin extends Zend_Controller_Plugin_Abstract {
      * existing read-permission users out of legitimate filter/search
      * forms). Adding a controller here must be individually justified,
      * the same way each entry in $readActions above already is.
+     *
+     * TASK-0034M: docs/tasks/0034m-controller-write-authorization-audit-
+     * cnl-boundary-hardening.md re-audited every remaining
+     * indexAction()+POST controller (precisely 17, confirmed by scanning
+     * strictly within each indexAction() function body, not merely
+     * anywhere in the file) and found four more with this exact
+     * read-implies-write shape -- each is its own narrow, individually
+     * justified entry below, using the corresponding resources.xml
+     * "write" child (added alongside "parameters"'s, or already present
+     * for "conference-rooms"). Every other indexAction()+POST controller
+     * audited by that task (audit/calls-report/docs/export-data/khomp-
+     * links/logs/ranking-report/services-report/simulator/tdm-links) was
+     * verified to be read-only filter/search/report/navigation/simulation
+     * with no persistent or runtime mutation, and is deliberately NOT
+     * listed here.
      */
     private static $writeOnPostIndex = array(
         'default_parameters' => true,
+        // CnlController::indexAction()'s POST branch (country=76) imports
+        // a dialing-prefix ZIP into core_cnl_state/core_cnl_city/
+        // core_cnl_prefix -- a real DB mutation. Identified as concrete
+        // FOLLOW_UP_DEBT by TASK-0034L; closed here.
+        'default_cnl' => true,
+        // ModuleSettingsController::indexAction()'s POST branch writes
+        // arbitrary module configuration rows (Snep_ModuleSettings_
+        // Manager::addConfig()/updateConfig()), including SMTP
+        // credentials -- a real DB mutation, same shape as "cnl".
+        'default_module-settings' => true,
+        // ErrorsKhompController::indexAction()'s POST branch clears the
+        // live Khomp links-errors AMI counters (AsteriskInfo::
+        // status_asterisk("khomp links errors clear", ...)) -- a real
+        // runtime/telephony mutation, same shape as "cnl". Consulted:
+        // senma-telephony-architect (no PJSIP/chan_sip implication --
+        // Khomp is TDM hardware; no reload/runtime-contract change, only
+        // the caller's authorization boundary is tightened).
+        'default_errors-khomp' => true,
+        // ErrorsTdmController::indexAction()'s POST branch mirrors
+        // ErrorsKhompController's AMI clear-counters mutation exactly --
+        // same reason, same telephony-architect consultation.
+        'default_errors-tdm' => true,
+        // ConferenceRoomsController::indexAction()'s POST branch rewrites
+        // /etc/asterisk/snep/snep-conferences.conf and
+        // snep-authconferences.conf directly (conference room definitions
+        // and MD5 lock passwords, both read by the dialplan) -- a real
+        // file/telephony-config mutation. Unlike the others above, this
+        // resource ALREADY had an explicit "write" child (pre-existing,
+        // unused by this action); no resources.xml change was needed,
+        // only this classification entry. Consulted: senma-telephony-
+        // architect (no runtime-contract change; only the caller's
+        // authorization boundary is tightened).
+        'default_conference-rooms' => true,
     );
 
     public function __construct() {

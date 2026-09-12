@@ -34,15 +34,32 @@
             <resource id="write"></resource>
         </resource>
         <resource id="tdm-links" label="TDM boards" font="sn-links"></resource>
-        <resource id="errors-khomp" label="TDM links errors" font="sn-erros-links"></resource>
+        <!-- TASK-0034M: docs/tasks/0034m-controller-write-authorization-
+             audit-cnl-boundary-hardening.md. ErrorsKhompController::
+             indexAction()'s POST branch clears the live Khomp
+             links-errors AMI counters (AsteriskInfo::status_asterisk
+             ("khomp links errors clear", ...)) - a genuine runtime
+             mutation, previously reachable under this resource's implicit
+             read-only classification alone (same read-implies-write shape
+             TASK-0034L closed for ParametersController). Explicit "write"
+             child added so PermissionPlugin's $writeOnPostIndex entry has
+             a real default_errors-khomp_write resource to require. -->
+        <resource id="errors-khomp" label="TDM links errors" font="sn-erros-links">
+            <resource id="write"></resource>
+        </resource>
         <!-- TASK-0026A: docs/tasks/0026a-authorization-default-deny.md.
              ErrorsTdmController mirrors ErrorsKhompController exactly (same
              read-only Khomp/TDM board status display) but had no
              resources.xml entry at all, so it was reachable by any
              authenticated user with zero permission check (part of the
              F16 gap). Registered as its own read-only resource, matching
-             its sibling "errors-khomp" above. -->
-        <resource id="errors-tdm" label="TDM links errors" font="sn-erros-links"></resource>
+             its sibling "errors-khomp" above.
+             TASK-0034M: ErrorsTdmController::indexAction()'s POST branch
+             mirrors ErrorsKhompController's AMI clear-counters mutation
+             exactly, same "write" child addition, same reason. -->
+        <resource id="errors-tdm" label="TDM links errors" font="sn-erros-links">
+            <resource id="write"></resource>
+        </resource>
         <resource id="audit" label="Audit" font="sn-busca"></resource>
         <resource id="logs" label="Logs" font="sn-logs"></resource>
     </group>
@@ -142,8 +159,27 @@
         <resource id="music-on-hold" label="Music on Hold" font="sn-som-espera">
             <resource id="write"></resource>
         </resource>
-        <resource id="cnl" label="Cnl Update" font="sn-busca"></resource>
-        <resource id="module-settings" label="Module Settings" font="sn-modulos"></resource>
+        <!-- TASK-0034M: docs/tasks/0034m-controller-write-authorization-
+             audit-cnl-boundary-hardening.md. CnlController::indexAction()'s
+             POST branch imports a dialing-prefix ZIP into core_cnl_state/
+             core_cnl_city/core_cnl_prefix - a real DB mutation, previously
+             reachable under this resource's implicit read-only
+             classification alone (identified as FOLLOW_UP_DEBT by
+             TASK-0034L, closed here). Explicit "write" child added so
+             PermissionPlugin's $writeOnPostIndex entry has a real
+             default_cnl_write resource to require, same additive
+             pattern TASK-0026A established for "parameters" above. -->
+        <resource id="cnl" label="Cnl Update" font="sn-busca">
+            <resource id="write"></resource>
+        </resource>
+        <!-- TASK-0034M: ModuleSettingsController::indexAction()'s POST
+             branch writes arbitrary module configuration rows (via
+             Snep_ModuleSettings_Manager::addConfig()/updateConfig()),
+             including SMTP credentials, same implicit-read-gates-write
+             shape as "cnl" above. -->
+        <resource id="module-settings" label="Module Settings" font="sn-modulos">
+            <resource id="write"></resource>
+        </resource>
     </group>
 
     <resource id="auth" order="allow">
