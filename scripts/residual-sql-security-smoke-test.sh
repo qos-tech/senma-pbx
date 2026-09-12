@@ -368,9 +368,9 @@ else
     harness_bad "authenticated-open confirmed: /index.php/default/simulator" "expected HTTP 200 for a zero-permission session, got HTTP ${code}"
 fi
 
-code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&default_contacts_write=1&default_contact-groups_write=1&default_dates-alias_write=1&default_expression-alias_write=1&default_cost-center_write=1&default_extensions-groups_write=1&default_sound-files_write=1&billing_billing_write=1&billing_telcos_write=1&default_route_write=1&default_route_read=1&default_users_write=1&default_module-settings_read=1&default_cnl_read=1&snep_csrf_token=${ADMIN_CSRF}")"
+code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$RID "user=$RID&default_trunks_write=1&default_calls-report_read=1&default_ranking-report_read=1&default_services-report_read=1&default_pickup-groups_write=1&default_queues_write=1&default_contacts_write=1&default_contact-groups_write=1&default_dates-alias_write=1&default_expression-alias_write=1&default_cost-center_write=1&default_extensions-groups_write=1&default_sound-files_write=1&billing_billing_write=1&billing_telcos_write=1&default_route_write=1&default_route_read=1&default_users_write=1&default_module-settings_read=1&default_module-settings_write=1&default_cnl_read=1&snep_csrf_token=${ADMIN_CSRF}")"
 if [ "$code" = 302 ]; then
-    harness_ok "admin grants the required TASK-0026M/N/O/P/R permissions" "HTTP $code (contacts/contact-groups/dates-alias/expression-alias/cost-center/extensions-groups/sound-files write, billing/telcos write, route write+read, users write, module-settings read, cnl read, plus the six TASK-0026J-L permissions)"
+    harness_ok "admin grants the required TASK-0026M/N/O/P/R permissions" "HTTP $code (contacts/contact-groups/dates-alias/expression-alias/cost-center/extensions-groups/sound-files write, billing/telcos write, route write+read, users write, module-settings read+write, cnl read, plus the six TASK-0026J-L permissions)"
 else
     harness_blocked "granting permissions to the restricted user failed (HTTP $code) -- cannot proceed"
 fi
@@ -2369,6 +2369,20 @@ fi
 # string or boolean-oracle value applied only to fixtures this script
 # owns -- never a real exploit chain, never password/hash/schema
 # extraction.
+#
+# UPDATE (TASK-0034M): the "module-settings has no write child... a
+# read-only grant is sufficient to reach the vulnerable POST-driven code
+# path" property described above is CLOSED -- resources.xml now declares
+# default_module-settings_write and Snep_PermissionPlugin::
+# $writeOnPostIndex requires it for this action's POST, exactly the same
+# read-implies-write shape TASK-0034L closed for ParametersController.
+# See docs/tasks/0034m-controller-write-authorization-audit-cnl-boundary-
+# hardening.md. $RID is now granted default_module-settings_write too
+# (the bulk grant above) so this section's own SQL-injection probes
+# below still exercise the real, now-correctly-authorized POST path
+# rather than being silently short-circuited by the (now-fixed)
+# authorization gap -- the SQL-safety assertions below are unchanged and
+# unweakened by this.
 
 log "==> TASK-0026P: Snep_ModuleSettings_Manager module-settings boundary"
 
@@ -2383,11 +2397,12 @@ else
     harness_bad "ModuleSettings: legitimate page renders (read-only grant)" "HTTP $code"
 fi
 
-# The severity-defining property: a read-only grant (no "write" resource
-# exists at all for this controller) is sufficient to reach the POST-
-# driven save/lookup code path, since indexAction() handles both and
-# action=='index' always maps to type='read' (Snep_PermissionPlugin).
-manager_check "ModuleSettings: read-only grant reaches the POST-driven save path with no SQL error" \
+# Historically (pre-TASK-0034M) this reached the POST-driven save/
+# lookup path on a read-only grant alone -- that authorization gap is
+# now closed (see the UPDATE note above); $RID carries write here too,
+# so this still exercises the real save path this SQL-injection probe
+# is about, just now via the correctly-authorized grant.
+manager_check "ModuleSettings: write-authorized grant reaches the POST-driven save path with no SQL error" \
     /index.php/default/module-settings "task0026psmoke_x_authcheck=1" "snep_csrf_token=${RESTRICTED_CSRF}"
 
 # Legitimate save flow: a real (fixture-namespaced, collision-free)

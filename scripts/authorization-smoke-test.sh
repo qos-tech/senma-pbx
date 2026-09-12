@@ -216,6 +216,119 @@ if [ "$EMP_BEFORE" = "$EMP_RESTORED" ]; then pass 'emp_nome restored to its orig
 code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$id "user=$id&snep_csrf_token=$ADMIN_CSRF")"
 if [ "$code" = 302 ]; then pass 'Parameters permissions revoked back to baseline' "HTTP $code"; else fail 'Parameters permissions revoked back to baseline' "HTTP $code"; fi
 
+echo '==> TASK-0034M: same-shape indexAction()+POST write-boundary hardening'
+# TASK-0034L's own HIDDEN-WRITER INVENTORY named CnlController as a
+# concretely-verified carry-forward of the exact same read-implies-write
+# shape closed above for Parameters; TASK-0034M's own re-audit of the
+# ~20 other candidate controllers found three more with the identical
+# mechanism (ModuleSettingsController, ErrorsKhompController,
+# ErrorsTdmController) plus one (ConferenceRoomsController) that already
+# had an unused "write" child. CnlController itself gets its own
+# dedicated, more extensive suite (upload/CSRF/zip-slip/legitimate-import)
+# in scripts/cnl-upload-authorization-security-smoke-test.sh; this block
+# only proves the shared PermissionPlugin::$writeOnPostIndex boundary for
+# the other four, reusing the same $id/$RESTRICTED_JAR fixture (reset to
+# zero permissions by the revoke immediately above).
+module_settings_post() { # $1=jar $2=csrf
+    request "$1" POST /index.php/default/module-settings "signup=1&snep_csrf_token=$2"
+}
+errors_khomp_post() { request "$1" POST /index.php/default/errors-khomp "dummy=1&snep_csrf_token=$2"; }
+errors_tdm_post()   { request "$1" POST /index.php/default/errors-tdm   "dummy=1&snep_csrf_token=$2"; }
+conference_rooms_post() {
+    request "$1" POST /index.php/default/conference-rooms \
+        "costCenter=&activate=&password=&rec=&snep_csrf_token=$2"
+}
+
+CONF_FILE=/etc/asterisk/snep/snep-conferences.conf
+AUTHCONF_FILE=/etc/asterisk/snep/snep-authconferences.conf
+CONF_BACKUP="$TMPDIR_AUTH/snep-conferences.conf.bak"
+AUTHCONF_BACKUP="$TMPDIR_AUTH/snep-authconferences.conf.bak"
+$COMPOSE exec -T app cat "$CONF_FILE" > "$CONF_BACKUP"
+$COMPOSE exec -T app cat "$AUTHCONF_FILE" > "$AUTHCONF_BACKUP"
+CONF_BEFORE_MD5="$(md5sum "$CONF_BACKUP" | awk '{print $1}')"
+AUTHCONF_BEFORE_MD5="$(md5sum "$AUTHCONF_BACKUP" | awk '{print $1}')"
+# `docker compose cp` writes the destination as root, dropping the
+# original owner/group/mode (confirmed live: it left both files
+# 501:dialout/644 instead of the app image's own 997:senma-config/664 --
+# harmless to this file's own content, but Snep_Inspector's "Environment
+# for AGI SNEP" check independently verifies these two paths are
+# is_writable() by the web server's own group, so a dropped ownership
+# silently breaks an unrelated System Status panel). Captured once here
+# and re-applied after every cp restore below, cp restore included.
+CONF_OWNER_MODE="$($COMPOSE exec -T app stat -c '%u:%g %a' "$CONF_FILE" | tr -d '\r')"
+AUTHCONF_OWNER_MODE="$($COMPOSE exec -T app stat -c '%u:%g %a' "$AUTHCONF_FILE" | tr -d '\r')"
+restore_conference_files() {
+    $COMPOSE cp "$CONF_BACKUP" app:"$CONF_FILE"
+    $COMPOSE cp "$AUTHCONF_BACKUP" app:"$AUTHCONF_FILE"
+    $COMPOSE exec -T -u root app chown "${CONF_OWNER_MODE%% *}" "$CONF_FILE"
+    $COMPOSE exec -T -u root app chmod "${CONF_OWNER_MODE##* }" "$CONF_FILE"
+    $COMPOSE exec -T -u root app chown "${AUTHCONF_OWNER_MODE%% *}" "$AUTHCONF_FILE"
+    $COMPOSE exec -T -u root app chmod "${AUTHCONF_OWNER_MODE##* }" "$AUTHCONF_FILE"
+}
+harness_register_best_effort_cleanup "restore snep-conferences.conf/snep-authconferences.conf" \
+    "restore_conference_files"
+
+for entry in \
+    'module-settings|module_settings_post' \
+    'errors-khomp|errors_khomp_post' \
+    'errors-tdm|errors_tdm_post' \
+    'conference-rooms|conference_rooms_post'
+do
+    slug="${entry%%|*}"
+    poster="${entry##*|}"
+    resource="default_${slug}"
+
+    code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$id "user=$id&${resource}_read=1&snep_csrf_token=$ADMIN_CSRF")"
+    if [ "$code" = 302 ]; then pass "admin grants read-only $slug permission" "HTTP $code"; else fail "admin grants read-only $slug permission" "HTTP $code"; fi
+
+    code="$(request "$RESTRICTED_JAR" GET /index.php/default/$slug)"
+    RESTRICTED_CSRF="$(grep -o 'name="csrf-token" content="[^"]*"' "$BODY" | sed -E 's/.*content="([^"]*)".*/\1/')"
+    if [ "$code" != 302 ]; then pass "read-only user can reach $slug (not permission-denied)" "HTTP $code"; else fail "read-only user can reach $slug (not permission-denied)" "HTTP $code"; fi
+
+    code="$("$poster" "$RESTRICTED_JAR" "$RESTRICTED_CSRF")"
+    if [ "$code" = 302 ] && redirects_to_permission_error; then
+        pass "read-only user cannot mutate $slug via indexAction POST" "HTTP $code, Location: permission/error"
+    else
+        fail "read-only user cannot mutate $slug via indexAction POST" "HTTP $code"
+    fi
+
+    code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$id "user=$id&${resource}_read=1&${resource}_write=1&snep_csrf_token=$ADMIN_CSRF")"
+    if [ "$code" = 302 ]; then pass "admin grants $slug write permission" "HTTP $code"; else fail "admin grants $slug write permission" "HTTP $code"; fi
+
+    code="$(request "$RESTRICTED_JAR" GET /index.php/default/$slug)"
+    RESTRICTED_CSRF="$(grep -o 'name="csrf-token" content="[^"]*"' "$BODY" | sed -E 's/.*content="([^"]*)".*/\1/')"
+    code="$("$poster" "$RESTRICTED_JAR" "$RESTRICTED_CSRF")"
+    if [ "$code" != 302 ] || ! redirects_to_permission_error; then
+        pass "write-authorized user can mutate $slug via indexAction POST" "HTTP $code (not permission-denied)"
+    else
+        fail "write-authorized user can mutate $slug via indexAction POST" "HTTP $code"
+    fi
+
+    code="$(request "$ADMIN_JAR" POST /index.php/default/users/permission/id/$id "user=$id&snep_csrf_token=$ADMIN_CSRF")"
+    if [ "$code" = 302 ]; then pass "$slug permissions revoked back to baseline" "HTTP $code"; else fail "$slug permissions revoked back to baseline" "HTTP $code"; fi
+done
+
+# ConferenceRoomsController's write-authorized POST above genuinely
+# rewrites both Asterisk conference config files (proving that path is
+# reachable is the point of the check above) -- restore the exact
+# byte-for-byte snapshot taken before this block ran, so this suite
+# never leaves telephony-consumed config mutated, and prove the restore.
+restore_conference_files
+CONF_AFTER_MD5="$($COMPOSE exec -T app md5sum "$CONF_FILE" | awk '{print $1}')"
+AUTHCONF_AFTER_MD5="$($COMPOSE exec -T app md5sum "$AUTHCONF_FILE" | awk '{print $1}')"
+if [ "$CONF_AFTER_MD5" = "$CONF_BEFORE_MD5" ] && [ "$AUTHCONF_AFTER_MD5" = "$AUTHCONF_BEFORE_MD5" ]; then
+    pass 'snep-conferences.conf/snep-authconferences.conf restored to their original content' "$CONF_AFTER_MD5 / $AUTHCONF_AFTER_MD5"
+else
+    fail 'snep-conferences.conf/snep-authconferences.conf restored to their original content' "expected [$CONF_BEFORE_MD5 / $AUTHCONF_BEFORE_MD5] got [$CONF_AFTER_MD5 / $AUTHCONF_AFTER_MD5]"
+fi
+CONF_AFTER_OWNER_MODE="$($COMPOSE exec -T app stat -c '%u:%g %a' "$CONF_FILE" | tr -d '\r')"
+AUTHCONF_AFTER_OWNER_MODE="$($COMPOSE exec -T app stat -c '%u:%g %a' "$AUTHCONF_FILE" | tr -d '\r')"
+if [ "$CONF_AFTER_OWNER_MODE" = "$CONF_OWNER_MODE" ] && [ "$AUTHCONF_AFTER_OWNER_MODE" = "$AUTHCONF_OWNER_MODE" ]; then
+    pass 'snep-conferences.conf/snep-authconferences.conf restored to their original owner/mode' "$CONF_AFTER_OWNER_MODE / $AUTHCONF_AFTER_OWNER_MODE"
+else
+    fail 'snep-conferences.conf/snep-authconferences.conf restored to their original owner/mode' "expected [$CONF_OWNER_MODE / $AUTHCONF_OWNER_MODE] got [$CONF_AFTER_OWNER_MODE / $AUTHCONF_AFTER_OWNER_MODE]"
+fi
+
 echo '==> Restart persistence'
 $COMPOSE restart app >/dev/null
 for _ in $(seq 1 30); do
