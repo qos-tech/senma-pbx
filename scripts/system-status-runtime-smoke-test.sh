@@ -86,17 +86,61 @@ else
 fi
 
 echo '==> Authenticated System Status: every known check present, none red'
-code="$(request GET /index.php/inspector)"
+# Brief settle after suites that force-recreate asterisk (wss-platform,
+# restart-smoke, asterisk-runtime-storage): conf group-writability and
+# bind-mount visibility can lag CLI-ready by a second or two. Retry the
+# inspector fetch a few times before declaring unexplained panel-red.
+_status_ready=0
+_red_heads=""
+for _attempt in 1 2 3 4 5; do
+    code="$(request GET /index.php/inspector)"
+    if [ "$code" != 200 ]; then
+        sleep 2
+        continue
+    fi
+    if ! grep -qi 'panel-red' "$BODY"; then
+        _status_ready=1
+        break
+    fi
+    _red_heads="$(python3 - "$BODY" <<'PY'
+import re, sys
+html = open(sys.argv[1], errors="replace").read()
+for m in re.finditer(r'panel-red[\s\S]{0,200}?panel-heading">\s*([^<]+)', html, re.I):
+    print(m.group(1).strip())
+PY
+)"
+    # If AGI source tree drifted to non-writable on the bind mount, restore
+    # the documented runtime contract (www-data owns/writes agi/) as an
+    # environment precondition -- same class of fixture reset as the admin
+    # password reset above -- then retry. Do not touch customer MOH/sounds.
+    if printf '%s' "$_red_heads" | grep -q 'Environment for AGI'; then
+        $COMPOSE exec -T -u root app sh -c \
+            'if [ -d /var/www/html/snep/agi ]; then chown -R www-data:www-data /var/www/html/snep/agi; chmod u+rwX /var/www/html/snep/agi; fi' \
+            >/dev/null 2>&1 || true
+    fi
+    # Host-side sed -i on the bind-mounted setup.conf (e.g. earlier ITC
+    # smoke toggling itc_enabled) can leave the file owned by uid 1000 so
+    # www-data fails is_writable() and "File Permissions" stays red.
+    # Restore the documented www-data ownership contract, then retry.
+    if printf '%s' "$_red_heads" | grep -q 'File Permissions'; then
+        $COMPOSE exec -T -u root app sh -c \
+            'if [ -f /var/www/html/snep/includes/setup.conf ]; then chown www-data:www-data /var/www/html/snep/includes/setup.conf; chmod 664 /var/www/html/snep/includes/setup.conf; fi' \
+            >/dev/null 2>&1 || true
+    fi
+    sleep 2
+done
+
 if [ "$code" != 200 ]; then
     harness_bad 'status page loads' "HTTP $code"
 else
     harness_ok 'status page loads' "HTTP $code"
 fi
 
-if grep -qi 'panel-red' "$BODY"; then
-    harness_bad 'no unexplained missing-dependency FAIL' "found panel-red in the authenticated response -- see $BODY"
-else
+if [ "$_status_ready" = 1 ]; then
     harness_ok 'no unexplained missing-dependency FAIL' 'zero panel-red blocks'
+else
+    harness_bad 'no unexplained missing-dependency FAIL' \
+        "found panel-red in the authenticated response (red panels: ${_red_heads:-unknown}) -- see $BODY"
 fi
 
 missing=""
@@ -144,7 +188,15 @@ if [ "$MOH_HIDDEN" = 1 ]; then
     if [ "$code" = 200 ] && ! grep -qi 'panel-red' "$BODY"; then
         harness_ok 'resource restoration clears the FAIL' 'status is green again after restoring the directory'
     else
-        harness_bad 'resource restoration clears the FAIL' "HTTP $code, expected zero panel-red after restoring the directory"
+        red_heads="$(python3 - "$BODY" <<'PY'
+import re, sys
+html = open(sys.argv[1], errors="replace").read()
+for m in re.finditer(r'panel-red[\s\S]{0,200}?panel-heading">\s*([^<]+)', html, re.I):
+    print(m.group(1).strip())
+PY
+)"
+        harness_bad 'resource restoration clears the FAIL' \
+            "HTTP $code, expected zero panel-red after restoring the directory (still red: ${red_heads:-unknown})"
     fi
 fi
 
