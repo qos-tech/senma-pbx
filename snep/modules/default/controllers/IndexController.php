@@ -31,8 +31,16 @@ class IndexController extends Zend_Controller_Action {
         $config = Zend_Registry::get('config');
         $this->view->show_help = $config->system->show_help;
 
-        // checked if snep registred in itc
-        if( $_SESSION['registered'] != true && $_SESSION['noregister'] != true){
+        // TASK-0034O: ITC registration interstitial is OPTIONAL. Default
+        // (Snep_Register_Manager::isEnabled() === false) opens the normal
+        // dashboard with no external ITC call and no registration prompt.
+        // When explicitly enabled (setup.conf itc_enabled=true) the
+        // historical interstitial still runs for unregistered installs.
+        // Authorization for its POST mutations remains gated by
+        // PermissionPlugin::$writeOnPostIndex (default_index_write).
+        if( Snep_Register_Manager::isEnabled()
+            && $_SESSION['registered'] != true
+            && $_SESSION['noregister'] != true){
 
             $this->view->headTitle($this->view->translate("Register"));
             $this->view->breadcrumb = Snep_Breadcrumb::renderPath(array(
