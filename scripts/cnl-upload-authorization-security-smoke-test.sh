@@ -1,5 +1,6 @@
 #!/bin/bash
-# TASK-0034M: CnlController authorization/upload-security regression.
+# TASK-0034M/0034N: CnlController authorization/upload-security/PHP 8.4
+# compatibility regression.
 #
 # CnlController::indexAction()'s POST branch (country=76) imports a
 # dialing-prefix ZIP into core_cnl_state/core_cnl_city/core_cnl_prefix --
@@ -7,16 +8,25 @@
 # forward of the same read-implies-write shape it closed for
 # ParametersController, but deliberately left it as FOLLOW_UP_DEBT
 # because it needed a NEW resources.xml "write" child ("cnl" had none).
-# TASK-0034M closes it (resources.xml + PermissionPlugin::
+# TASK-0034M closed it (resources.xml + PermissionPlugin::
 # $writeOnPostIndex, see docs/tasks/0034m-controller-write-authorization-
 # audit-cnl-boundary-hardening.md) and, because the closed surface is a
-# file upload, also proves the pre-existing (TASK-0026D) zip-slip
+# file upload, also proved the pre-existing (TASK-0026D) zip-slip
 # defense-in-depth, a symlink-entry probe, and PHP's own upload-size
-# ceiling directly against the real HTTP flow.
+# ceiling directly against the real HTTP flow -- but discovered, and
+# deliberately left out of its own scope, two PHP 8.4 count() TypeErrors
+# (Zend_Validate_File_Upload::isValid(), CnlController::
+# updateAction_76()) that made the upload path return HTTP 500 for
+# EVERY caller regardless of permission, so every success-path check in
+# this suite had to tolerate that known-broken shape via an
+# UPLOAD_SUBSYSTEM_BROKEN flag. TASK-0034N (docs/tasks/0034n-cnl-php84-
+# upload-compatibility-import-runtime-repair.md) fixed both defects;
+# this suite now REQUIRES the full success shape everywhere and fails
+# if HTTP 500 reappears on the legitimate import path.
 #
 # Deliberately separate from `make smoke` and from
 # authorization-smoke-test.sh's own lighter TASK-0034M section (which
-# covers the other four same-shape controllers found by this task) --
+# covers the other four same-shape controllers found by that task) --
 # never run implicitly by either.
 
 set -uo pipefail
@@ -176,36 +186,29 @@ RO_CSRF="$(harness_csrf_token "$RO_JAR" "$BASE_URL")"
 WRITER_CSRF="$(harness_csrf_token "$WRITER_JAR" "$BASE_URL")"
 ZERO_CSRF="$(harness_csrf_token "$ZERO_JAR" "$BASE_URL")"
 
-echo '==> Pre-existing upload-subsystem compatibility probe (documented, out-of-scope defect)'
-# CnlController's upload path currently returns HTTP 500 on ANY
-# successfully-transported file, regardless of authorization -- two
-# pre-existing, unrelated PHP 8.4 compatibility defects this task
-# deliberately did NOT fix (see docs/tasks/0034m-controller-write-
-# authorization-audit-cnl-boundary-hardening.md REMAINING DEBT):
-# Zend_Validate_File_Upload::isValid()'s "count($this->_messages)" at
-# snep/lib/Zend/Validate/File/Upload.php:226 (null when no upload error
-# occurred, a TypeError under PHP 8) and CnlController::
+echo '==> PHP 8.4 upload-compatibility regression probe (TASK-0034N)'
+# TASK-0034M discovered (and deliberately deferred, as unrelated to its
+# own authorization-boundary scope) two PHP 8.4 count() TypeErrors that
+# made CnlController's upload path return HTTP 500 for EVERY caller,
+# regardless of permission: Zend_Validate_File_Upload::isValid()'s
+# "count($this->_messages)" at snep/lib/Zend/Validate/File/Upload.php:226
+# (null when no upload error occurred) and CnlController::
 # updateAction_76()'s "count($prefixos > 0)" at
 # snep/modules/default/controllers/CnlController.php:173 (a boolean, not
-# an array). Detected once, here, against the fully-privileged admin
-# session so the result can only be this bug, not an authorization
-# side effect -- every success-path check below is scoped by this same
-# flag so it distinguishes "authorization boundary correct, blocked by
-# the separately-tracked bug" from "an actual new regression", and so
-# this probe itself starts reporting the opposite of what it expects the
-# day that follow-up task lands, forcing this suite to be revisited
-# rather than staying permissively lenient forever.
-UPLOAD_SUBSYSTEM_BROKEN=0
+# an array). TASK-0034N fixed both. This probe, run once against the
+# fully-privileged admin session so a failure can only be this
+# regression (not an authorization side effect), now asserts the FIXED
+# shape unconditionally -- HTTP 500 here must fail the suite, not be
+# silently tolerated the way TASK-0034M's own UPLOAD_SUBSYSTEM_BROKEN
+# flag deliberately allowed while the defect was out of scope.
 code="$(upload "$ADMIN_JAR" /index.php/default/cnl/index 76 M "$ADMIN_CSRF" "$TMPDIR_CNL/legit.zip")"
-if [ "$code" = 500 ]; then
-    UPLOAD_SUBSYSTEM_BROKEN=1
-    pass 'upload compatibility probe' 'HTTP 500 -- known pre-existing defect still present (REMAINING DEBT); success-path checks below tolerate it'
-elif [ "$code" = 302 ]; then
-    mysql_x "DELETE FROM core_cnl_prefix WHERE id='9990001' AND country=76;"
-    pass 'upload compatibility probe' 'HTTP 302 -- the known pre-existing defect appears FIXED; remove the UPLOAD_SUBSYSTEM_BROKEN tolerance in this script and close that REMAINING DEBT item in docs/tasks/0034m'
+AFTER="$(mysql_q "SELECT COUNT(*) FROM core_cnl_prefix WHERE id='9990001' AND country=76;")"
+if [ "$code" = 302 ] && [ "$AFTER" = 1 ]; then
+    pass 'upload compatibility regression probe' 'HTTP 302 -- both TASK-0034M-documented PHP 8.4 count() TypeErrors stay fixed'
 else
-    fail 'upload compatibility probe' "unexpected HTTP $code from a fully-privileged admin upload -- neither the known-broken nor the known-fixed shape"
+    fail 'upload compatibility regression probe' "HTTP $code, row created=$AFTER -- expected HTTP 302 and exactly one row (a PHP 8.4 count() TypeError regressed)"
 fi
+mysql_x "DELETE FROM core_cnl_prefix WHERE id='9990001' AND country=76;"
 
 echo '==> Direct-endpoint authorization matrix (Phase 10)'
 before_count() { mysql_q "SELECT COUNT(*) FROM core_cnl_prefix WHERE id='$1' AND country=76;"; }
@@ -232,7 +235,7 @@ fi
 BEFORE="$(before_count 9990001)"
 code="$(upload "$WRITER_JAR" /index.php/default/cnl/index 76 M "$WRITER_CSRF" "$TMPDIR_CNL/legit.zip")"
 AFTER="$(before_count 9990001)"
-if { [ "$code" = 302 ] && [ "$AFTER" = 1 ]; } || { [ "$UPLOAD_SUBSYSTEM_BROKEN" = 1 ] && [ "$code" = 500 ] && [ "$AFTER" = 0 ]; }; then
+if [ "$code" = 302 ] && [ "$AFTER" = 1 ]; then
     pass 'write-authorized user can mutate Cnl via indexAction POST' "HTTP $code, db before=$BEFORE after=$AFTER"
 else
     fail 'write-authorized user can mutate Cnl via indexAction POST' "HTTP $code, db before=$BEFORE after=$AFTER"
@@ -242,7 +245,7 @@ mysql_x "DELETE FROM core_cnl_prefix WHERE id='9990001' AND country=76;"
 BEFORE="$(before_count 9990001)"
 code="$(upload "$ADMIN_JAR" /index.php/default/cnl/index 76 M "$ADMIN_CSRF" "$TMPDIR_CNL/legit.zip")"
 AFTER="$(before_count 9990001)"
-if { [ "$code" = 302 ] && [ "$AFTER" = 1 ]; } || { [ "$UPLOAD_SUBSYSTEM_BROKEN" = 1 ] && [ "$code" = 500 ] && [ "$AFTER" = 0 ]; }; then
+if [ "$code" = 302 ] && [ "$AFTER" = 1 ]; then
     pass 'superuser can mutate Cnl via indexAction POST' "HTTP $code, db before=$BEFORE after=$AFTER"
 else
     fail 'superuser can mutate Cnl via indexAction POST' "HTTP $code, db before=$BEFORE after=$AFTER"
@@ -258,12 +261,10 @@ BEFORE="$(before_count 9990001)"
 code="$(upload "$WRITER_JAR" /index.php/default/cnl/index 76 M "$WRITER_CSRF" "$TMPDIR_CNL/legit.zip")"
 AFTER="$(before_count 9990001)"
 # A valid token must not be REJECTED (403) the way the two negative
-# checks above prove missing/wrong ones are -- that is this check's own
-# contract. HTTP 500 (only when UPLOAD_SUBSYSTEM_BROKEN) still proves
-# the request reached past Snep_CsrfPlugin into the controller, which is
-# exactly "not rejected"; it is the pre-existing bug above, not a CSRF
-# regression, that stops it from also updating core_cnl_prefix.
-if { [ "$code" = 302 ] && [ "$AFTER" = 1 ]; } || { [ "$UPLOAD_SUBSYSTEM_BROKEN" = 1 ] && [ "$code" = 500 ] && [ "$AFTER" = 0 ]; }; then
+# checks above prove missing/wrong ones are, and (TASK-0034N) must now
+# reach the full success shape -- the upload-compatibility defect that
+# previously stopped it short of the DB write is fixed.
+if [ "$code" = 302 ] && [ "$AFTER" = 1 ]; then
     pass 'write-authorized upload with valid CSRF token succeeds' "HTTP $code"
 else
     fail 'write-authorized upload with valid CSRF token succeeds' "HTTP $code"
@@ -278,15 +279,17 @@ if [ "$code" = 200 ] && [ "$AFTER" = 0 ]; then pass 'GET to cnl/index never muta
 
 echo '==> Upload security on the same surface (Phases 13-16)'
 $COMPOSE exec -T app rm -f /tmp/task0034m-zipslip-marker.txt /tmp/zipslip.txt /tmp/task0034m-abspath-marker.txt /tmp/abspath.txt 2>/dev/null
-# The security invariant under test is "never escapes /tmp" -- true
-# whether the request completes normally (302, whole-archive rejected by
-# CnlController's own '..'/leading-'/' guard before extraction) or dies
-# early in the pre-existing upload-validator bug above (500, before that
-# guard even runs): either way nothing escapes. A code outside both
-# known shapes is treated as a genuine failure.
+# The security invariant under test is "never escapes /tmp". TASK-0034N
+# fixed the upload-compatibility defect, so a legitimately-named sibling
+# entry in the SAME archive as a zip-slip/abspath entry must now import
+# successfully (302) -- CnlController's whole-archive '..'/leading-'/'
+# guard rejects the WHOLE archive before extracting anything, so these
+# two archives (whose only entries are the malicious one plus a
+# legitimately-named sibling) are expected to be REJECTED as a whole
+# (no DB row for the sibling either), not partially imported.
 code="$(upload "$WRITER_JAR" /index.php/default/cnl/index 76 M "$WRITER_CSRF" "$TMPDIR_CNL/zipslip.zip")"
 ESCAPED="$($COMPOSE exec -T app bash -c '[ -f /tmp/task0034m-zipslip-marker.txt ] && echo yes || echo no' | tr -d '\r')"
-if { [ "$code" = 302 ] || { [ "$UPLOAD_SUBSYSTEM_BROKEN" = 1 ] && [ "$code" = 500 ]; }; } && [ "$ESCAPED" = no ]; then
+if [ "$code" = 302 ] && [ "$ESCAPED" = no ]; then
     pass 'zip-slip traversal entry cannot write outside /tmp' "HTTP $code, marker absent"
 else
     fail 'zip-slip traversal entry cannot write outside /tmp' "HTTP $code, escaped=$ESCAPED"
@@ -294,7 +297,7 @@ fi
 
 code="$(upload "$WRITER_JAR" /index.php/default/cnl/index 76 M "$WRITER_CSRF" "$TMPDIR_CNL/abspath.zip")"
 ESCAPED_ETC="$($COMPOSE exec -T app bash -c '[ -f /etc/task0034m-abspath-marker.txt ] && echo yes || echo no' | tr -d '\r')"
-if { [ "$code" = 302 ] || { [ "$UPLOAD_SUBSYSTEM_BROKEN" = 1 ] && [ "$code" = 500 ]; }; } && [ "$ESCAPED_ETC" = no ]; then
+if [ "$code" = 302 ] && [ "$ESCAPED_ETC" = no ]; then
     pass 'absolute-path entry cannot write outside /tmp' "HTTP $code, /etc marker absent"
 else
     fail 'absolute-path entry cannot write outside /tmp' "HTTP $code, escaped=$ESCAPED_ETC"
@@ -304,10 +307,16 @@ BEFORE="$(before_count 9990004)"
 code="$(upload "$WRITER_JAR" /index.php/default/cnl/index 76 M "$WRITER_CSRF" "$TMPDIR_CNL/symlink.zip")"
 SYMLINK_MATERIALIZED="$($COMPOSE exec -T app bash -c '[ -L /tmp/evil-link ] && echo yes || echo no' | tr -d '\r')"
 AFTER="$(before_count 9990004)"
-if { [ "$code" = 302 ] || { [ "$UPLOAD_SUBSYSTEM_BROKEN" = 1 ] && [ "$code" = 500 ]; }; } && [ "$SYMLINK_MATERIALIZED" = no ]; then
-    pass 'symlink zip entry is not materialized as a real symlink' "HTTP $code, no real symlink on disk"
+# Unlike the two whole-archive-rejected cases above, the symlink entry's
+# name alone doesn't trip the '..'/leading-'/' guard, so this archive
+# (symlink entry + legitimately-named sibling) DOES import -- the
+# sibling's prefix row is expected to be created (proving the archive
+# was not whole-archive-rejected), while the symlink entry itself must
+# still never materialize as a real filesystem symlink.
+if [ "$code" = 302 ] && [ "$AFTER" = 1 ] && [ "$SYMLINK_MATERIALIZED" = no ]; then
+    pass 'symlink zip entry is not materialized as a real symlink' "HTTP $code, no real symlink on disk, sibling entry imported"
 else
-    fail 'symlink zip entry is not materialized as a real symlink' "HTTP $code, is_symlink=$SYMLINK_MATERIALIZED"
+    fail 'symlink zip entry is not materialized as a real symlink' "HTTP $code, is_symlink=$SYMLINK_MATERIALIZED, sibling_imported=$AFTER"
 fi
 mysql_x "DELETE FROM core_cnl_prefix WHERE id='9990004' AND country=76;"
 $COMPOSE exec -T app rm -f /tmp/evil-link /tmp/symlink.txt 2>/dev/null
@@ -353,15 +362,14 @@ code="$(upload "$WRITER_JAR" /index.php/default/cnl/index 76 F "$WRITER_CSRF" "$
 STATE_ROW="$(mysql_q "SELECT COUNT(*) FROM core_cnl_state WHERE id='ZZ' AND country=76;")"
 CITY_ROW="$(mysql_q "SELECT COUNT(*) FROM core_cnl_city WHERE name LIKE 'TASK0034M%';")"
 PREFIX_ROW="$(mysql_q "SELECT COUNT(*) FROM core_cnl_prefix WHERE id='9990005' AND country=76;")"
-# The full happy path (state/city/prefix all created) cannot be proven
-# while UPLOAD_SUBSYSTEM_BROKEN -- there is no partial-success shape for
-# this specific pre-existing bug to accept, only "still blocked, and
-# still no partial import" (the same invariant Phase 19 requires of a
-# genuinely malformed archive).
+# TASK-0034N: the two PHP 8.4 count() TypeErrors that previously made
+# this the "still blocked, no partial import" case (TASK-0034M's own
+# REMAINING DEBT) are now fixed -- the full happy path (state, city, AND
+# prefix all created in one request) is the only shape this check
+# accepts. HTTP 500/a partial row set here means one of those defects
+# regressed.
 if [ "$code" = 302 ] && [ "$STATE_ROW" = 1 ] && [ "$CITY_ROW" = 1 ] && [ "$PREFIX_ROW" = 1 ]; then
     pass 'legitimate type-F import creates expected state/city/prefix rows' "HTTP $code"
-elif [ "$UPLOAD_SUBSYSTEM_BROKEN" = 1 ] && [ "$code" = 500 ] && [ "$STATE_ROW" = 0 ] && [ "$CITY_ROW" = 0 ] && [ "$PREFIX_ROW" = 0 ]; then
-    pass 'legitimate type-F import creates expected state/city/prefix rows' "HTTP $code -- blocked by the known pre-existing defect, no partial import either"
 else
     fail 'legitimate type-F import creates expected state/city/prefix rows' "HTTP $code state=$STATE_ROW city=$CITY_ROW prefix=$PREFIX_ROW"
 fi
