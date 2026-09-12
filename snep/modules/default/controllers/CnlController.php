@@ -170,7 +170,14 @@ class CnlController extends Zend_Controller_Action {
                     //Read Array and insert data into tables
                     $log_errors = "" ;
 
-                    if (count($prefixos > 0)) {
+                    // PHP 8.0+: count() requires Countable|array; the
+                    // original expression evaluated `$prefixos > 0`
+                    // first (array-vs-int comparison coerced to bool),
+                    // so count() received a bool, not the array -- a
+                    // TypeError. The evident intent was always
+                    // "count($prefixos) > 0" (non-empty parsed-line
+                    // array), preserved here.
+                    if (count($prefixos) > 0) {
 
                         foreach ($prefixos as $prefix => $value) {
                             if ($c_type === "F") {
