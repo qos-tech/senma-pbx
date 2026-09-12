@@ -176,52 +176,41 @@ fi
 
 log "==> dashboard"
 # AuthController redirects a successful login to /, and IndexController::
-# indexAction() normally renders the dashboard directly there. But that
-# same action ALSO gates on $_SESSION['registered']/['noregister'] -- a
-# legacy SNEP/ITC product-registration prompt (confirmed by direct code
-# inspection, TASK-0033F1) -- and switches to a completely different
-# page layout ('register', see
-# snep/modules/default/views/layouts/register.phtml) whenever neither
-# session flag is set, which is exactly the state of a genuinely fresh
-# authenticated session with no persisted registration choice. That is
-# current, expected, supported product behavior, not a regression.
+# indexAction() handles three supported landings there:
 #
-# Confirmed live (TASK-0033F1) that the registration gate's own content
-# is itself NOT deterministic: indexAction() makes a real, synchronous
-# HTTP ping to $config->system->itc_address before rendering, and its
-# result (200/500/no-connection/anything else) selects one of several
-# very different inner form states (register/confirm/registerd/plain
-# error) inside that same 'register' layout -- in this dev environment
-# the ping currently comes back with an unexpected code, rendering the
-# generic "Erro: Código404" state, not the register form. The one
-# structural element common to every branch of that layout, checked
-# regardless, is `id="registerLayout"` (register.phtml's outermost,
-# unconditional wrapper). (Deliberately not using the "noregister"
-# action to force the dashboard open here instead --
-# Snep_Register_Manager::noregister() persists
-# itc_register.noregister=true in the database, a permanent product
-# setting this test must not mutate merely to dodge its own assertion.)
+#   1. Core dashboard (HTTP 200, var controller = "index") when the
+#      admin already has dashboard widgets configured.
+#   2. Core empty-dashboard redirect (HTTP 302 -> /index.php/index/add)
+#      when no widgets are configured -- IndexController always did
+#      this in the non-ITC branch via redirector('add','index').
+#      TASK-0034O made ITC optional (itc_enabled default false), so
+#      fresh installs now take this core path instead of the legacy
+#      registration interstitial. That redirect IS the normal
+#      authenticated landing for an empty dashboard; it must not be
+#      treated as a smoke failure.
+#   3. Optional ITC registration layout (HTTP 200, id="registerLayout")
+#      only when setup.conf itc_enabled=true and the install has neither
+#      registered nor declined. Kept as an accepted landing so an
+#      explicitly opted-in environment still passes this harness.
 #
-# The previous "dashboard (explicit route)" check against
-# /index.php/index/add is retired here: that route is
-# IndexController::addAction(), the unrelated "add a dashboard widget"
-# sub-page -- it only ever coincidentally shared the dashboard's own
-# layout markup, it never actually exercised the dashboard. Full
-# authenticated-access coverage remains independently proven by every
-# flow below (extensions/trunks/routes/etc.), none of which are
-# registration-gated.
+# Authenticated-access coverage for the rest of the PBX remains
+# independently proven by every flow below (extensions/trunks/etc.).
 DASHBOARD_CODE=$(curl -sS -b "$COOKIEJAR" -c "$COOKIEJAR" -o "$TMP_BODY" -D "$TMP_HEADERS" -w '%{http_code}' "$BASE_URL/index.php/")
+DASHBOARD_LOC=$(grep -i '^Location:' "$TMP_HEADERS" | tr -d '\r' | awk '{print $2}')
 if grep -qi "Fatal error\|Uncaught Error\|Stack trace" "$TMP_BODY"; then
     row "dashboard" "FAIL" "PHP fatal text found in response body (GET /index.php/)"
     FAIL=$((FAIL+1))
+elif [ "$DASHBOARD_CODE" = "302" ] && printf '%s' "$DASHBOARD_LOC" | grep -Eq '/index\.php/index/add/?$'; then
+    row "dashboard" "PASS" "HTTP 302 -> index/add (empty core dashboard landing; ITC not required) (GET /index.php/)"
+    PASS=$((PASS+1))
 elif [ "$DASHBOARD_CODE" != "200" ]; then
-    row "dashboard" "FAIL" "expected HTTP 200, got $DASHBOARD_CODE (GET /index.php/)"
+    row "dashboard" "FAIL" "expected HTTP 200 or empty-dashboard 302 to index/add, got $DASHBOARD_CODE (GET /index.php/ Location=${DASHBOARD_LOC:-none})"
     FAIL=$((FAIL+1))
 elif grep -qF 'var controller = "index"' "$TMP_BODY"; then
     row "dashboard" "PASS" "HTTP 200, dashboard rendered directly (GET /index.php/)"
     PASS=$((PASS+1))
 elif grep -qF 'id="registerLayout"' "$TMP_BODY"; then
-    row "dashboard" "PASS" "HTTP 200, legacy ITC registration-gate page shown (expected -- no persisted registration state); authenticated session confirmed independently by every later flow (GET /index.php/)"
+    row "dashboard" "PASS" "HTTP 200, optional ITC registration-gate page shown (itc_enabled); authenticated session confirmed independently by every later flow (GET /index.php/)"
     PASS=$((PASS+1))
 else
     row "dashboard" "FAIL" "HTTP 200 but neither the dashboard marker nor the known registration-gate marker was found (GET /index.php/)"
