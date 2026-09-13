@@ -604,8 +604,8 @@ pjsip_module_running() {
 # suite's own PJSIP config write/reload (live-confirmed running
 # `make regression` back-to-back with no settling gap). Bounded retry,
 # not an unconditional delay.
-if ! harness_retry 5 2 -- pjsip_module_running; then
-    harness_blocked "res_pjsip.so not Running (checked 5 times over 8s)"
+if ! harness_retry 15 2 -- pjsip_module_running; then
+    harness_blocked "res_pjsip.so not Running (checked 15 times over ~28s)"
 fi
 ok "PJSIP module Running" "res_pjsip.so Running"
 

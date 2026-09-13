@@ -130,10 +130,10 @@ pjsip_modules_running() {
     $COMPOSE exec -T asterisk asterisk -rx 'module show like res_pjsip.so' 2>&1 | grep -q "Running" \
         && $COMPOSE exec -T asterisk asterisk -rx 'module show like chan_pjsip.so' 2>&1 | grep -q "Running"
 }
-if harness_retry 5 2 -- pjsip_modules_running; then
+if harness_retry 15 2 -- pjsip_modules_running; then
     ok "PJSIP modules Running" "res_pjsip.so and chan_pjsip.so both Running"
 else
-    stop "res_pjsip.so/chan_pjsip.so not both Running (checked 5 times over 8s)"
+    stop "res_pjsip.so/chan_pjsip.so not both Running (checked 15 times over ~28s)"
 fi
 
 # --- 2. chan_sip absent, chan_iax2 not running ------------------------------

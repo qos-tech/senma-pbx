@@ -264,7 +264,7 @@ harness_require_containers app asterisk db
 pjsip_modules_running() {
     $COMPOSE exec -T asterisk asterisk -rx 'module show like res_pjsip.so' 2>&1 | grep -q "Running"
 }
-harness_retry 5 2 -- pjsip_modules_running || harness_blocked "PJSIP modules not Running"
+harness_retry 15 2 -- pjsip_modules_running || harness_blocked "PJSIP modules not Running"
 
 COOKIEJAR="$(mktemp)"
 harness_register_best_effort_cleanup "cookie jar" "rm -f '$COOKIEJAR'"
