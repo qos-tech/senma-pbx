@@ -150,8 +150,8 @@ irrelevant because the ping is not executed on the core path.
 | IndexController | indexAction (core dashboard) | GET | required | alwaysAllow | n/a | none (or empty-dashboard redirect) | AUTHENTICATED_READ (default) |
 | IndexController | indexAction (pre-registration branch) | GET | required | alwaysAllow | n/a | none (render + outbound ITC ping) | OPTIONAL — AUTHENTICATED_READ |
 | IndexController | indexAction (`save=register/confirm/login/opensnep/noregister`) | POST | required | `default_index_write` | required | `itc_register` / `itc_consumers` / notifications / session | OPTIONAL — AUTHENTICATED_WRITE |
-| IndexController | indexAction (`?dashboard_add=`) | GET | required | alwaysAllow | n/a | per-user dashboard prefs | AUTHENTICATED_WRITE (FOLLOW_UP_DEBT -- not ITC) |
-| IndexController | addAction | GET/POST | required | alwaysAllow | POST: required | per-user dashboard prefs | AUTHENTICATED_WRITE (FOLLOW_UP_DEBT -- not ITC) |
+| IndexController | indexAction (`?dashboard_add=`) | GET | required | alwaysAllow | n/a | none after TASK-0034Q (GET no longer mutates) | AUTHENTICATED_READ (closed by 0034Q) |
+| IndexController | addAction / dashboardAddAction | GET/POST | required | alwaysAllow (self-service) | POST: required | per-user dashboard prefs | AUTHENTICATED_SELF_WRITE (closed by 0034Q) |
 | RegisterController | indexAction when disabled | GET | required | alwaysAllow | n/a | none (redirect `/`) | OPTIONAL off → AUTHENTICATED_READ |
 | RegisterController | indexAction (already registered) | GET | required | alwaysAllow | n/a | **none after this task** (display only; may call external ITC) | OPTIONAL — AUTHENTICATED_READ |
 | RegisterController | indexAction (`save=login`) | POST | required | `default_register_write` | required | `itc_register` keys + `itc_consumers` rewrite | OPTIONAL — AUTHENTICATED_WRITE |
@@ -226,7 +226,7 @@ complete or decline ITC registration when the optional path is enabled.
 | Mass assignment / privileged fields on `noregister` | Extra POST fields ignored; only `noregister` flips | SAFE_BY_CONTRACT (proven by test) |
 | Duplicate/replay noregister | Idempotent flag set | SAFE_BY_CONTRACT |
 | Information disclosure | No credentials/stack traces in deny path | SAFE_BY_CONTRACT |
-| Sibling dashboard writes (`addAction`, `dashboard_add`) | Still alwaysAllow authenticated writes of per-user prefs | FOLLOW_UP_DEBT (different asset; not ITC) |
+| Sibling dashboard writes (`addAction`, `dashboard_add`) | Closed by TASK-0034Q (Model A + POST/CSRF) | CLOSED (0034Q) |
 
 ## ROOT-CAUSE DECISION
 
@@ -299,7 +299,7 @@ decoupling so ITC is optional — implemented as the narrowest combined fix.
 
 | Key | Classification | Notes |
 |---|---|---|
-| `default_index` | FIXED_NOW (POST index); FOLLOW_UP_DEBT (`addAction` / GET `dashboard_add`) | ITC POST closed; dashboard-pref mutations remain authenticated-open |
+| `default_index` | FIXED_NOW (POST index); dashboard prefs closed by TASK-0034Q | ITC POST closed; prefs are Model A self-service with POST+CSRF |
 | `default_register` | FIXED_NOW | GET no longer mutates; POST write-gated; disabled → redirect |
 | `default_auth` | SAFE_BY_CONTRACT | login/logout/recovery must stay reachable |
 | `default_error` | SAFE_BY_CONTRACT | shared error renderer |
@@ -318,7 +318,9 @@ fold into this task without broadening scope.
 
 ## FOLLOW_UP_DEBT / REMAINING LEGACY ITC DEBT
 
-1. `IndexController::addAction` and GET `?dashboard_add=` -- authenticated
+1. `IndexController::addAction` and GET `?dashboard_add=` -- **closed by
+   TASK-0034Q** (per-user Model A self-service retained; GET no longer
+   mutates; POST `/default/index/dashboard-add` + CSRF). Was: authenticated
    alwaysAllow mutation of per-user dashboard preferences (not system-wide
    ITC state).
 2. `RegisterController` unregistered GET (when enabled) clears session

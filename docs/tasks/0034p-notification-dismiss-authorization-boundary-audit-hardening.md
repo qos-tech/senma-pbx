@@ -195,9 +195,9 @@ git diff --check → PASS
 1. DISPLAY_ONLY: Delete / mark-read UI still rendered for users who will
    be denied on POST (same class as Register menu when ITC disabled).
 2. FOLLOW_UP_DEBT (carry-forward from 0034O): IndexController dashboard
-   pref mutations (`addAction`, GET `?dashboard_add=`) still alwaysAllow
-   authenticated writes of per-user prefs — different asset, not this
-   task.
+   pref mutations (`addAction`, GET `?dashboard_add=`) — **closed by
+   TASK-0034Q** (Model A self-service preserved; GET mutation removed;
+   POST + CSRF via `dashboardAddAction`).
 3. Vendor `host_notification` reachability / timeout behavior is
    unchanged (TASK-0024 isolation). Local cache now converges without it.
 
