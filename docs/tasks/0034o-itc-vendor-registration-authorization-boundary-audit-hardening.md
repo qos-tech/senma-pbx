@@ -309,7 +309,7 @@ decoupling so ITC is optional — implemented as the narrowest combined fix.
 | `default_docs` | SAFE_BY_CONTRACT | read-only local docs |
 | `default_information` | SAFE_BY_CONTRACT | greeting widget |
 | `default_newversion` | SAFE_BY_CONTRACT | read-only version display |
-| `default_notifications` | DIFFERENT_RISK / NEEDS_FOLLOW_UP | view/dismiss only; low stakes; dismiss is intentional self-service write |
+| `default_notifications` | CLOSED by TASK-0034P | GET view remains alwaysAllow; mark-read/remove are shared installation-scoped writes gated by `default_notifications_write` (not per-user self-service — see 0034P ownership evidence) |
 | `default_simulator` | SAFE_BY_CONTRACT | read-only dialplan simulation |
 | `default_snep` | DEAD/UNREACHABLE | legacy redirect to `/` |
 
@@ -324,8 +324,12 @@ fold into this task without broadening scope.
 2. `RegisterController` unregistered GET (when enabled) clears session
    `noregister` and redirects -- soft re-prompt side effect.
 3. Menu link to Register remains when ITC disabled (DISPLAY_ONLY).
-4. Notifications dismiss under alwaysAllow -- intentional self-service;
-   document-only unless a future audit reclassifies vendor-notice writes.
+4. Notifications dismiss under alwaysAllow -- **closed by TASK-0034P**.
+   Ownership audit proved dismiss is shared PBX-wide state (no user_id;
+   vendor keyed by installation uuid), not per-user self-service. GET
+   remains alwaysAllow; mark-read/remove now require
+   `default_notifications_write`. See
+   `docs/tasks/0034p-notification-dismiss-authorization-boundary-audit-hardening.md`.
 5. Carry-forward from 0034M/0034N: CNL upload `unlink()` cleanup;
    symlink-entry defense-in-depth.
 6. Do not build the replacement portal in this task (explicit non-goal).
