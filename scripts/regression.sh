@@ -160,6 +160,7 @@ run_suite "cnl-upload-authorization-security" "cnl-upload-authorization-security
 # TASK-0034M follow-up that closed a distinct authorization mechanism.
 run_suite "itc-registration-authorization-security" "itc-registration-authorization-security-smoke-test.sh"
 run_suite "notification-dismiss-authorization-security" "notification-dismiss-authorization-security-smoke-test.sh"
+run_suite "dashboard-preferences-authorization-security" "dashboard-preferences-authorization-security-smoke-test.sh"
 run_suite "http-smoke"             "smoke-test.sh"
 
 # TASK-0027A: fixed-timestamp proof of harness_cdr_report_window(),
