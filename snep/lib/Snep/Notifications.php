@@ -328,10 +328,36 @@ class Snep_Notifications {
 
 
 		/**
-     * setRead - Update core_notifications while user notification read
-     * @param <int> $id
+     * setRead - Mark a shared vendor notice read.
+     *
+     * Ownership (TASK-0034P): this is installation-scoped shared state,
+     * not per-user acknowledgement. The vendor API is keyed by the PBX
+     * $_SESSION["uuid"], and the local core_notifications cache has no
+     * user_id column -- updating `read` here changes the unread badge
+     * for every operator on this PBX. Authorization for the HTTP entry
+     * point is enforced by PermissionPlugin::$writeActionsOnAlwaysAllow
+     * (default_notifications_write).
+     *
+     * Local cache is updated regardless of vendor reachability so the
+     * operator-facing badge converges offline; the vendor PUT remains
+     * best-effort (same non-throwing contract as TASK-0024).
+     *
+     * @param <int> $id vendor / id_itc identifier
      */
     public static function setRead($id) {
+                // Shared local cache first (PBX-wide). id is the vendor
+                // id_itc. Local convergence must not depend on vendor
+                // reachability -- the PUT below stays best-effort.
+                $db = Zend_Registry::get('db');
+                $db->update(
+                    'core_notifications',
+                    array(
+                        'read' => 1,
+                        'reading_date' => date('Y-m-d H:i:s'),
+                    ),
+                    $db->quoteInto('id_itc = ?', $id)
+                );
+
 				$configs = Snep_Config::getConfiguration('default','host_notification');
 				$url = $configs["config_value"] . '/' . $_SESSION["uuid"] . '/' . $id;
 				// get notification in itc
@@ -340,6 +366,7 @@ class Snep_Notifications {
 				);
 				$ctx = Snep_Request::http_context($data, "PUT");
 				$request = Snep_Request::send_request($url, $ctx);
+
 				return json_decode($request['response']);
     }
 
@@ -355,16 +382,31 @@ class Snep_Notifications {
 
 
 		/**
-     * Method to remove a Notification
-     * @param <int> $id
+     * removeNotification - Delete a shared vendor notice.
+     *
+     * Ownership (TASK-0034P): deletes installation-scoped shared state
+     * (vendor row keyed by $_SESSION["uuid"] + local core_notifications
+     * row keyed by id_itc). Not a per-user dismiss. HTTP authorization
+     * is default_notifications_write.
+     *
+     * @param <int> $id vendor / id_itc identifier
      */
     public static function removeNotification($id) {
+
+                // Shared local cache first -- removing here affects every
+                // operator's feed on this PBX. Vendor DELETE is best-effort.
+                $db = Zend_Registry::get('db');
+                $db->delete(
+                    'core_notifications',
+                    $db->quoteInto('id_itc = ?', $id)
+                );
 
 				$configs = Snep_Config::getConfiguration('default','host_notification');
 				$url = $configs["config_value"] . '/' . $_SESSION["uuid"] . '/' . $id;
 				$data = array();
 				$ctx = Snep_Request::http_context($data, "DELETE");
 				$request = Snep_Request::send_request($url, $ctx);
+
 				return json_decode($request['response']);
     }
 
