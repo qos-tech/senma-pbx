@@ -159,6 +159,7 @@ run_suite "cnl-upload-authorization-security" "cnl-upload-authorization-security
 # mutates itc_consumers). Placed next to the CNL authz suite as the other
 # TASK-0034M follow-up that closed a distinct authorization mechanism.
 run_suite "itc-registration-authorization-security" "itc-registration-authorization-security-smoke-test.sh"
+run_suite "notification-dismiss-authorization-security" "notification-dismiss-authorization-security-smoke-test.sh"
 run_suite "http-smoke"             "smoke-test.sh"
 
 # TASK-0027A: fixed-timestamp proof of harness_cdr_report_window(),
