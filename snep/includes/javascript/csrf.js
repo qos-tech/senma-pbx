@@ -25,6 +25,23 @@
 
     var FIELD = 'snep_csrf_token';
 
+    function webBase() {
+        var path = window.location.pathname || '';
+        var idx = path.indexOf('/index.php');
+        if (idx >= 0) {
+            return path.slice(0, idx + '/index.php'.length);
+        }
+        return '';
+    }
+
+    function dashboardAddIdFromHref(href) {
+        if (!href) {
+            return null;
+        }
+        var match = String(href).match(/[?&]dashboard_add=([^&]+)/);
+        return match ? decodeURIComponent(match[1].replace(/\+/g, ' ')) : null;
+    }
+
     $(document).on('submit', 'form', function () {
         var $form = $(this);
         if (($form.attr('method') || 'get').toLowerCase() !== 'post') {
@@ -34,6 +51,27 @@
             return;
         }
         $('<input>', {type: 'hidden', name: FIELD, value: token}).appendTo($form);
+    });
+
+    // TASK-0034Q: convert legacy GET ?dashboard_add= quick-add anchors
+    // into CSRF-protected POSTs to IndexController::dashboardAddAction.
+    // Ownership stays per-user self-service; only the HTTP method/CSRF
+    // boundary changes. Without this interceptor the href still navigates
+    // but indexAction no longer mutates on GET.
+    $(document).on('click', 'a.sn-dash-add', function (event) {
+        var panelId = dashboardAddIdFromHref($(this).attr('href'));
+        if (panelId === null || panelId === '') {
+            return;
+        }
+        event.preventDefault();
+        var $form = $('<form>', {
+            method: 'POST',
+            action: webBase() + '/default/index/dashboard-add',
+            css: {display: 'none'}
+        });
+        $('<input>', {type: 'hidden', name: 'dashboard_add', value: panelId}).appendTo($form);
+        $('<input>', {type: 'hidden', name: FIELD, value: token}).appendTo($form);
+        $form.appendTo(document.body).trigger('submit');
     });
 
     // Covers jQuery.post()/.ajax() mutations that do not submit a real

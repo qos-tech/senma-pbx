@@ -269,13 +269,47 @@ class IndexController extends Zend_Controller_Action {
             $this->view->translate("Dashboard")));
             $modelos = Snep_Dashboard_Manager::getModelos();
 
-            if (isset($_GET['dashboard_add'])) {
-                Snep_Dashboard_Manager::add($_GET['dashboard_add']);
-            }
-
+            // TASK-0034Q: GET ?dashboard_add= used to mutate the caller's
+            // per-user users.dashboard row as a side effect of navigation
+            // (no CSRF). Ownership is still per-user self-service
+            // (Snep_Dashboard_Manager keys on $_SESSION['id_user'] only),
+            // but state-changing GETs are unsafe. Quick-add now lives in
+            // dashboardAddAction() as POST + CSRF; see csrf.js click
+            // interceptor for .sn-dash-add links.
             $this->view->dashboard = Snep_Dashboard_Manager::getArray($modelos);
             if(!$this->view->dashboard)$this->_helper->redirector('add', 'index');
         }
+    }
+
+    /**
+     * dashboardAddAction - TASK-0034Q: POST-only quick-add of one panel
+     * into the authenticated caller's own users.dashboard row.
+     *
+     * Ownership: per-user self-service. Persistence always uses
+     * $_SESSION['id_user'] inside Snep_Dashboard_Manager -- the request
+     * cannot name another user. Remains on $alwaysAllow (no
+     * default_index_write required) because this is the caller's own
+     * preference, not shared/admin state. CSRF is enforced by
+     * Snep_CsrfPlugin on authenticated POSTs. GET returns 405.
+     */
+    public function dashboardAddAction() {
+        $this->_helper->viewRenderer->setNoRender(true);
+        $this->_helper->layout()->disableLayout();
+
+        if (!$this->getRequest()->isPost()) {
+            $this->getResponse()->setHttpResponseCode(405);
+            return;
+        }
+
+        $id = $this->getRequest()->getPost('dashboard_add');
+        if ($id === null || $id === '') {
+            $id = $this->getRequest()->getPost('id');
+        }
+        if ($id !== null && $id !== '') {
+            Snep_Dashboard_Manager::add($id);
+        }
+
+        $this->_redirect('/default/index');
     }
 
     /**
