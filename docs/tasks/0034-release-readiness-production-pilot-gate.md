@@ -1,10 +1,53 @@
 # TASK-0034 — Release Readiness & Production Pilot Gate
 
+## UPDATE (TASK-0034R) — authoritative closure status
+
+**Final 0034-series closure review: `READY_WITH_NON_BLOCKING_DEBT`.**
+
+`TASK-0034` is **closed for product/code readiness** of a controlled
+production pilot. This supersedes older status lines in this file that
+still say `PILOT_GO_WITH_CONSTRAINTS` with an “open product constraint”,
+and also supersedes any stale paragraph that still describes CH-1, ITC
+mandatory registration, Parameters/CNL read-implies-write, notification
+dismiss, or dashboard GET preference writes as open blockers.
+
+| Axis | Status after 0034R |
+|---|---|
+| Open `PILOT_BLOCKER` | **None** (current evidence) |
+| Canonical gates | `make lint` PASS; `make regression` PASS ×2 consecutive; `git diff --check` PASS |
+| Ops checks | `doctor` / `secrets-check` / `migrate-check` / `reconcile-check` PASS |
+| Security series 0034L–Q | Closed on audited surfaces |
+| ITC | Optional; SENMA standalone by default (`itc_enabled=false`) |
+| Release provenance | Contract closed (0034D); pilot must `release-build` (dev manifest absence ≠ defect) |
+| Real-host WSS cert | **PILOT_CONSTRAINT** (ops on real host; 0034H stop condition) — not a code blocker |
+
+Authoritative review detail, full closure matrix, debt classification,
+operator checklist, and next-phase recommendation:
+
+`docs/tasks/0034r-final-release-readiness-closure-review.md`
+
+**Accepted non-blocking items (summary):** real pilot WSS/TLS cert
+provisioning; concurrent trunk-name collision; cert expiry watch; TLS
+restart on rotation; AMI single-CIDR topology; RTP port capacity;
+simulator-backed external-trunk history; Register enabled-mode soft
+re-prompt; release-build required for `pilot-up`; provider profile must
+stay off; plus POST_PILOT cosmetic/dead-code/CNL-cleanup/README items.
+
+**Next phase:** TASK-0035 — Pilot Deployment & Soak Validation on a real
+pilot host (cert + release artifact + soak). Do not reopen closed 0034
+architectural decisions without new evidence.
+
+Historical UPDATE blocks below remain as evidence records. Where they
+conflict with this UPDATE (TASK-0034R), **0034R wins**.
+
 ## UPDATE (TASK-0034H)
 
 **Pilot host WSS certificate provisioning attempted: `TASK-0034H = BLOCK`.
 `TASK-0034` stays `PILOT_GO_WITH_CONSTRAINTS` (unchanged from TASK-0034G)
 — not promoted to `COMPLETE`.**
+*(Superseded for final gate language by UPDATE (TASK-0034R): the
+remaining item is classified as an accepted **PILOT_CONSTRAINT** /
+operator prerequisite, not an open product code blocker.)*
 
 TASK-0034G left exactly one `OPEN_CONSTRAINT`: provision a real,
 trusted WSS certificate for the actual pilot host's real public hostname,
@@ -879,6 +922,8 @@ No crash, no hang, no repeat occurrence, no security exposure beyond the one-tim
 
 **UPDATE (TASK-0034Q):** the TASK-0034O dashboard-pref follow-up. Ownership audit proved `users.dashboard` is **per-user self-service state** (Model A: keyed only by `$_SESSION['id_user']` → `users.id`; no shared/profile table). `$alwaysAllow` remains correct for preference writes; inventing `default_index_write` would break zero-permission layout self-service and conflate ITC admin POSTs with personal prefs. Defect was **GET `?dashboard_add=` mutation without CSRF**. Fix: remove GET mutation; add POST-only `dashboardAddAction` + CSRF; `csrf.js` intercepts `.sn-dash-add` clicks. Dedicated suite: `scripts/dashboard-preferences-authorization-security-smoke-test.sh` (19/19). See `docs/tasks/0034q-dashboard-preferences-authorization-boundary-audit-hardening.md`. **Closed.**
 
+**UPDATE (TASK-0034R):** final evidence-based closure review of the entire 0034 production-pilot readiness phase. No new product implementation. Decision: **`READY_WITH_NON_BLOCKING_DEBT`**. Full matrix, debt classification, ops checklist, and gate evidence: `docs/tasks/0034r-final-release-readiness-closure-review.md`. Authoritative status is the UPDATE (TASK-0034R) block at the top of this file — it supersedes stale CH / PILOT_GO wording elsewhere in this document.
+
 ---
 
 ## 43. Migration historical debt
@@ -954,6 +999,7 @@ Not rerun in this task. Justification: no file touched in this task's CHANGES af
 ## FINDINGS (numbered, referenced above as CH-N)
 
 **CH-1 — Reports feature is non-functional (release-blocking unless excluded from pilot scope).**
+**(SUPERSEDED — CLOSED by TASK-0034A; reconfirmed PASS in TASK-0034R via `calls-report-smoke`. Historical text retained.)**
 `CallsReportController::getselect()` (`snep/modules/default/controllers/CallsReportController.php`) contains a chain of at least three layered defects: (a) a dead `$cont = count($stmt)` call that fatals under PHP 8 on every request (the value is never read); (b) an undefined `$exceptions`/`count($exceptions)` reference for the superuser (`id=1`) path that also fatals under PHP 8; masked behind both of those, (c) a genuine, pre-existing SQL syntax error in the peer/contact-group filter join (`SQLSTATE[42000]... near '?) AND (peers.id = core_peer_groups.peer_id)'`) that has apparently never been reachable, and therefore never actually verified, since the feature shipped. TASK-0026J's "PARAMETERIZED_SAFE" classification for this exact query was a static classification, not empirically exercised live — this task's attempt to fix (a) and (b) proved that live execution has never actually succeeded. The standalone API report endpoint (`CallsReportService.php`) is a separate, already-hardened implementation and is unaffected — only the admin-UI web controller is broken. **A fix was attempted in this task and reverted** (see CHANGES) because it required real SQL-logic work on a security-hardened query, exceeding this task's small-fix mandate, and because leaving a security regression test artificially tolerant of the newly-exposed syntax error would have weakened a real assertion. **Recommend a dedicated follow-up task** to fix the join correctly and empirically re-verify the SQL-injection-safety property live, not just re-fix the crash.
 
 **CH-2 — `wss` transport ships enabled on a dev-fixture certificate; `doctor`'s cert check doesn't validate what's actually configured.**
