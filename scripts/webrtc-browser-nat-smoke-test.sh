@@ -193,13 +193,22 @@ else
     harness_ok "wss transport NAT fields" "operator/fixture values present: ${NAT_ROW:0:80}"
 fi
 
-# Repo contract: docker rtp.conf matches compose.pilot.yaml window.
+# Repo contract: docker rtp.conf remains 10000-10199. TASK-0035E2:
+# compose.pilot.yaml is host-networking (no Docker RTP port maps). The
+# historical `10000-10199:10000-10199/udp` publish line is obsolete —
+# host mode exposes RTP via Asterisk bind on the host namespace instead.
 if grep -q 'rtpstart=10000' docker/asterisk-config/rtp.conf \
-    && grep -q 'rtpend=10199' docker/asterisk-config/rtp.conf \
-    && grep -q '10000-10199:10000-10199/udp' compose.pilot.yaml; then
-    harness_ok "repo RTP window sync" "docker/asterisk-config/rtp.conf ↔ compose.pilot.yaml 10000-10199"
+    && grep -q 'rtpend=10199' docker/asterisk-config/rtp.conf; then
+    if grep -q 'network_mode: host' compose.pilot.yaml \
+        || grep -q 'network_mode: host' compose.host.yaml; then
+        harness_ok "repo RTP window sync" "rtp.conf 10000-10199; pilot overlay uses host networking (no Docker RTP publish)"
+    elif grep -q '10000-10199:10000-10199/udp' compose.pilot.yaml; then
+        harness_ok "repo RTP window sync" "docker/asterisk-config/rtp.conf ↔ compose.pilot.yaml 10000-10199"
+    else
+        harness_bad "repo RTP window sync" "rtp.conf OK but neither host-network pilot overlay nor RTP publish map found"
+    fi
 else
-    harness_bad "repo RTP window sync" "mismatch between rtp.conf and compose.pilot.yaml"
+    harness_bad "repo RTP window sync" "rtp.conf must declare 10000-10199"
 fi
 
 # --- Fixture extensions + browser proof ----------------------------------

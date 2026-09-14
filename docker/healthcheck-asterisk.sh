@@ -79,18 +79,20 @@ fi
 : "${AMI_USER:?AMI_USER must be set}"
 : "${AMI_PASSWORD:?AMI_PASSWORD must be set}"
 : "${ASTERISK_HOST:?ASTERISK_HOST must be set}"
-# TASK-0034F: resolve via ASTERISK_HOST (the `senma-ami` alias on the
-# dedicated `senma-control` network -- see compose.yaml/.env.example),
-# not "$(hostname)". This container is now on two networks (`mag` and
-# `senma-control`); `getent hosts "$(hostname)"` would return an
-# ambiguous mix of addresses across both, and connecting via the wrong
-# one produces a source address the narrowed AMI ACL correctly rejects
-# -- ASTERISK_HOST names the one specific, single-network alias every
-# other authorized AMI caller in this codebase now also uses (the app
-# container's own AMI client, scripts/lib/secrets-lib.sh's
-# slib_ami_auth_check), so this self-check exercises the exact same
-# path a real caller does, not a separate/differently-privileged one.
-SELF_IP="$(getent hosts "$ASTERISK_HOST" 2>/dev/null | awk '{print $1}' | head -1)"
+# TASK-0034F / TASK-0035E2: resolve via ASTERISK_HOST. Bridge mode uses
+# the `senma-ami` alias on senma-control. Host mode sets
+# ASTERISK_HOST=127.0.0.1 (literal) — getent is unnecessary then and
+# would fail on some images.
+case "$ASTERISK_HOST" in
+    *:*) SELF_IP="$ASTERISK_HOST" ;;  # IPv6 literal (rare)
+    *)
+        if printf '%s' "$ASTERISK_HOST" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+\.[0-9]+$'; then
+            SELF_IP="$ASTERISK_HOST"
+        else
+            SELF_IP="$(getent hosts "$ASTERISK_HOST" 2>/dev/null | awk '{print $1}' | head -1)"
+        fi
+        ;;
+esac
 if [ -z "$SELF_IP" ]; then
     echo "FAIL: could not resolve ASTERISK_HOST ($ASTERISK_HOST) for AMI check"
     exit 1

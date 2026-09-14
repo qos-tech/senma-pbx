@@ -133,6 +133,10 @@ run_suite "session-csrf-security"  "session-csrf-security-smoke-test.sh"
 # first, don't let it hide behind an unrelated authorization failure"
 # reason session-csrf-security's own placement comment gives.
 run_suite "auth-hardening-security" "auth-hardening-security-smoke-test.sh"
+# TASK-0035E1: trusted reverse-proxy client IP for login throttle.
+# Placed immediately after auth-hardening-security (same F22 throttle
+# surface; proves attribution when behind an explicitly trusted proxy).
+run_suite "trusted-proxy-login-throttle-security" "trusted-proxy-login-throttle-security-smoke-test.sh"
 # TASK-0026I: placed right after auth-hardening-security and before
 # authorization -- same reasoning as the other security suites' own
 # placement (an independent trust-boundary proof needing its own
@@ -202,6 +206,8 @@ run_suite "wss-platform-smoke"     "wss-platform-smoke-test.sh"
 run_suite "wss-proxy-termination-smoke" "wss-proxy-termination-smoke-test.sh"
 run_suite "webrtc-endpoint-contract-smoke" "webrtc-endpoint-contract-smoke-test.sh"
 run_suite "webrtc-browser-nat-smoke" "webrtc-browser-nat-smoke-test.sh"
+# TASK-0035E2: host-networking compose/bind contract (static Model B proofs).
+run_suite "host-networking-architecture" "host-networking-architecture-smoke-test.sh"
 # TASK-0029A: TLS/WSS certificate management -- placed right after
 # wss-platform-smoke (the closest-related existing suite: both restart
 # the asterisk container) and before transport-smoke.

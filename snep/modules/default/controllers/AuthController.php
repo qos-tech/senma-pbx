@@ -90,10 +90,13 @@ class AuthController extends Zend_Controller_Action {
             $f = new Zend_Filter_StripTags();
             $username = $f->filter($this->_request->getPost('user'));
             $password = $this->_request->getPost('password');
-            // TASK-0026H (F22): REMOTE_ADDR, matching the exact same
-            // convention SystemstatusController::logRestartAuthorizationDenied()
-            // already established for this codebase.
-            $ip = $_SERVER['REMOTE_ADDR'] ?? 'unknown';
+            // TASK-0035E1: throttle identity must be the real client IP when
+            // REMOTE_ADDR is an explicitly trusted reverse proxy
+            // (TRUSTED_PROXY_CIDRS). Direct/untrusted clients still resolve
+            // to REMOTE_ADDR -- forwarding headers are never trusted blindly.
+            // See Snep_Security_ClientIp and docs/tasks/
+            // 0035e1-trusted-reverse-proxy-client-ip-login-throttle-hardening.md.
+            $ip = Snep_Security_ClientIp::resolveFromServer();
 
             // TASK-0026H: previously merged with "user not found" below
             // (empty($username) || empty($case)), which made "unknown

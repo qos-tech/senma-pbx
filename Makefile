@@ -1,4 +1,4 @@
-.PHONY: dev dev-up up pilot-config pilot-up release-build release-info release-artifact-smoke down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke cnl-upload-authorization-security-smoke itc-registration-authorization-security-smoke notification-dismiss-authorization-security-smoke dashboard-preferences-authorization-security-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke wss-proxy-termination-smoke webrtc-endpoint-contract-smoke webrtc-browser-nat-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke fresh-install-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate ami-acl-smoke
+.PHONY: dev dev-up up pilot-config pilot-up release-build release-info release-artifact-smoke down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke cnl-upload-authorization-security-smoke itc-registration-authorization-security-smoke notification-dismiss-authorization-security-smoke dashboard-preferences-authorization-security-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke wss-proxy-termination-smoke webrtc-endpoint-contract-smoke webrtc-browser-nat-smoke host-networking-architecture-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke fresh-install-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate ami-acl-smoke
 
 COMPOSE ?= docker compose
 
@@ -83,13 +83,11 @@ config:
 up:
 	COMPOSE_PROFILES="$(FIXTURE_PROFILE)" $(COMPOSE) $(COMPOSE_FILES) up -d --build $(SERVICES)
 
-# TASK-0034B: pilot/production-style deployment -- layers
-# compose.pilot.yaml's SIP/WSS/RTP host-port exposure (TASK-0034 CH-7)
-# on top of the base compose.yaml (which stays internal-only for
-# development), and deliberately starts only the services a pilot
-# needs -- excluding the `provider` dev-only trunk-simulator fixture
-# (TASK-0034 CH-3, structurally closed by TASK-0034C's Compose profile
-# gate -- see compose.yaml's own header comment).
+# TASK-0034B / TASK-0035E2: pilot/production-style deployment.
+# TASK-0035E2: compose.pilot.yaml is now the host-networking overlay
+# (alias of compose.host.yaml) — core services use `network_mode: host`
+# with loopback binds for DB/AMI/Asterisk HTTP. Docker `ports:` maps are
+# no longer the pilot exposure boundary. Native Linux only.
 #
 # TASK-0034C: `COMPOSE_PROFILES=` is hardcoded empty here, not read from
 # $(FIXTURE_PROFILE) -- deliberately. Every other Compose-invoking target
@@ -314,6 +312,12 @@ session-csrf-security-smoke: up
 auth-hardening-security-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/auth-hardening-security-smoke-test.sh
 
+# TASK-0035E1: trusted reverse-proxy client IP resolution for login
+# throttle attribution (Snep_Security_ClientIp + TRUSTED_PROXY_CIDRS).
+# Deliberately separate from `make smoke` -- never run implicitly by it.
+trusted-proxy-login-throttle-security-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/trusted-proxy-login-throttle-security-smoke-test.sh
+
 # TASK-0026I: exercises the F25/F26/F28 information-disclosure and
 # contained-path-traversal findings -- error.phtml's now-gated exception
 # message, expose_php/raw-SQL-in-JSON disclosure, and DocsController's
@@ -402,6 +406,10 @@ webrtc-endpoint-contract-smoke: up
 # TASK-0035C: real browser / RTP / NAT contract smoke (deterministic + Chromium when available).
 webrtc-browser-nat-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/webrtc-browser-nat-smoke-test.sh
+
+# TASK-0035E2: host-networking architecture / local bind contract (static).
+host-networking-architecture-smoke:
+	@set -a; . ./.env; set +a; bash scripts/host-networking-architecture-smoke-test.sh
 
 # TASK-0029A: TLS/WSS transport certificate management -- validation,
 # generated-config correctness, live TLS handshake/fingerprint proof,
