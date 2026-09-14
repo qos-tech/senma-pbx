@@ -200,6 +200,7 @@ run_suite "pjsip-lifecycle-smoke"  "pjsip-lifecycle-smoke-test.sh"
 # comment) is exactly what makes that safe here.
 run_suite "wss-platform-smoke"     "wss-platform-smoke-test.sh"
 run_suite "wss-proxy-termination-smoke" "wss-proxy-termination-smoke-test.sh"
+run_suite "webrtc-endpoint-contract-smoke" "webrtc-endpoint-contract-smoke-test.sh"
 # TASK-0029A: TLS/WSS certificate management -- placed right after
 # wss-platform-smoke (the closest-related existing suite: both restart
 # the asterisk container) and before transport-smoke.
