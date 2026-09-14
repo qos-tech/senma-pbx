@@ -102,24 +102,22 @@ INSERT INTO `regras_negocio_actions_config` VALUES (1,0,'ccustos','9'),(1,1,'all
 -- docs/tasks/0017-pjsip-transports-and-templates-architecture.md §3).
 -- `tcp` is a normal, immediately-usable second transport.
 --
--- TASK-0029A: `wss` was originally seeded disabled here (a WSS
--- transport with no TLS certificate configured cannot actually bind).
--- It is now seeded ENABLED, referencing the self-signed TEST-ONLY
--- certificate docker/asterisk-entrypoint.sh generates at container
--- first boot (see docs/tasks/0028z-wss-asterisk-http-enablement.md and
--- docs/tasks/0029a-tls-transport-certificate-management.md) --
--- cert_file/priv_key_file are the SAME certificate-reference mechanism
--- a production admin would use for their own real certificate, just
--- pre-pointed at the dev fixture so `make dev` keeps working with zero
--- admin action (one unified ownership model, not a second hardcoded
--- path -- Phase 14's explicit requirement). A production deployment
--- replaces these two paths with its own real certificate/key files at
--- the same conventional /etc/asterisk/keys/ location.
+-- TASK-0035A: public WSS TLS terminates at the SENMA reverse proxy
+-- (Apache in the `app` container). Asterisk receives private plain WS
+-- on the Docker network (ws://asterisk:8088/ws). The seeded websocket
+-- signaling transport is therefore protocol=ws on 8088 with NO Asterisk
+-- HTTP certificate of its own -- public trust lives on the proxy cert
+-- (/etc/senma/certs/public-wss.crt). Native SIP TLS (protocol=tls) and
+-- WebRTC DTLS remain separate lifecycles. See
+-- docs/tasks/0035a-reverse-proxy-wss-tls-termination-pilot-realignment.md.
+-- Historical note: TASK-0029A previously seeded protocol=wss:8089 with
+-- the Asterisk-local fixture cert; that direct-Asterisk public WSS model
+-- is SUPERSEDED BY TASK-0035A for the supported pilot path.
 INSERT INTO `pjsip_transports`
   (`name`, `protocol`, `bind_address`, `bind_port`, `symmetric_transport`, `allow_reload`, `is_default`, `enabled`, `is_seed`, `cert_file`, `priv_key_file`)
 VALUES
   ('udp', 'udp', '0.0.0.0', 5060, false, true, true,  true, true, NULL, NULL),
   ('tcp', 'tcp', '0.0.0.0', 5060, false, true, false, true, true, NULL, NULL),
-  ('wss', 'wss', '0.0.0.0', 8089, false, true, false, true, true, '/etc/asterisk/keys/wss-test-cert.pem', '/etc/asterisk/keys/wss-test-key.pem');
+  ('wss', 'ws', '0.0.0.0', 8088, false, true, false, true, true, NULL, NULL);
 
 INSERT INTO `core_config` (`config_module`, `config_name`, `config_value`) VALUES ('default', 'host_notification', 'http://api.opens.com.br/v2/notifications'), ("default","userfield","TS_AAMMDD_HHii_SR_DS"),("default","userfield_ud",""), ('default','host_inspect','http://api.opens.com.br/inspect'), ('default','update_server','http://api.opens.com.br/snep');

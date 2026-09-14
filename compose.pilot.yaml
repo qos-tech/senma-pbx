@@ -11,8 +11,9 @@
 #   docker compose -f compose.yaml -f compose.pilot.yaml up -d app asterisk db
 #
 # Port list matches this repository's actual seeded PJSIP transports
-# (snep/install/database/system_data.sql: udp/tcp on 5060, wss on
-# 8089) plus the RTP media range this project's own rtp.conf declares
+# (snep/install/database/system_data.sql: udp/tcp on 5060, websocket signaling via the app
+# reverse-proxy HTTPS/WSS path -- TASK-0035A; Asterisk 8088/8089 are NOT
+# host-published) plus the RTP media range this project's own rtp.conf declares
 # (snep/install/etc/asterisk/rtp.conf: 10000-10199 as of TASK-0034B --
 # narrowed from the dev default of 10000-20000; keep these two files in
 # sync). A `tls` transport is not seeded by default (an admin adds one,
@@ -44,5 +45,4 @@ services:
     ports:
       - "5060:5060/udp"
       - "5060:5060/tcp"
-      - "8089:8089/tcp"
       - "10000-10199:10000-10199/udp"

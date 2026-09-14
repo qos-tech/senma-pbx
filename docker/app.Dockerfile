@@ -6,7 +6,11 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         bash ca-certificates curl git libicu-dev libzip-dev mariadb-client sox unzip \
     && docker-php-ext-install mysqli pdo pdo_mysql intl zip \
-    && a2enmod rewrite \
+    # TASK-0035A: public HTTPS/WSS terminates here (ssl + proxy_wstunnel).
+    # openssl is required so the entrypoint can mint a DEV-ONLY public WSS
+    # fixture when no operator-mounted certificate is present.
+    && apt-get install -y --no-install-recommends openssl \
+    && a2enmod rewrite ssl proxy proxy_http proxy_wstunnel headers \
     && rm -rf /var/lib/apt/lists/* \
     # setup.conf's path.log ("/var/log/snep/") is outside the bind-mounted
     # source tree; Zend_Log fatals on boot if it doesn't exist and is
@@ -36,8 +40,10 @@ COPY docker/bootstrap-admin.php /usr/local/bin/bootstrap-admin.php
 COPY docker/migrate.php /usr/local/bin/migrate.php
 COPY docker/log-rotate-app.sh /usr/local/bin/log-rotate-app.sh
 COPY docker/healthcheck-app.sh /usr/local/bin/healthcheck-app.sh
-RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/log-rotate-app.sh /usr/local/bin/healthcheck-app.sh
-EXPOSE 80
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh /usr/local/bin/log-rotate-app.sh /usr/local/bin/healthcheck-app.sh \
+    && mkdir -p /etc/senma/certs \
+    && chown www-data:www-data /etc/senma/certs
+EXPOSE 80 443
 
 # TASK-0034D: release identity (TASK-0034 CH-9), deliberately placed LAST
 # -- BUILD_TIMESTAMP changes on every single build invocation (even a

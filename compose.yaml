@@ -57,6 +57,10 @@ services:
       - .env
     ports:
       - "${MAG_HTTP_PORT:-8080}:80"
+      # TASK-0035A: public HTTPS/WSS (TLS terminates in Apache; Asterisk
+      # receives private WS on the Docker network). Default 8443 avoids
+      # requiring privileged bind of host :443 in local development.
+      - "${MAG_HTTPS_PORT:-8443}:443"
     volumes:
       - ./snep:/var/www/html/snep
       # TASK-0009: was :ro. Snep_InterfaceConf (future work, not invoked by

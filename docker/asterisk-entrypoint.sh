@@ -228,6 +228,19 @@ if [ ! -f "$ASTERISK_ETC/http.conf" ]; then
     cp "$ASTERISK_CONFIG_SRC/http.conf" "$ASTERISK_ETC/http.conf"
 fi
 
+# TASK-0035A: project-owned http.conf realignment for reverse-proxy WSS
+# termination. Existing volumes still carry the TASK-0028Z loopback-only
+# bind (127.0.0.1:8088) and the old "TLS terminates in Asterisk" header.
+# Refresh from the image-mounted source whenever the live file still
+# shows that superseded bind -- never overwrite a file that an operator
+# has clearly customized away from SENMA markers.
+if [ -f "$ASTERISK_ETC/http.conf" ] \
+    && grep -qE 'TASK-0028Z|TASK-0029A|TASK-0035A|SENMA|senma' "$ASTERISK_ETC/http.conf" \
+    && grep -qE 'bindaddr=127\.0\.0\.1|bindaddr = 127\.0\.0\.1' "$ASTERISK_ETC/http.conf"; then
+    echo "[asterisk-entrypoint] refreshing http.conf for TASK-0035A private WS bind (0.0.0.0:8088 behind reverse proxy)"
+    cp "$ASTERISK_CONFIG_SRC/http.conf" "$ASTERISK_ETC/http.conf"
+fi
+
 # TASK-0034I: same independent-guard treatment as http.conf above -- an
 # existing dev/pilot volume already has asterisk.conf populated, so the
 # first-boot block below never runs again on it, and it would otherwise

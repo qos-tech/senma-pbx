@@ -81,17 +81,13 @@ $tlsOnly = $this->transport['protocol'] === 'tls';
         </div>
       <?php endif; ?>
 
-      <?php // TASK-0032 (Phase 16): the WSS certificate belongs to
-            // Asterisk's global HTTP/TLS listener, not to this row's own
-            // PJSIP transport object -- the exact TASK-0029A architecture
-            // decision this task must not blur (Phase 3's own explicit
-            // "do not present native-TLS transport certificate semantics
-            // as if they were identical to WSS" instruction). Shown only
-            // for wss/ws, immediately above the same cert_file/
-            // priv_key_file fields, since those fields' OWN meaning
-            // differs by protocol even though the inputs look identical. ?>
+      <?php // TASK-0032 (Phase 16) + TASK-0035A: public WSS TLS terminates
+            // at the SENMA reverse proxy. Asterisk cert fields on a ws/wss
+            // row are optional (private plain WS is the supported backend).
+            // Do not present native-TLS transport certificate semantics as
+            // if they were identical to public WSS. ?>
       <?php if (in_array($this->transport['protocol'], array('wss', 'ws'), true)): ?>
-        <p class="help-block"><?php echo $this->translate("For WSS/WS, this certificate configures Asterisk's single, process-wide HTTP/TLS listener -- not a per-transport TLS context. Only one enabled WSS/WS transport may reference a certificate at a time.");?></p>
+        <p class="help-block"><?php echo $this->translate("Public WSS TLS terminates at the SENMA reverse proxy. For the supported private WS backend these Asterisk certificate fields stay empty. They apply only if Asterisk itself terminates TLS on its HTTP listener -- not a per-transport PJSIP TLS context, and not the public browser trust store.");?></p>
       <?php else: ?>
         <p class="help-block"><?php echo $this->translate("For a native TLS transport, this certificate applies directly to this transport's own PJSIP TLS context.");?></p>
       <?php endif; ?>
