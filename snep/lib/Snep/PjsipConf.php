@@ -283,6 +283,21 @@ class Snep_PjsipConf {
                 break;
         }
 
+        // TASK-0035B: WebRTC endpoint contract. Asterisk's webrtc=yes
+        // implies rtcp_mux, use_avpf, ice_support, use_received_transport,
+        // media_encryption=dtls, dtls_auto_generate_cert (when no cert
+        // file), dtls_verify=fingerprint, dtls_setup=actpass -- do NOT
+        // restate those here. Direct media is incompatible with the
+        // DTLS-SRTP path, so force direct_media=no regardless of the
+        // form's directmedia value. Public WSS TLS stays on the reverse
+        // proxy (TASK-0035A); endpoint DTLS is a separate lifecycle.
+        $webrtc = !empty($peer['webrtc']) && (string) $peer['webrtc'] !== '0';
+        if ($webrtc) {
+            $directMedia = 'no';
+            $disableDirectMediaOnNat = false;
+            $directMediaMethod = null;
+        }
+
         $dtmfMode = isset(self::$dtmfModeMap[$peer['dtmfmode']])
             ? self::$dtmfModeMap[$peer['dtmfmode']]
             : 'rfc4733';
@@ -325,6 +340,9 @@ class Snep_PjsipConf {
         $out .= "dtmf_mode=$dtmfMode\n";
         $out .= "auth=$auth\n";
         $out .= "aors=$name\n";
+        if ($webrtc) {
+            $out .= "webrtc=yes\n";
+        }
         $out .= "force_rport=$forceRport\n";
         $out .= "rtp_symmetric=$rtpSymmetric\n";
         $out .= "direct_media=$directMedia\n";

@@ -301,6 +301,8 @@ CREATE TABLE IF NOT EXISTS `peers` (
   -- currently is_default" -- no backfill needed for existing rows, see
   -- docs/tasks/0017-pjsip-transports-and-templates-architecture.md §3/§17.
   `transport_id` int(11) DEFAULT NULL,
+  -- TASK-0035B: WebRTC endpoint mode (browser/WSS). 0=normal SIP, 1=webrtc=yes.
+  `webrtc` tinyint(1) NOT NULL DEFAULT 0,
   PRIMARY KEY  (`id`),
   UNIQUE KEY `name` (`name`),
   KEY `name_2` (`name`),
