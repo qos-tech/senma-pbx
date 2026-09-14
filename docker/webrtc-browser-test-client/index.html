@@ -1,0 +1,43 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>SENMA WebRTC Browser NAT Harness (TASK-0035C)</title>
+  <style>
+    body { font-family: ui-monospace, monospace; margin: 1.5rem; max-width: 52rem; }
+    label { display: block; margin-top: 0.6rem; }
+    input { width: 100%; max-width: 28rem; }
+    button { margin: 0.8rem 0.4rem 0 0; padding: 0.4rem 0.8rem; }
+    #log { white-space: pre-wrap; background: #111; color: #ddd; padding: 1rem; min-height: 12rem; }
+    audio { display: block; margin-top: 1rem; width: 100%; max-width: 28rem; }
+    .note { color: #555; font-size: 0.9rem; margin-bottom: 1rem; }
+  </style>
+</head>
+<body>
+  <h1>SENMA disposable WebRTC browser harness</h1>
+  <p class="note">
+    TASK-0035C test tooling only — not the SENMA WebPhone. Credentials stay
+    in the page session; do not embed production secrets.
+  </p>
+
+  <label>WSS URL <input id="wssUrl" value="wss://127.0.0.1:8443/asterisk/ws" /></label>
+  <label>SIP URI (e.g. sip:1921@asterisk) <input id="sipUri" value="sip:1921@asterisk" /></label>
+  <label>Password <input id="password" type="password" autocomplete="off" /></label>
+  <label>Target extension <input id="target" value="1922" /></label>
+  <label>Display name <input id="displayName" value="senma-browser-harness" /></label>
+
+  <div>
+    <button id="btnRegister" type="button">Register</button>
+    <button id="btnCall" type="button" disabled>Call target</button>
+    <button id="btnHangup" type="button" disabled>Hangup</button>
+    <button id="btnUnregister" type="button" disabled>Unregister</button>
+  </div>
+
+  <audio id="remoteAudio" autoplay playsinline></audio>
+  <h2>Log</h2>
+  <div id="log"></div>
+
+  <script src="./jssip.bundle.js"></script>
+  <script src="./app.js"></script>
+</body>
+</html>
