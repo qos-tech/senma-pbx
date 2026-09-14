@@ -218,27 +218,21 @@ if [ ! -f "$ASTERISK_TLS_KEY_DIR/wss-test-cert.pem" ]; then
     chmod 644 "$ASTERISK_TLS_KEY_DIR/wss-test-cert.pem"
 fi
 
-# TASK-0028Z: http.conf needs the same independent-guard treatment as
-# the TLS certificate above -- a dev volume created before this task
-# already has asterisk.conf populated, so the first-boot block below
-# (gated on asterisk.conf's own existence) will never run again on it,
-# and it would otherwise never receive http.conf at all.
+# TASK-0035A / TASK-0035E2: project-owned http.conf bind for the private
+# WS backend. Bridge/dev default: 0.0.0.0 (reachable as asterisk:8088 on
+# the Docker network, unpublished to the host). Host-network pilot:
+# ASTERISK_HTTP_BIND=127.0.0.1 (loopback only on the shared host
+# namespace). Apply every start from env; never leave a stale opposite
+# bind after a mode switch.
+ASTERISK_HTTP_BIND="${ASTERISK_HTTP_BIND:-0.0.0.0}"
 if [ ! -f "$ASTERISK_ETC/http.conf" ]; then
     echo "[asterisk-entrypoint] seeding http.conf (WSS platform enablement, TASK-0028Z)"
     cp "$ASTERISK_CONFIG_SRC/http.conf" "$ASTERISK_ETC/http.conf"
 fi
-
-# TASK-0035A: project-owned http.conf realignment for reverse-proxy WSS
-# termination. Existing volumes still carry the TASK-0028Z loopback-only
-# bind (127.0.0.1:8088) and the old "TLS terminates in Asterisk" header.
-# Refresh from the image-mounted source whenever the live file still
-# shows that superseded bind -- never overwrite a file that an operator
-# has clearly customized away from SENMA markers.
-if [ -f "$ASTERISK_ETC/http.conf" ] \
-    && grep -qE 'TASK-0028Z|TASK-0029A|TASK-0035A|SENMA|senma' "$ASTERISK_ETC/http.conf" \
-    && grep -qE 'bindaddr=127\.0\.0\.1|bindaddr = 127\.0\.0\.1' "$ASTERISK_ETC/http.conf"; then
-    echo "[asterisk-entrypoint] refreshing http.conf for TASK-0035A private WS bind (0.0.0.0:8088 behind reverse proxy)"
-    cp "$ASTERISK_CONFIG_SRC/http.conf" "$ASTERISK_ETC/http.conf"
+if [ -f "$ASTERISK_ETC/http.conf" ]; then
+    if grep -qE '^(bindaddr|bindaddr )' "$ASTERISK_ETC/http.conf"; then
+        sed -i -E "s|^(bindaddr\\s*=\\s*).*$|\\1${ASTERISK_HTTP_BIND}|" "$ASTERISK_ETC/http.conf"
+    fi
 fi
 
 # TASK-0034I: same independent-guard treatment as http.conf above -- an
@@ -371,6 +365,12 @@ if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
         -e "s|__AMI_ACL_SUBNET__|${ASTERISK_AMI_ACL_SUBNET}|g" \
         "$ASTERISK_ETC/manager.conf"
 
+    # TASK-0035E2: optional AMI bind override on first boot (default
+    # template remains 0.0.0.0 for bridge; host mode sets 127.0.0.1).
+    if [ -n "${ASTERISK_AMI_BIND:-}" ]; then
+        sed -i -E "s|^(bindaddr\\s*=\\s*).*$|\\1${ASTERISK_AMI_BIND}|" "$ASTERISK_ETC/manager.conf"
+    fi
+
     # TASK-0007: same DB_USER/DB_PASSWORD the app container's own DB
     # connection already uses (docker/entrypoint.sh) -- one source of
     # truth for the "snep" MariaDB credentials, not a second hand-copied
@@ -438,6 +438,20 @@ fi
 if [ -f "$ASTERISK_ETC/extensions.conf" ]; then
     chgrp "$SENMA_CONFIG_GROUP" "$ASTERISK_ETC/extensions.conf"
     chmod 664 "$ASTERISK_ETC/extensions.conf"
+fi
+
+# TASK-0035E2: keep AMI bind + ACL coherent with the active network mode
+# on every start (existing volumes otherwise keep first-boot / previous-
+# mode values after a host↔bridge migration). Authentication (secret) is
+# unchanged — only the listen/permit boundary moves.
+if [ -f "$ASTERISK_ETC/manager.conf" ]; then
+    ASTERISK_AMI_BIND="${ASTERISK_AMI_BIND:-0.0.0.0}"
+    sed -i -E "s|^(bindaddr\\s*=\\s*).*$|\\1${ASTERISK_AMI_BIND}|" "$ASTERISK_ETC/manager.conf"
+    if [ -n "${ASTERISK_AMI_ACL_SUBNET:-}" ]; then
+        # permit= may already be expanded (not the __AMI_ACL_SUBNET__
+        # placeholder) on an existing volume — rewrite the value only.
+        sed -i -E "s|^(permit\\s*=\\s*).*$|\\1${ASTERISK_AMI_ACL_SUBNET}|" "$ASTERISK_ETC/manager.conf"
+    fi
 fi
 
 # TASK-0033D: bounded-growth watcher for /var/log/asterisk/{full,queue_log}

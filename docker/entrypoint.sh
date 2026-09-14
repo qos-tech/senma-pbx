@@ -104,10 +104,10 @@ fi
 # app container's own first run) still gets bootstrapped.
 php /usr/local/bin/bootstrap-admin.php || echo "[entrypoint] bootstrap-admin.php failed (non-fatal, see above)"
 
-# TASK-0035E2: when host networking is in use, sync connectivity
-# endpoints every boot. setup.conf's first-boot-only design would
-# otherwise leave db.host=db / ip_sock=senma-ami after a bridge→host
-# migration.
+# TASK-0035E2: when host networking (or explicit NAT env) is in use,
+# sync connectivity endpoints every boot and optionally apply PJSIP NAT
+# overrides. setup.conf's first-boot-only design would otherwise leave
+# db.host=db / ip_sock=senma-ami after a bridge→host migration.
 if [ "${SENMA_NETWORK_MODE:-}" = "host" ] || [ -n "${ASTERISK_HOST:-}" ]; then
     if [ -f "$SETUP_CONF" ]; then
         if [ -n "${DB_HOST:-}" ]; then
@@ -118,7 +118,7 @@ if [ "${SENMA_NETWORK_MODE:-}" = "host" ] || [ -n "${ASTERISK_HOST:-}" ]; then
         fi
     fi
 fi
-
+php /usr/local/bin/apply-pjsip-nat-from-env.php || echo "[entrypoint] apply-pjsip-nat-from-env.php failed (non-fatal)"
 
 # TASK-0033D: bounded-growth watcher for mag-error.log/ui.log -- no
 # cron/systemd exists in this image, so this is backgrounded here as a
