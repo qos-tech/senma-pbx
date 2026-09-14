@@ -19,13 +19,12 @@
 #     "a certificate path in http.conf is not sufficient proof" --
 #     Finding CH-2's whole point).
 #
-# By default, reads the one enabled ws/wss `pjsip_transports` row from
-# the database (TASK-0029A's own certificate-ownership model -- SENMA
-# stores/references certificate PATHS, never bytes) and connects to it
-# over the Docker network (asterisk:<bind_port>, zero-config for `make
-# dev`). Every value can be overridden for isolated testing (see
-# scripts/wss-certificate-runtime-smoke-test.sh) without touching the
-# live transport row.
+# TASK-0035A: by default verifies the PUBLIC reverse-proxy WSS
+# certificate on the `app` container (/etc/senma/certs/public-wss.crt)
+# and peeks the live TLS handshake at app:443 (or --connect). An
+# enabled ws/wss pjsip_transports row must still exist (signaling path),
+# but Asterisk-side cert_file is NOT the public trust surface when TLS
+# terminates at the proxy. Overrides remain for isolated testing.
 #
 # See docs/tasks/0034e-production-wss-certificate-trust-runtime-verification.md
 # for the full trust-state vocabulary and pilot-acceptance contract.
@@ -47,7 +46,7 @@
 #                           connects directly from wherever this script
 #                           runs (NOT via docker exec) -- use this to
 #                           prove the actual externally-reachable pilot
-#                           listener, e.g. --connect pilot.example.com:8089
+#                           listener, e.g. --connect pilot.example.com:443
 #   --sni NAME              override the TLS SNI name sent (default: the
 #                           connect host, or the hostname if set)
 #   --no-runtime            skip the live runtime connection entirely
@@ -63,7 +62,7 @@
 #      RUNTIME_MISMATCH/RUNTIME_UNREACHABLE), or --pilot was given and
 #      the certificate is NOT_ACCEPTABLE_FOR_PILOT
 #   2  could not evaluate at all (asterisk/db container not running, no
-#      enabled ws/wss transport row, database unreachable) -- UNKNOWN,
+#      enabled ws/wss transport row, app/asterisk/db unreachable) -- UNKNOWN,
 #      never silently treated as PASS
 
 set -uo pipefail
@@ -112,6 +111,9 @@ unknown() {
 if ! $WCL_COMPOSE ps -a asterisk --format '{{.State}}' 2>/dev/null | grep -q '^running$'; then
     unknown "asterisk container is not running"
 fi
+if ! $WCL_COMPOSE ps -a app --format '{{.State}}' 2>/dev/null | grep -q '^running$'; then
+    unknown "app container is not running (public WSS TLS terminates here -- TASK-0035A)"
+fi
 if ! $WCL_COMPOSE ps -a db --format '{{.State}}' 2>/dev/null | grep -q '^running$'; then
     unknown "db container is not running"
 fi
@@ -122,21 +124,26 @@ CAFILE="$OVERRIDE_CA"
 BIND_PORT=""
 DOMAIN=""
 EXT_ADDR=""
+SIGNALING_PROTOCOL=""
 
-if [ -z "$CERT" ] || [ -z "$KEY" ]; then
-    ROW="$(wcl_wss_transport_row)"
-    if [ -z "$ROW" ]; then
-        unknown "no enabled ws/wss pjsip_transports row -- WSS is not configured/enabled"
-    fi
-    IFS=$'\x1f' read -r _ROW_ID _ROW_BIND_ADDR _ROW_BIND_PORT _ROW_DOMAIN _ROW_EXT_ADDR _ROW_CERT _ROW_KEY _ROW_CA <<< "$ROW"
-    [ -z "$CERT" ] && CERT="$_ROW_CERT"
-    [ -z "$KEY" ] && KEY="$_ROW_KEY"
-    [ -z "$CAFILE" ] && CAFILE="$_ROW_CA"
-    BIND_PORT="$_ROW_BIND_PORT"
-    DOMAIN="$_ROW_DOMAIN"
-    EXT_ADDR="$_ROW_EXT_ADDR"
+# TASK-0035A: require an enabled ws/wss signaling transport, but do NOT
+# treat its Asterisk-side cert_file as the public WSS certificate when
+# reverse-proxy termination is in use (the supported model).
+ROW="$(wcl_wss_transport_row)"
+if [ -z "$ROW" ]; then
+    unknown "no enabled ws/wss pjsip_transports row -- WSS signaling is not configured/enabled"
 fi
-BIND_PORT="${BIND_PORT:-8089}"
+IFS=$'\x1f' read -r _ROW_ID SIGNALING_PROTOCOL _ROW_BIND_ADDR _ROW_BIND_PORT _ROW_DOMAIN _ROW_EXT_ADDR _ROW_CERT _ROW_KEY _ROW_CA <<< "$ROW"
+BIND_PORT="$_ROW_BIND_PORT"
+DOMAIN="$_ROW_DOMAIN"
+EXT_ADDR="$_ROW_EXT_ADDR"
+
+# Public cert ownership (proxy). Env overrides match docker/entrypoint.sh.
+DEFAULT_PUBLIC_CERT="${PUBLIC_WSS_CERT_FILE:-/etc/senma/certs/public-wss.crt}"
+DEFAULT_PUBLIC_KEY="${PUBLIC_WSS_KEY_FILE:-/etc/senma/certs/public-wss.key}"
+if [ -z "$CERT" ]; then CERT="$DEFAULT_PUBLIC_CERT"; fi
+if [ -z "$KEY" ]; then KEY="$DEFAULT_PUBLIC_KEY"; fi
+if [ -z "$CAFILE" ]; then CAFILE="$_ROW_CA"; fi
 
 HOSTNAME_VALUE="$(wcl_public_hostname "$OVERRIDE_HOSTNAME" "$EXT_ADDR" "$DOMAIN")"
 
@@ -144,6 +151,9 @@ echo "CERT_PATH: $CERT"
 echo "KEY_PATH: $KEY"
 echo "CA_LIST_FILE: ${CAFILE:-(none configured)}"
 echo "HOSTNAME: ${HOSTNAME_VALUE:-(not configured)}"
+echo "SIGNALING_TRANSPORT: id=${_ROW_ID} protocol=${SIGNALING_PROTOCOL:-?} bind=${_ROW_BIND_ADDR}:${BIND_PORT}"
+echo "TERMINATION_MODEL: reverse-proxy (public TLS at app:443 /asterisk/ws -> ws://asterisk:8088/ws)"
+echo "ASTERISK_CERT_FILE_REF: ${_ROW_CERT:-(none -- expected for private WS)}"
 
 # --- Existence / permissions -------------------------------------------
 
@@ -275,10 +285,16 @@ RUNTIME_MATCH="SKIPPED"
 RUNTIME_FP=""
 CHAIN_DEPTH="0"
 if [ "$NO_RUNTIME" != "1" ]; then
-    CONNECT="${OVERRIDE_CONNECT:-asterisk:${BIND_PORT}}"
-    SNI="${OVERRIDE_SNI:-${HOSTNAME_VALUE:-${CONNECT%%:*}}}"
-    VIA="via-container"
-    [ -n "$OVERRIDE_CONNECT" ] && VIA="via-host"
+    # Default: peek the public proxy listener from inside app (loopback
+    # :443). --connect switches to a host-side peek of an external URL.
+    if [ -n "$OVERRIDE_CONNECT" ]; then
+        CONNECT="$OVERRIDE_CONNECT"
+        VIA="via-host"
+    else
+        CONNECT="127.0.0.1:443"
+        VIA="via-app"
+    fi
+    SNI="${OVERRIDE_SNI:-${HOSTNAME_VALUE:-localhost}}"
     PEEK="$(wcl_runtime_peek "$CONNECT" "$SNI" "$VIA")"
     IFS=$'\t' read -r RUNTIME_FP CHAIN_DEPTH RUNTIME_STATUS <<< "$PEEK"
     echo "RUNTIME_ENDPOINT: $CONNECT (SNI=$SNI)"

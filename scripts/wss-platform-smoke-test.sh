@@ -4,7 +4,7 @@
 #
 # TASK-0028W (PJSIP Completeness Architecture Review) found the product's
 # "wss" PJSIP transport (pjsip_transports, seeded, protocol=wss,
-# bind=0.0.0.0:8089) BROKEN, live-confirmed: Asterisk showed the
+# bind=0.0.0.0:8088) BROKEN, live-confirmed: Asterisk showed the
 # transport object as loaded, but `asterisk -rx 'http show status'`
 # reported "Server Disabled" -- no /etc/asterisk/http.conf existed at
 # all, so res_http_websocket.so/res_pjsip_transport_websocket.so (both
@@ -16,14 +16,10 @@
 #
 #   docker/asterisk-config/http.conf (new, TASK-0028Z) seeded into the
 #   persistent asterisk-etc volume by docker/asterisk-entrypoint.sh
-#   -> Asterisk's built-in HTTP server enabled, TLS terminated directly
-#      in Asterisk (tlsbindaddr=0.0.0.0:8089, matching the already-seeded
-#      "wss" transport's own bind exactly) against a self-signed
-#      TEST-ONLY certificate generated once at container first boot
-#      (never committed, never baked into the image -- real certificate
-#      lifecycle management is TASK-0029A's separate concern)
-#   -> a real TLS handshake + WebSocket upgrade at /ws negotiating the
-#      "sip" subprotocol succeeds (docker/wss-test-client's minimal
+#   TASK-0035A: public WSS TLS terminates at the app reverse proxy.
+#   Asterisk serves private plain WS on 0.0.0.0:8088 (Docker network only).
+#   -> a real TLS handshake + WebSocket upgrade at public /asterisk/ws
+#      (proxy) negotiating the "sip" subprotocol succeeds (docker/wss-test-client's minimal
 #      RFC 7118 client -- no available client speaks this protocol:
 #      baresip's Debian package has no SIP-over-WebSocket transport at
 #      all)
@@ -139,12 +135,14 @@ http_status_shows() {
 }
 
 pjsip_wss_transport_bound() {
-    $COMPOSE exec -T asterisk asterisk -rx 'pjsip show transport wss' 2>&1 | grep -q '0\.0\.0\.0:8089'
+    # TASK-0035A: seeded row name remains 'wss' but protocol=ws on :8088
+    out="$($COMPOSE exec -T asterisk asterisk -rx 'pjsip show transport wss' 2>&1)"
+    echo "$out" | grep -qE '0\.0\.0\.0:8088' && echo "$out" | grep -qiE 'protocol[[:space:]]*:[[:space:]]*ws|[[:space:]]ws[[:space:]]+0'
 }
 
 wss_handshake_ok() {
-    docker run --rm --network "$NETWORK_NAME" "$WSS_CLIENT_IMAGE" \
-        --host "$ASTERISK_SVC_NAME" --port 8089 --mode handshake 2>&1 | grep -q '^HANDSHAKE_OK$'
+    docker run --rm --network host "$WSS_CLIENT_IMAGE" \
+        --host 127.0.0.1 --port "${MAG_HTTPS_PORT:-8443}" --path /asterisk/ws --mode handshake 2>&1 | grep -q '^HANDSHAKE_OK$'
 }
 
 # --- 1. Required containers healthy -----------------------------------------
@@ -181,10 +179,10 @@ fi
 
 log "==> checking the WSS TLS certificate/key fixture exists with sane permissions"
 KEY_LS="$($COMPOSE exec -T asterisk bash -c "ls -la /etc/asterisk/keys/wss-test-cert.pem /etc/asterisk/keys/wss-test-key.pem" 2>&1)"
-if echo "$KEY_LS" | grep -q 'wss-test-cert.pem' && echo "$KEY_LS" | grep -q -- '-rw-------.*wss-test-key.pem'; then
-    harness_ok "TEST-ONLY TLS cert/key present" "$KEY_LS"
+if echo "$KEY_LS" | grep -q "wss-test-cert.pem"; then
+    harness_ok "optional Asterisk WSS fixture key material" "present (not required for public proxy WSS)"
 else
-    harness_bad "TEST-ONLY TLS cert/key present" "missing or wrong permissions: $KEY_LS"
+    harness_ok "optional Asterisk WSS fixture key material" "absent (acceptable under TASK-0035A proxy termination)"
 fi
 
 # --- 3. Asterisk HTTP server reports enabled --------------------------------
@@ -192,15 +190,16 @@ fi
 log "==> checking 'http show status'"
 HTTP_STATUS="$($COMPOSE exec -T asterisk asterisk -rx 'http show status' 2>&1)"
 log "$HTTP_STATUS"
-if echo "$HTTP_STATUS" | grep -q 'Server Enabled and Bound to 127.0.0.1:8088'; then
-    harness_ok "plain HTTP listener" "enabled, loopback-only (127.0.0.1:8088)"
+if echo "$HTTP_STATUS" | grep -qE 'Server Enabled and Bound to 0\.0\.0\.0:8088'; then
+    harness_ok "private HTTP/WS listener" "enabled, Docker-network bind 0.0.0.0:8088 (TASK-0035A)"
 else
-    harness_bad "plain HTTP listener" "expected 'Server Enabled and Bound to 127.0.0.1:8088', got: $HTTP_STATUS"
+    harness_bad "private HTTP/WS listener" "expected 'Server Enabled and Bound to 0.0.0.0:8088', got: $HTTP_STATUS"
 fi
-if echo "$HTTP_STATUS" | grep -q 'HTTPS Server Enabled and Bound to 0\.0\.0\.0:8089'; then
-    harness_ok "TLS/WSS listener" "enabled, bound to 0.0.0.0:8089"
+# TASK-0035A: Asterisk-side HTTPS on 8089 is optional; public TLS is on app.
+if echo "$HTTP_STATUS" | grep -qi 'HTTPS Server Enabled'; then
+    harness_ok "optional Asterisk HTTPS" "present (not required for public WSS after TASK-0035A)"
 else
-    harness_bad "TLS/WSS listener" "expected 'HTTPS Server Enabled and Bound to 0.0.0.0:8089', got: $HTTP_STATUS"
+    harness_ok "optional Asterisk HTTPS" "absent (expected under reverse-proxy termination)"
 fi
 if echo "$HTTP_STATUS" | grep -q '/ws => Asterisk HTTP WebSocket'; then
     harness_ok "/ws URI registered" "present in 'Enabled URI's'"
@@ -221,7 +220,7 @@ fi
 
 log "==> checking 'pjsip show transport wss'"
 if harness_retry 3 2 -- pjsip_wss_transport_bound; then
-    harness_ok "pjsip wss transport bound" "0.0.0.0:8089"
+    harness_ok "pjsip wss transport bound" "0.0.0.0:8088"
 else
     harness_bad "pjsip wss transport bound" "$($COMPOSE exec -T asterisk asterisk -rx 'pjsip show transport wss' 2>&1)"
 fi
@@ -238,20 +237,22 @@ fi
 
 # --- 6. Minimal exposure: plain HTTP/WS unreachable from another container --
 
-log "==> checking the plain (non-TLS) listener is unreachable from another container"
+log "==> checking the private plain WS listener IS reachable from app (TASK-0035A proxy backend)"
 PLAIN_REACH="$($COMPOSE exec -T app bash -c 'curl -sS --max-time 3 -o /dev/null -w "%{http_code}" http://asterisk:8088/ws 2>&1' || true)"
 PLAIN_REACH_CODE="$(echo "$PLAIN_REACH" | tail -1)"
 if [ "$PLAIN_REACH_CODE" = "000" ]; then
-    harness_ok "plain HTTP/WS not network-exposed" "app container cannot reach asterisk:8088 (curl: $PLAIN_REACH)"
+    harness_bad "private WS reachable from app" "app cannot reach asterisk:8088/ws (curl: $PLAIN_REACH)"
 else
-    harness_bad "plain HTTP/WS not network-exposed" "expected curl's own connection-failure code '000' from another container, got HTTP $PLAIN_REACH_CODE: $PLAIN_REACH"
+    harness_ok "private WS reachable from app" "HTTP $PLAIN_REACH_CODE from app->asterisk:8088/ws"
 fi
+# Host publish absence is enforced by wss-proxy-termination-smoke; here we only
+# prove the Docker-network backend path the reverse proxy needs.
 
 # --- 7. Real WSS handshake proof --------------------------------------------
 
 log "==> performing a real TLS handshake + WebSocket upgrade at /ws"
-WSS_HANDSHAKE_OUT="$(docker run --rm --network "$NETWORK_NAME" "$WSS_CLIENT_IMAGE" \
-    --host "$ASTERISK_SVC_NAME" --port 8089 --mode handshake 2>&1)"
+WSS_HANDSHAKE_OUT="$(docker run --rm --network host "$WSS_CLIENT_IMAGE" \
+    --host 127.0.0.1 --port "${MAG_HTTPS_PORT:-8443}" --path /asterisk/ws --mode handshake 2>&1)"
 log "$WSS_HANDSHAKE_OUT"
 if echo "$WSS_HANDSHAKE_OUT" | grep -q '^HANDSHAKE_OK$'; then
     harness_ok "real WSS handshake" "TLS + WebSocket upgrade to /ws succeeded, Sec-WebSocket-Protocol: sip negotiated"
@@ -310,8 +311,8 @@ fi
 
 log "==> real proof: TLS handshake -> /ws -> SIP REGISTER (digest auth) -> 200 OK, held open 4s"
 REGISTER_OUT_FILE="$(mktemp)"
-docker run --rm --network "$NETWORK_NAME" "$WSS_CLIENT_IMAGE" \
-    --host "$ASTERISK_SVC_NAME" --port 8089 --mode register \
+docker run --rm --network host "$WSS_CLIENT_IMAGE" \
+    --host 127.0.0.1 --port "${MAG_HTTPS_PORT:-8443}" --path /asterisk/ws --mode register \
     --ext "$TEST_EXT" --secret "$TEST_EXT_SECRET" --hold-seconds 4 \
     > "$REGISTER_OUT_FILE" 2>&1 &
 REGISTER_PID=$!
@@ -363,26 +364,32 @@ fi
 # Restart / recreate persistence proof (Phase 9)
 # =============================================================================
 
-CERT_HASH_BEFORE="$($COMPOSE exec -T asterisk sha256sum /etc/asterisk/keys/wss-test-cert.pem 2>/dev/null | awk '{print $1}')"
+# Persistence under TASK-0035A: http.conf (private WS listener) must
+# survive restart/recreate. Asterisk's legacy wss-test-*.pem may still
+# exist on the keys volume but is not the public WSS certificate.
 HTTP_CONF_HASH_BEFORE="$($COMPOSE exec -T asterisk sha256sum /etc/asterisk/http.conf 2>/dev/null | awk '{print $1}')"
-if [ -z "$CERT_HASH_BEFORE" ] || [ -z "$HTTP_CONF_HASH_BEFORE" ]; then
-    harness_blocked "could not hash http.conf/cert before restart -- cannot prove persistence"
+CERT_HASH_BEFORE="$($COMPOSE exec -T asterisk sha256sum /etc/asterisk/keys/wss-test-cert.pem 2>/dev/null | awk '{print $1}')"
+if [ -z "$HTTP_CONF_HASH_BEFORE" ]; then
+    harness_blocked "could not hash http.conf before restart -- cannot prove persistence"
 fi
 
 log "==> docker compose restart asterisk"
 $COMPOSE restart asterisk >&2
-if harness_retry 30 2 -- asterisk_healthy; then
+# Healthcheck interval is 10s with StartPeriod/Retries; after a full
+# process restart the container commonly needs >60s before Docker
+# flips Status=healthy even when CLI readiness is already OK.
+if harness_retry 60 3 -- asterisk_healthy; then
     harness_ok "container healthy after restart" "asterisk reports healthy again"
 else
-    harness_bad "container healthy after restart" "asterisk did not report healthy within 60s"
+    harness_bad "container healthy after restart" "asterisk did not report healthy within 180s"
 fi
-if harness_retry 10 2 -- http_status_shows 'HTTPS Server Enabled and Bound to 0\.0\.0\.0:8089'; then
+if harness_retry 10 2 -- http_status_shows 'Server Enabled and Bound to 0\.0\.0\.0:8088'; then
     harness_ok "HTTP/WSS ready after restart" "'http show status' shows the HTTPS listener enabled again"
 else
     harness_bad "HTTP/WSS ready after restart" "$($COMPOSE exec -T asterisk asterisk -rx 'http show status' 2>&1)"
 fi
 if harness_retry 10 2 -- pjsip_wss_transport_bound; then
-    harness_ok "pjsip wss transport ready after restart" "bound to 0.0.0.0:8089 again"
+    harness_ok "pjsip wss transport ready after restart" "bound to 0.0.0.0:8088 again"
 else
     harness_bad "pjsip wss transport ready after restart" "not bound after restart"
 fi
@@ -395,18 +402,18 @@ fi
 log "==> docker compose up -d --force-recreate asterisk"
 $COMPOSE up -d --force-recreate asterisk >&2
 ASTERISK_CID="$($COMPOSE ps -q asterisk)"
-if harness_retry 30 2 -- asterisk_healthy; then
+if harness_retry 60 3 -- asterisk_healthy; then
     harness_ok "container healthy after recreate" "asterisk reports healthy again"
 else
-    harness_bad "container healthy after recreate" "asterisk did not report healthy within 60s"
+    harness_bad "container healthy after recreate" "asterisk did not report healthy within 180s"
 fi
-if harness_retry 10 2 -- http_status_shows 'HTTPS Server Enabled and Bound to 0\.0\.0\.0:8089'; then
+if harness_retry 10 2 -- http_status_shows 'Server Enabled and Bound to 0\.0\.0\.0:8088'; then
     harness_ok "HTTP/WSS ready after recreate" "'http show status' shows the HTTPS listener enabled again"
 else
     harness_bad "HTTP/WSS ready after recreate" "$($COMPOSE exec -T asterisk asterisk -rx 'http show status' 2>&1)"
 fi
 if harness_retry 10 2 -- pjsip_wss_transport_bound; then
-    harness_ok "pjsip wss transport ready after recreate" "bound to 0.0.0.0:8089 again"
+    harness_ok "pjsip wss transport ready after recreate" "bound to 0.0.0.0:8088 again"
 else
     harness_bad "pjsip wss transport ready after recreate" "not bound after recreate"
 fi
@@ -435,10 +442,12 @@ fi
 
 CERT_HASH_AFTER="$($COMPOSE exec -T asterisk sha256sum /etc/asterisk/keys/wss-test-cert.pem 2>/dev/null | awk '{print $1}')"
 HTTP_CONF_HASH_AFTER="$($COMPOSE exec -T asterisk sha256sum /etc/asterisk/http.conf 2>/dev/null | awk '{print $1}')"
-if [ "$CERT_HASH_BEFORE" = "$CERT_HASH_AFTER" ]; then
-    harness_ok "TLS cert identity preserved" "sha256 unchanged across restart+recreate ($CERT_HASH_BEFORE) -- not regenerated"
+if [ -n "$CERT_HASH_BEFORE" ] && [ "$CERT_HASH_BEFORE" = "$CERT_HASH_AFTER" ]; then
+    harness_ok "legacy Asterisk key material preserved if present" "sha256 unchanged across restart+recreate ($CERT_HASH_BEFORE)"
+elif [ -z "$CERT_HASH_BEFORE" ]; then
+    harness_ok "legacy Asterisk key material preserved if present" "absent before and after (acceptable under TASK-0035A)"
 else
-    harness_bad "TLS cert identity preserved" "cert hash changed: before=$CERT_HASH_BEFORE after=$CERT_HASH_AFTER"
+    harness_bad "legacy Asterisk key material preserved if present" "cert hash changed: before=$CERT_HASH_BEFORE after=$CERT_HASH_AFTER"
 fi
 if [ "$HTTP_CONF_HASH_BEFORE" = "$HTTP_CONF_HASH_AFTER" ]; then
     harness_ok "http.conf preserved" "sha256 unchanged across restart+recreate ($HTTP_CONF_HASH_BEFORE)"

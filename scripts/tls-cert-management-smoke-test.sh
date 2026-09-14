@@ -177,10 +177,15 @@ harness_require_containers app asterisk db
 harness_require_env DB_USER DB_PASSWORD DB_NAME
 
 log "==> checking for a leftover fixture from a prior interrupted run"
-LEFTOVER_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='${TLS_FIXTURE_NAME}';")"
-if [ -n "$LEFTOVER_ID" ]; then
-    db_query "DELETE FROM pjsip_transports WHERE id=${LEFTOVER_ID};" >/dev/null
-    log "removed leftover transport row id=${LEFTOVER_ID} (name='${TLS_FIXTURE_NAME}') from a prior interrupted run"
+LEFTOVER_IDS="$(db_query "SELECT id FROM pjsip_transports WHERE name='${TLS_FIXTURE_NAME}' OR name LIKE '${TLS_FIXTURE_NAME}-conflict%';")"
+if [ -n "$LEFTOVER_IDS" ]; then
+    while IFS= read -r leftover_id; do
+        [ -z "$leftover_id" ] && continue
+        leftover_name="$(db_query "SELECT name FROM pjsip_transports WHERE id=${leftover_id};")"
+        db_query "DELETE FROM pjsip_transports WHERE id=${leftover_id};" >/dev/null
+        log "removed leftover transport row id=${leftover_id} (name='${leftover_name}') from a prior interrupted run"
+    done <<< "$LEFTOVER_IDS"
+    $COMPOSE exec -T asterisk php /usr/local/bin/reconcile-pjsip.php >/dev/null 2>&1 || true
 fi
 rm_cert "task0029a-tls" 2>/dev/null || true
 rm_cert "task0029a-mismatch-a" 2>/dev/null || true
@@ -211,8 +216,14 @@ log "wss transport id=${WSS_ID}, original cert=${ORIGINAL_WSS_CERT}"
 # 2. Failure behavior -- rejected BEFORE save
 # =============================================================================
 
+# Under TASK-0035A the seeded websocket row has empty cert/key. Rejection
+# tests must supply a real companion half-pair so validation reaches the
+# intended branch (existence / PEM / both-or-neither), not a vacuous
+# "both empty" success.
+gen_cert "task0029a-reject" "task0029a-reject"
+
 log "==> invalid path (nonexistent certificate file) is rejected"
-do_save "edit/id/${WSS_ID}" "wss" "wss" "8089" "${KEY_DIR}/task0029a-does-not-exist.pem" "$ORIGINAL_WSS_KEY" ""
+do_save "edit/id/${WSS_ID}" "wss" "ws" "8088" "${KEY_DIR}/task0029a-does-not-exist.pem" "${KEY_DIR}/task0029a-reject-key.pem" ""
 if [ "$SAVE_CODE" != "302" ] && [[ "$(last_error_message "$SAVE_BODY")" == *"does not exist"* ]]; then
     harness_ok "nonexistent cert path rejected" "$(last_error_message "$SAVE_BODY")"
 else
@@ -222,7 +233,7 @@ rm -f "$SAVE_BODY"
 
 log "==> invalid PEM content is rejected"
 asterisk_exec "echo 'not a real certificate' > $KEY_DIR/task0029a-bogus.pem"
-do_save "edit/id/${WSS_ID}" "wss" "wss" "8089" "${KEY_DIR}/task0029a-bogus.pem" "$ORIGINAL_WSS_KEY" ""
+do_save "edit/id/${WSS_ID}" "wss" "ws" "8088" "${KEY_DIR}/task0029a-bogus.pem" "${KEY_DIR}/task0029a-reject-key.pem" ""
 if [ "$SAVE_CODE" != "302" ] && [[ "$(last_error_message "$SAVE_BODY")" == *"not a valid PEM"* ]]; then
     harness_ok "invalid PEM content rejected" "$(last_error_message "$SAVE_BODY")"
 else
@@ -232,13 +243,14 @@ rm -f "$SAVE_BODY"
 asterisk_exec "rm -f $KEY_DIR/task0029a-bogus.pem"
 
 log "==> incomplete pair (cert set, key empty) is rejected"
-do_save "edit/id/${WSS_ID}" "wss" "wss" "8089" "$ORIGINAL_WSS_CERT" "" ""
+do_save "edit/id/${WSS_ID}" "wss" "ws" "8088" "${KEY_DIR}/task0029a-reject-cert.pem" "" ""
 if [ "$SAVE_CODE" != "302" ] && [[ "$(last_error_message "$SAVE_BODY")" == *"must both be set"* ]]; then
     harness_ok "incomplete cert/key pair rejected" "$(last_error_message "$SAVE_BODY")"
 else
     harness_bad "incomplete cert/key pair rejected" "HTTP $SAVE_CODE, message: $(last_error_message "$SAVE_BODY")"
 fi
 rm -f "$SAVE_BODY"
+rm_cert "task0029a-reject"
 
 log "==> confirming wss transport is still in its original working state after rejected attempts"
 STILL_CERT="$(db_query "SELECT cert_file FROM pjsip_transports WHERE id=${WSS_ID};")"
@@ -248,13 +260,22 @@ else
     harness_bad "rejected saves did not mutate state" "expected $ORIGINAL_WSS_CERT, found $STILL_CERT"
 fi
 
-log "==> a second enabled WSS row with a different certificate is rejected (one active WSS TLS identity)"
+log "==> TASK-0035A: native SIP TLS does not conflict with the private ws backend (no Asterisk WSS cert)"
+# Under reverse-proxy termination the seeded ws row carries no Asterisk
+# cert_file, so Asterisk's single-HTTP-TLS-identity rule is idle. A
+# native protocol=tls transport must be accepted alongside it.
+CONFLICT_NAME="${TLS_FIXTURE_NAME}-conflict-$$"
 gen_cert "task0029a-tls" "task0029a-conflict-test"
-do_save "add" "${TLS_FIXTURE_NAME}-conflict" "wss" "18089" "${KEY_DIR}/task0029a-tls-cert.pem" "${KEY_DIR}/task0029a-tls-key.pem" ""
-if [ "$SAVE_CODE" != "302" ] && [[ "$(last_error_message "$SAVE_BODY")" == *"already provides the active WSS"* ]]; then
-    harness_ok "conflicting second WSS certificate rejected" "$(last_error_message "$SAVE_BODY")"
+do_save "add" "$CONFLICT_NAME" "tls" "18089" "${KEY_DIR}/task0029a-tls-cert.pem" "${KEY_DIR}/task0029a-tls-key.pem" ""
+if [ "$SAVE_CODE" = "302" ]; then
+    CONFLICT_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='${CONFLICT_NAME}';")"
+    harness_ok "native TLS transport accepted alongside private ws backend" "id=${CONFLICT_ID:-unknown} name=${CONFLICT_NAME}"
+    if [ -n "$CONFLICT_ID" ]; then
+        delete_transport "$CONFLICT_ID" || db_query "DELETE FROM pjsip_transports WHERE id=${CONFLICT_ID};" >/dev/null
+        $COMPOSE exec -T asterisk php /usr/local/bin/reconcile-pjsip.php >/dev/null 2>&1 || true
+    fi
 else
-    harness_bad "conflicting second WSS certificate rejected" "HTTP $SAVE_CODE, message: $(last_error_message "$SAVE_BODY")"
+    harness_bad "native TLS transport accepted alongside private ws backend" "HTTP $SAVE_CODE, message: $(last_error_message "$SAVE_BODY")"
 fi
 rm -f "$SAVE_BODY"
 rm_cert "task0029a-tls"
@@ -333,48 +354,34 @@ do_save "edit/id/${CREATED_TLS_ID}" "$TLS_FIXTURE_NAME" "tls" "$TLS_FIXTURE_PORT
 rm -f "$SAVE_BODY"
 
 # =============================================================================
-# 5. WSS certificate rotation -- hot-reloadable, proven live
+# 5. Public WSS trust surface is the reverse proxy (TASK-0035A)
 # =============================================================================
 
-log "==> WSS certificate rotation: swap to a new certificate, confirm the NEW one is presented"
-gen_cert "task0029a-rotate" "$WSS_ROTATE_CERT_CN"
-do_save "edit/id/${WSS_ID}" "wss" "wss" "8089" "${KEY_DIR}/task0029a-rotate-cert.pem" "${KEY_DIR}/task0029a-rotate-key.pem" ""
-rm -f "$SAVE_BODY"
-if [ "$SAVE_CODE" != "302" ]; then
-    harness_blocked "could not rotate the wss certificate: HTTP $SAVE_CODE"
-fi
-
-wss_serves_rotated() {
-    asterisk_exec "echo | timeout 3 openssl s_client -connect localhost:8089 2>/dev/null | grep subject=" | grep -q "$WSS_ROTATE_CERT_CN"
-}
-if harness_retry 5 1 -- wss_serves_rotated; then
-    harness_ok "WSS rotation: new certificate is live" "a fresh TLS connection to 8089 now presents CN=${WSS_ROTATE_CERT_CN}"
+log "==> TASK-0035A: public WSS TLS terminates at app; Asterisk ws backend carries no public cert"
+WSS_SHAPE="$(db_query "SELECT CONCAT(protocol,':',bind_port,':',COALESCE(cert_file,'')) FROM pjsip_transports WHERE id=${WSS_ID};")"
+if [ "$WSS_SHAPE" = "ws:8088:" ]; then
+    harness_ok "seeded websocket row is private ws:8088 without Asterisk cert" "$WSS_SHAPE"
 else
-    harness_bad "WSS rotation: new certificate is live" "8089 did not present the newly configured certificate"
+    harness_bad "seeded websocket row is private ws:8088 without Asterisk cert" "expected ws:8088:, got $WSS_SHAPE"
 fi
 
 GENERATED_HTTP_TLS="$(asterisk_exec "cat /etc/asterisk/snep/senma-http-tls.conf")"
-if echo "$GENERATED_HTTP_TLS" | grep -q "tlscertfile=${KEY_DIR}/task0029a-rotate-cert.pem"; then
-    harness_ok "generated senma-http-tls.conf reflects the rotation" "tlscertfile updated"
+if echo "$GENERATED_HTTP_TLS" | grep -qE '^tlsenable=no$|^tlsenable = no$'; then
+    harness_ok "Asterisk HTTP TLS disabled for private WS backend" "tlsenable=no"
 else
-    harness_bad "generated senma-http-tls.conf reflects the rotation" "expected the new cert path, got: $GENERATED_HTTP_TLS"
+    harness_bad "Asterisk HTTP TLS disabled for private WS backend" "expected tlsenable=no, got: $GENERATED_HTTP_TLS"
 fi
 
-log "==> rotating back to the original certificate"
-do_save "edit/id/${WSS_ID}" "wss" "wss" "8089" "$ORIGINAL_WSS_CERT" "$ORIGINAL_WSS_KEY" ""
-rm -f "$SAVE_BODY"
-if [ "$SAVE_CODE" != "302" ]; then
-    harness_blocked "could not rotate the wss certificate back to its original value: HTTP $SAVE_CODE"
-fi
-wss_serves_original() {
-    ! (asterisk_exec "echo | timeout 3 openssl s_client -connect localhost:8089 2>/dev/null | grep subject=" | grep -q "$WSS_ROTATE_CERT_CN")
-}
-if harness_retry 5 1 -- wss_serves_original; then
-    harness_ok "WSS rotation: old certificate no longer presented after reverting" "8089 no longer presents CN=${WSS_ROTATE_CERT_CN}"
+PUBLIC_TLS_SUBJECT="$(echo | timeout 5 openssl s_client -connect 127.0.0.1:${MAG_HTTPS_PORT:-8443} -servername localhost 2>/dev/null | openssl x509 -noout -subject | sed 's/^subject=//')"
+if echo "$PUBLIC_TLS_SUBJECT" | grep -qi 'senma-public-wss-dev'; then
+    harness_ok "public reverse-proxy TLS presents the app public-wss certificate" "subject: $PUBLIC_TLS_SUBJECT"
 else
-    harness_bad "WSS rotation: old certificate no longer presented after reverting" "the rotated-away certificate is still being served"
+    harness_bad "public reverse-proxy TLS presents the app public-wss certificate" "unexpected subject: $PUBLIC_TLS_SUBJECT"
 fi
-rm_cert "task0029a-rotate"
+
+# Native SIP TLS certificate rotation remains covered by section 3/4 above.
+# Do NOT attach cert_file onto the seeded ws row — that would re-couple
+# Asterisk HTTP TLS to the public WSS trust surface (superseded by TASK-0035A).
 
 # =============================================================================
 # 6. UDP/TCP unaffected
@@ -394,8 +401,13 @@ fi
 # 7. Restart/recreate persistence (certificate files + generated config)
 # =============================================================================
 
-CERT_HASH_BEFORE="$(asterisk_exec "sha256sum $ORIGINAL_WSS_CERT" | awk '{print $1}')"
+# Public WSS certificate lifecycle is owned by the app reverse proxy.
+# Asterisk restart must not disturb the public cert, and must leave the
+# private ws backend + tlsenable=no contract intact.
+PUBLIC_CERT_PATH="/etc/senma/certs/public-wss.crt"
+PUBLIC_CERT_HASH_BEFORE="$($COMPOSE exec -T app sha256sum "$PUBLIC_CERT_PATH" | awk '{print $1}')"
 HTTP_TLS_HASH_BEFORE="$(asterisk_exec "cat /etc/asterisk/snep/senma-http-tls.conf" | sha256sum | awk '{print $1}')"
+WSS_SHAPE_BEFORE="$(db_query "SELECT CONCAT(protocol,':',bind_port,':',COALESCE(cert_file,'')) FROM pjsip_transports WHERE id=${WSS_ID};")"
 
 log "==> docker compose restart asterisk"
 $COMPOSE restart asterisk >&2
@@ -406,26 +418,28 @@ else
     harness_bad "container healthy after restart" "not healthy within 60s"
 fi
 
-CERT_HASH_AFTER="$(asterisk_exec "sha256sum $ORIGINAL_WSS_CERT" | awk '{print $1}')"
+PUBLIC_CERT_HASH_AFTER="$($COMPOSE exec -T app sha256sum "$PUBLIC_CERT_PATH" | awk '{print $1}')"
 HTTP_TLS_HASH_AFTER="$(asterisk_exec "cat /etc/asterisk/snep/senma-http-tls.conf" | sha256sum | awk '{print $1}')"
-if [ "$CERT_HASH_BEFORE" = "$CERT_HASH_AFTER" ]; then
-    harness_ok "certificate file preserved across restart" "sha256 unchanged ($CERT_HASH_BEFORE)"
+WSS_SHAPE_AFTER="$(db_query "SELECT CONCAT(protocol,':',bind_port,':',COALESCE(cert_file,'')) FROM pjsip_transports WHERE id=${WSS_ID};")"
+if [ "$PUBLIC_CERT_HASH_BEFORE" = "$PUBLIC_CERT_HASH_AFTER" ] && [ -n "$PUBLIC_CERT_HASH_BEFORE" ]; then
+    harness_ok "public reverse-proxy certificate preserved across Asterisk restart" "sha256 unchanged ($PUBLIC_CERT_HASH_BEFORE)"
 else
-    harness_bad "certificate file preserved across restart" "before=$CERT_HASH_BEFORE after=$CERT_HASH_AFTER"
+    harness_bad "public reverse-proxy certificate preserved across Asterisk restart" "before=$PUBLIC_CERT_HASH_BEFORE after=$PUBLIC_CERT_HASH_AFTER"
+fi
+if [ "$WSS_SHAPE_BEFORE" = "$WSS_SHAPE_AFTER" ] && [ "$WSS_SHAPE_AFTER" = "ws:8088:" ]; then
+    harness_ok "websocket backend shape unchanged after Asterisk restart" "$WSS_SHAPE_AFTER"
+else
+    harness_bad "websocket backend shape unchanged after Asterisk restart" "before=$WSS_SHAPE_BEFORE after=$WSS_SHAPE_AFTER"
 fi
 
-wss_still_original() {
-    asterisk_exec "echo | timeout 3 openssl s_client -connect localhost:8089 2>/dev/null | grep subject=" | grep -qv "$WSS_ROTATE_CERT_CN"
+public_tls_still_ok() {
+    echo | timeout 5 openssl s_client -connect "127.0.0.1:${MAG_HTTPS_PORT:-8443}" -servername localhost 2>/dev/null         | openssl x509 -noout -subject | grep -qi 'senma-public-wss-dev'
 }
-if harness_retry 10 2 -- wss_still_original; then
-    harness_ok "WSS still serves the original certificate after restart" "confirmed via a fresh TLS handshake"
+if harness_retry 10 2 -- public_tls_still_ok; then
+    harness_ok "public WSS TLS still presents the proxy certificate after Asterisk restart" "confirmed via a fresh TLS handshake to app"
 else
-    harness_bad "WSS still serves the original certificate after restart" "handshake did not succeed / wrong cert after restart"
+    harness_bad "public WSS TLS still presents the proxy certificate after Asterisk restart" "handshake did not present the public-wss fixture"
 fi
-# HTTP_TLS_HASH_AFTER is logged for evidence but not itself asserted --
-# a restart naturally re-runs the full DB-driven regeneration, so an
-# identical DB state producing byte-identical generated content is the
-# real invariant, already covered by the two checks above.
 log "senma-http-tls.conf sha256 before=${HTTP_TLS_HASH_BEFORE} after=${HTTP_TLS_HASH_AFTER}"
 
 # --- post-restart ODBC/CDR recovery (TASK-0033E1) ----------------------------
@@ -456,5 +470,15 @@ fi
 
 # --- cleanup: remove the tls fixture's own generated cert/key files ---
 harness_register_best_effort_cleanup "tls fixture certificate files" "rm_cert task0029a-tls"
+
+# TASK-0035A: always leave the seeded websocket row in the supported
+# reverse-proxy shape (protocol=ws, :8088, no Asterisk public cert).
+do_save "edit/id/${WSS_ID}" "wss" "ws" "8088" "" "" "" || true
+FINAL_PROTO="$(db_query "SELECT CONCAT(protocol,':',bind_port,':',COALESCE(cert_file,'')) FROM pjsip_transports WHERE id=${WSS_ID};")"
+if [ "$FINAL_PROTO" = "ws:8088:" ]; then
+    harness_ok "seeded websocket row left in proxy-backend shape" "$FINAL_PROTO"
+else
+    harness_bad "seeded websocket row left in proxy-backend shape" "expected ws:8088:, got $FINAL_PROTO"
+fi
 
 harness_complete

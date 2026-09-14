@@ -1,4 +1,4 @@
-.PHONY: dev dev-up up pilot-config pilot-up release-build release-info release-artifact-smoke down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke cnl-upload-authorization-security-smoke itc-registration-authorization-security-smoke notification-dismiss-authorization-security-smoke dashboard-preferences-authorization-security-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke fresh-install-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate ami-acl-smoke
+.PHONY: dev dev-up up pilot-config pilot-up release-build release-info release-artifact-smoke down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke cnl-upload-authorization-security-smoke itc-registration-authorization-security-smoke notification-dismiss-authorization-security-smoke dashboard-preferences-authorization-security-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke wss-proxy-termination-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke fresh-install-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate ami-acl-smoke
 
 COMPOSE ?= docker compose
 
@@ -391,11 +391,15 @@ pjsip-lifecycle-smoke: up
 wss-platform-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/wss-platform-smoke-test.sh
 
+# TASK-0035A: public WSS via app reverse proxy (not Asterisk :8089).
+wss-proxy-termination-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/wss-proxy-termination-smoke-test.sh
+
 # TASK-0029A: TLS/WSS transport certificate management -- validation,
 # generated-config correctness, live TLS handshake/fingerprint proof,
 # rotation, mismatched cert/key runtime-apply failure behavior, and
 # restart persistence. Restarts the asterisk container (same "run in
-# isolation" reasoning as wss-platform-smoke above).
+# isolation" reasoning as wss-platform-smoke wss-proxy-termination-smoke above).
 tls-cert-management-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/tls-cert-management-smoke-test.sh
 
@@ -424,7 +428,7 @@ cert-check wss-cert-check: up
 # reload -> MATCH runtime-staleness proof. Restarts nothing by default;
 # rotates and restores the live `wss` transport's own certificate
 # through the real HTTP edit-form flow (same "run in isolation"
-# reasoning as tls-cert-management-smoke/wss-platform-smoke above).
+# reasoning as tls-cert-management-smoke/wss-platform-smoke wss-proxy-termination-smoke above).
 wss-certificate-runtime-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/wss-certificate-runtime-smoke-test.sh
 

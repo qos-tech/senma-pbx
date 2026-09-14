@@ -351,11 +351,20 @@ if ! harness_retry 10 1 -- active_registered; then
     harness_blocked "baresip fixture for extension ${EXT_ACTIVE} never reached a live Avail contact"
 fi
 
-log "==> real proof: TLS handshake -> /ws -> SIP REGISTER (degraded fixture, deliberately does not answer OPTIONS)"
+log "==> real proof: public proxy WSS -> private Asterisk /ws -> SIP REGISTER (degraded fixture, deliberately does not answer OPTIONS)"
+# TASK-0035A: public TLS terminates at app; Asterisk :8089 is not the
+# public WSS endpoint (and is unpublished). Register through app:443
+# /asterisk/ws on the compose network.
 docker run --rm --network "$NETWORK_NAME" "$WSS_CLIENT_IMAGE" \
-    --host asterisk --port 8089 --mode register --ext "$EXT_DEGRADED" --secret "$EXT_SECRET_DEGRADED" --hold-seconds 12 > /tmp/task0029b-wss-reg.log 2>&1 &
+    --host app --port 443 --path /asterisk/ws --mode register \
+    --ext "$EXT_DEGRADED" --secret "$EXT_SECRET_DEGRADED" --hold-seconds 12 \
+    > /tmp/task0029b-wss-reg.log 2>&1 &
 WSS_REG_PID=$!
 sleep 3
+if ! grep -q 'REGISTER_OK\|HANDSHAKE_OK' /tmp/task0029b-wss-reg.log 2>/dev/null; then
+    # Give the background client a moment to print the handshake line.
+    sleep 2
+fi
 $COMPOSE exec -T asterisk asterisk -rx "pjsip qualify ${EXT_DEGRADED}" >&2
 sleep 2
 
