@@ -206,6 +206,8 @@ run_suite "wss-platform-smoke"     "wss-platform-smoke-test.sh"
 run_suite "wss-proxy-termination-smoke" "wss-proxy-termination-smoke-test.sh"
 run_suite "webrtc-endpoint-contract-smoke" "webrtc-endpoint-contract-smoke-test.sh"
 run_suite "webrtc-browser-nat-smoke" "webrtc-browser-nat-smoke-test.sh"
+# TASK-0035E2: host-networking compose/bind contract (static Model B proofs).
+run_suite "host-networking-architecture" "host-networking-architecture-smoke-test.sh"
 # TASK-0029A: TLS/WSS certificate management -- placed right after
 # wss-platform-smoke (the closest-related existing suite: both restart
 # the asterisk container) and before transport-smoke.

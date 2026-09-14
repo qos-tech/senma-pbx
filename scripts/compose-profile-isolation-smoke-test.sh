@@ -84,12 +84,19 @@ if printf '%s' "$PILOT_FULL" | grep -qE '3306:3306'; then
 else
     harness_ok "2: DB not published" "no 3306 port mapping found"
 fi
+# TASK-0035E2: pilot overlay uses host networking — RTP is no longer a
+# Docker port map. Accept either the historical publish window OR host
+# mode with rtp.conf still declaring 10000-10199 (no 20000 widen).
 if printf '%s' "$PILOT_FULL" | grep -q "20000"; then
-    harness_bad "2: RTP range matches TASK-0034B contract" "found a reference to the old 10000-20000 dev range in published pilot config -- Phase 34 over-publication regression"
+    harness_bad "2: RTP range matches TASK-0034B/E2 contract" "found a reference to the old 10000-20000 dev range in published pilot config — Phase 34 over-publication regression"
+elif printf '%s' "$PILOT_FULL" | grep -q "network_mode: host" \
+    && grep -q 'rtpstart=10000' docker/asterisk-config/rtp.conf \
+    && grep -q 'rtpend=10199' docker/asterisk-config/rtp.conf; then
+    harness_ok "2: RTP range matches TASK-0034B/E2 contract" "host networking; rtp.conf 10000-10199; no Docker RTP publish; 20000 absent"
 elif printf '%s' "$PILOT_FULL" | grep -q "10199"; then
-    harness_ok "2: RTP range matches TASK-0034B contract" "10000-10199 present, 20000 absent"
+    harness_ok "2: RTP range matches TASK-0034B/E2 contract" "10000-10199 present, 20000 absent"
 else
-    harness_bad "2: RTP range matches TASK-0034B contract" "expected 10000-10199 RTP range not found in pilot config at all"
+    harness_bad "2: RTP range matches TASK-0034B/E2 contract" "expected host-network RTP contract or 10000-10199 publish map"
 fi
 
 # --- 3. make pilot-config resists a contaminated COMPOSE_PROFILES --------
