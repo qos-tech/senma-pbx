@@ -2,18 +2,19 @@
 
 ## Status
 
-**CLOSED — operational validation / closure review.**
+**SUPERSEDED FOR FINAL CLOSURE BY TASK-0035D.**
 
-**Final decision: `PILOT_DEPLOYMENT_BLOCKED`**
+Historical decision on the original 0035 execution:
+**`PILOT_DEPLOYMENT_BLOCKED`**.
 
-This task attempted a real production-pilot deployment using the 0034-series
-release/pilot contract. The shared Cursor cloud agent host is **not** an
-authorized real pilot host with public DNS and a trusted WSS certificate.
-That gap is a concrete pilot blocker under the 0034R acceptance contract
-(fixture/self-signed WSS is not acceptable for pilot PASS).
+Authoritative operational closure after 0035A/B/C architecture corrections:
 
-No closed 0034 architectural decision was reopened. No product redesign
-was performed.
+→ `docs/tasks/0035d-production-pilot-final-execution-closure.md`
+
+That document revalidates the corrected architecture on the same class of
+pre-pilot host, completes a meaningful soak, and keeps the final decision
+as **`PILOT_DEPLOYMENT_BLOCKED`** because real-host certificate/DNS/secrets
+requirements remain unmet.
 
 ---
 
@@ -308,33 +309,35 @@ Even if a future real host clears the blocker, retain 0034R constraints:
 PILOT_DEPLOYMENT_BLOCKED
 ```
 
+Historical note: this was the decision for the original 0035 execution.
+**TASK-0035D** is now the authoritative closure after 0035A/B/C and
+reaffirms `PILOT_DEPLOYMENT_BLOCKED` on the pre-pilot host while
+recording a completed soak and corrected WSS/WebRTC/RTP architecture.
+See `docs/tasks/0035d-production-pilot-final-execution-closure.md`.
+
 ### Why not PASS / PASS_WITH_CONSTRAINTS
 
 - Trusted WSS cannot work on this environment (`NOT_ACCEPTABLE_FOR_PILOT`).
 - No real public pilot hostname/DNS.
 - Host is not an authorized production-pilot machine.
 - Real SIP registration and call paths were not exercisable as a pilot.
-- Meaningful soak was not completed.
+- Meaningful soak was not completed in the **original** 0035 window
+  (completed later under TASK-0035D; still does not override cert/host blockers).
 
 These are concrete, reproducible blockers — not historical speculation.
 
 ### Recommended follow-ups
 
-1. **TASK-0035A** — Provision real pilot host (Debian 14 or approved), DNS,
-   trusted WSS certificate, non-placeholder secrets; re-run 0035 checklist
-   through soak.
-2. **TASK-0035B** — WebRTC endpoint/media contract (implemented; see
-   `docs/tasks/0035b-webrtc-endpoint-contract-real-media-validation.md`).
-   Decision: `WEBRTC_CONTRACT_PASS_WITH_CONSTRAINTS`.
-3. **TASK-0035C** — Real browser / internet NAT / TURN requirement
-   validation (see
-   `docs/tasks/0035c-real-browser-webrtc-internet-nat-turn-validation.md`).
-   Decision: `REAL_BROWSER_WEBRTC_PASS_WITH_CONSTRAINTS`;
-   TURN: `TURN_REQUIREMENT_INCONCLUSIVE`.
-4. **FOLLOW_UP_DEBT** (formerly sketched here as a second “0035B”) — Harden
-   check targets so `migrate-check` / `secrets-check` / `reconcile-check` /
-   `lint` do not `--build` over an active release tag.
-5. Do **not** reopen 0034O–Q / 0034D architecture without new product
+1. **TASK-0035A** — reverse-proxy WSS TLS termination (**done**).
+2. **TASK-0035B** — WebRTC endpoint/media contract (**done**).
+3. **TASK-0035C** — real browser / NAT / TURN validation (**done**; TURN inconclusive).
+4. **TASK-0035D** — final pilot execution/closure on corrected architecture
+   (**done** as documentation/ops evidence; decision remains BLOCKED).
+5. **TASK-0035E** (recommended) — execute on a **REAL_PILOT_HOST** with DNS,
+   trusted proxy cert, and non-placeholder secrets.
+6. **FOLLOW_UP_DEBT** — Harden check/backup targets so they do not `--build`
+   over an active release tag.
+7. Do **not** reopen 0034O–Q / 0034D architecture without new product
    evidence.
 
 ---

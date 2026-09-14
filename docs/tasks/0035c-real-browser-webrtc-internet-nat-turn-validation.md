@@ -8,6 +8,10 @@
 
 **TURN decision: `TURN_REQUIREMENT_INCONCLUSIVE`**
 
+Operational pilot closure after this task: see
+`docs/tasks/0035d-production-pilot-final-execution-closure.md`
+(`PILOT_DEPLOYMENT_BLOCKED` on pre-pilot host).
+
 ## Starting state
 
 ```text
