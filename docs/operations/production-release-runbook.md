@@ -96,6 +96,14 @@ Edit `.env`:
   on `REMOTE_ADDR` only. Never use `0.0.0.0/0`. Prefer restricting
   direct backend HTTP access to the proxy/network. See
   `docs/tasks/0035e1-trusted-reverse-proxy-client-ip-login-throttle-hardening.md`.
+- TASK-0035E2 host-network pilot (native Linux dedicated PBX host):
+  use `make pilot-up` / `compose.host.yaml`. Set
+  `TLS_TERMINATION_MODE=external` when NPM owns public TLS (SENMA HTTP
+  `:8080` + `/asterisk/ws`). Optional NAT:
+  `PJSIP_EXTERNAL_SIGNALING_ADDRESS` / `PJSIP_EXTERNAL_MEDIA_ADDRESS` /
+  `PJSIP_LOCAL_NET`. See
+  `docs/tasks/0035e2-host-networking-architecture-local-service-binding.md`.
+  Docker Desktop is not an equivalent host-network runtime.
 - Remove/ignore `TRUNK_TEST_USERNAME`/`TRUNK_TEST_SECRET` — these only
   matter if the `provider` fixture service is intentionally kept in the
   topology (it should not be, for a production pilot; see Phase 4/35).

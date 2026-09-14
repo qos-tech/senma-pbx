@@ -314,15 +314,24 @@ collapsing all clients into one rate-limit bucket. Remediation lives in
 `docs/tasks/0035e1-trusted-reverse-proxy-client-ip-login-throttle-hardening.md`
 (`TRUSTED_PROXY_CIDRS` + `Snep_Security_ClientIp`).
 
-Incident status after TASK-0035E1:
+Incident status after TASK-0035E1 + TASK-0035E2:
 
 ```text
 I4 OPEN
-I5 OPEN
-I6 OPEN
+
+I5 IMPLEMENTATION_CLOSED
+I5 PILOT_RUNTIME_PROOF_PENDING
+
+I6 IMPLEMENTATION_CLOSED
+I6 PILOT_RUNTIME_PROOF_PENDING
+
 I7 IMPLEMENTATION_CLOSED
 I7 PILOT_RUNTIME_PROOF_PENDING
 ```
+
+TASK-0035E2 (host networking) closes I5/I6 at the implementation /
+architecture layer; real-pilot runtime proofs remain pending — see
+`docs/tasks/0035e2-host-networking-architecture-local-service-binding.md`.
 
 ```text
 v0.1.0-rc.3 must not be mutated.
