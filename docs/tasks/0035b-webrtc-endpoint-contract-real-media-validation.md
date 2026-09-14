@@ -181,10 +181,17 @@ Observed (non-secret):
 
 ## Known constraints
 
-1. **Internet NAT / TURN** not validated (PILOT_CONSTRAINT / FOLLOW_UP_DEBT).
+1. **Internet NAT / TURN** — see TASK-0035C
+   (`docs/tasks/0035c-real-browser-webrtc-internet-nat-turn-validation.md`).
+   Decision there: `TURN_REQUIREMENT_INCONCLUSIVE` under the available
+   cloud-agent topology; real Chromium MEDIA_OK proven on the host/proxy
+   path with private host ICE.
 2. **Opus** not in supported baseline (no `codec_opus` in image) — FOLLOW_UP_DEBT.
-3. **One automated WebRTC client** (aiortc), not a production WebPhone / multi-browser matrix.
-4. **RTP host publish** not part of default `make up`; Docker-network proof used for media.
+3. **Automated clients**: aiortc (0035B) + disposable JsSIP/Chromium harness
+   (0035C). Not a production WebPhone / multi-browser matrix.
+4. **RTP host publish** not part of default `make up`; pilot overlay
+   publishes `10000-10199/udp`. TASK-0035C also closed the gap where
+   `rtp.conf` was never seeded into the Asterisk container.
 5. Dev/public WSS still uses fixture/self-signed proxy cert (TASK-0035A operational constraint unchanged).
 
 ## Operational recommendations

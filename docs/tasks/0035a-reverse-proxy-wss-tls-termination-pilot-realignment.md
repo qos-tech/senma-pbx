@@ -277,3 +277,9 @@ Public WSS TLS termination is owned by this task. The supported
 WebRTC **endpoint/media** contract (`webrtc=yes`, DTLS-SRTP, ICE,
 codecs, AOR contact policy, real media proof) is documented in
 `docs/tasks/0035b-webrtc-endpoint-contract-real-media-validation.md`.
+
+## Follow-on: TASK-0035C (real browser / NAT / TURN)
+
+Real Chromium/JsSIP validation and the TURN requirement decision live in
+`docs/tasks/0035c-real-browser-webrtc-internet-nat-turn-validation.md`.
+Public signaling ownership remains this reverse-proxy model.

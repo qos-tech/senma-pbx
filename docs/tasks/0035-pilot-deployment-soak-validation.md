@@ -9,6 +9,10 @@
 - See `docs/tasks/0035a-reverse-proxy-wss-tls-termination-pilot-realignment.md`.
 - WebRTC endpoint/media contract: see
   `docs/tasks/0035b-webrtc-endpoint-contract-real-media-validation.md`.
+- Real browser / NAT / TURN validation: see
+  `docs/tasks/0035c-real-browser-webrtc-internet-nat-turn-validation.md`
+  (`REAL_BROWSER_WEBRTC_PASS_WITH_CONSTRAINTS`,
+  `TURN_REQUIREMENT_INCONCLUSIVE`).
 
 Unrelated TASK-0035 evidence (release/provenance/topology/migrate/secrets/
 reconcile/doctor-non-WSS/backup/restart/lint/regressions) remains **STILL_VALID**.

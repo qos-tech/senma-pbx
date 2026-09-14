@@ -326,10 +326,15 @@ These are concrete, reproducible blockers — not historical speculation.
 2. **TASK-0035B** — WebRTC endpoint/media contract (implemented; see
    `docs/tasks/0035b-webrtc-endpoint-contract-real-media-validation.md`).
    Decision: `WEBRTC_CONTRACT_PASS_WITH_CONSTRAINTS`.
-3. **FOLLOW_UP_DEBT** (formerly sketched here as a second “0035B”) — Harden
+3. **TASK-0035C** — Real browser / internet NAT / TURN requirement
+   validation (see
+   `docs/tasks/0035c-real-browser-webrtc-internet-nat-turn-validation.md`).
+   Decision: `REAL_BROWSER_WEBRTC_PASS_WITH_CONSTRAINTS`;
+   TURN: `TURN_REQUIREMENT_INCONCLUSIVE`.
+4. **FOLLOW_UP_DEBT** (formerly sketched here as a second “0035B”) — Harden
    check targets so `migrate-check` / `secrets-check` / `reconcile-check` /
    `lint` do not `--build` over an active release tag.
-4. Do **not** reopen 0034O–Q / 0034D architecture without new product
+5. Do **not** reopen 0034O–Q / 0034D architecture without new product
    evidence.
 
 ---
