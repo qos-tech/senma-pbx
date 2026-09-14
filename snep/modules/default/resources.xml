@@ -32,6 +32,17 @@
         <resource id="register" label="ITC Registration" font="sn-dashboard">
             <resource id="write"></resource>
         </resource>
+        <!-- TASK-0034P: NotificationsController GET index stays
+             authenticated-open via $alwaysAllow (shared vendor-notice
+             feed is readable by every logged-in operator). mark-read and
+             remove mutate installation-scoped shared state (local
+             core_notifications cache has no user_id; vendor API is keyed
+             by the PBX $_SESSION['uuid']), so they demand
+             default_notifications_write via
+             PermissionPlugin::$writeActionsOnAlwaysAllow. -->
+        <resource id="notifications" label="Notifications" font="sn-dashboard">
+            <resource id="write"></resource>
+        </resource>
     </group>
 
     <group id="status" label="Status" font="sn-status">

@@ -295,10 +295,17 @@ pjsip_modules_running() {
     $COMPOSE exec -T asterisk asterisk -rx 'module show like res_pjsip.so' 2>&1 | grep -q "Running" \
         && $COMPOSE exec -T asterisk asterisk -rx 'module show like chan_pjsip.so' 2>&1 | grep -q "Running"
 }
-if harness_retry 5 2 -- pjsip_modules_running; then
+# TASK-0034Q harness hygiene: widen the post-suite PJSIP readiness window
+# from 5×2s (~8s) to 15×2s (~28s). The narrow bound is a documented
+# FOLLOW_UP_DEBT flake class (TASK-0034 release readiness § / prior
+# pjsip-lifecycle races after neighboring reload-heavy suites). Without
+# this, consecutive canonical regressions intermittently BLOCKED here
+# despite modules becoming Running a few seconds later — unrelated to
+# dashboard-pref ownership. No product behavior change.
+if harness_retry 15 2 -- pjsip_modules_running; then
     harness_ok "PJSIP modules Running" "res_pjsip.so and chan_pjsip.so both Running"
 else
-    harness_blocked "res_pjsip.so/chan_pjsip.so not both Running (checked 5 times over 8s)"
+    harness_blocked "res_pjsip.so/chan_pjsip.so not both Running (checked 15 times over ~28s)"
 fi
 
 # --- 2. Log in --------------------------------------------------------------

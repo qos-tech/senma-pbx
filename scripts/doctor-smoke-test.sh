@@ -62,7 +62,7 @@ MANDATORY_CHECKS=(
     "Docker daemon" "Container: app" "Container: asterisk" "Container: db"
     "Database reachable" "Application DB authentication" "Expected schema present"
     "Application HTTP reachable" "Application renders login page"
-    "Asterisk CLI reachable" "PJSIP module loaded" "Asterisk HTTP/WSS listener" "AMI reachable"
+    "Asterisk CLI reachable" "PJSIP module loaded" "Asterisk HTTP/WS backend" "AMI reachable"
     "PJSIP configuration" "Secrets" "Host disk free space" "Named volume usage"
     "Asterisk full log" "Application error log" "Backup destination" "TLS/WSS certificate"
 )

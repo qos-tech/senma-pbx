@@ -1,0 +1,12 @@
+{
+  "name": "senma-webrtc-browser-test-client",
+  "version": "0.0.0",
+  "private": true,
+  "description": "TASK-0035C disposable browser WebRTC harness (not production)",
+  "scripts": {
+    "run-harness": "node run.cjs"
+  },
+  "dependencies": {
+    "puppeteer-core": "24.2.0"
+  }
+}

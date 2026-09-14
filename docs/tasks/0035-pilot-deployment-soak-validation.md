@@ -1,4 +1,37 @@
+
+## TASK-0035A amendment (WSS TLS termination)
+
+**SUPERSEDED BY TASK-0035A** for the WSS/certificate ownership assumption only:
+
+- Old assumption: Asterisk `:8089` must present the trusted public WSS certificate.
+- New supported model: public WSS TLS terminates at the SENMA reverse proxy
+  (Apache in `app`); Asterisk receives private `ws://asterisk:8088/ws`.
+- See `docs/tasks/0035a-reverse-proxy-wss-tls-termination-pilot-realignment.md`.
+- WebRTC endpoint/media contract: see
+  `docs/tasks/0035b-webrtc-endpoint-contract-real-media-validation.md`.
+- Real browser / NAT / TURN validation: see
+  `docs/tasks/0035c-real-browser-webrtc-internet-nat-turn-validation.md`
+  (`REAL_BROWSER_WEBRTC_PASS_WITH_CONSTRAINTS`,
+  `TURN_REQUIREMENT_INCONCLUSIVE`).
+
+Unrelated TASK-0035 evidence (release/provenance/topology/migrate/secrets/
+reconcile/doctor-non-WSS/backup/restart/lint/regressions) remains **STILL_VALID**.
+The operational need for a non-fixture public certificate + DNS hostname remains,
+but that certificate now belongs on the reverse proxy, not on Asterisk HTTP TLS.
+
 # TASK-0035 — Pilot Deployment & Soak Validation
+
+## SUPERSEDED BY EXECUTION RECORD
+
+This file is the **pre-execution planning/stop record** (Phase 1 gate
+before a real pilot host existed). The authoritative TASK-0035 execution
+and decision live in:
+
+`docs/tasks/0035-production-pilot-deployment-soak-validation.md`
+
+**Decision there: `PILOT_DEPLOYMENT_BLOCKED`** (no authorized real pilot
+host / public DNS / trusted WSS certificate on the available agent).
+Do not treat this stub as the current status.
 
 ## LEAD
 

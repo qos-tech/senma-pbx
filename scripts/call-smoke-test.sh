@@ -159,10 +159,10 @@ pjsip_modules_running() {
 # TASK-0027 finding: see transport-smoke-test.sh's identical comment --
 # a fresh `docker compose exec` can transiently see incomplete module
 # state immediately after a DIFFERENT suite's own PJSIP reload.
-if harness_retry 5 2 -- pjsip_modules_running; then
+if harness_retry 15 2 -- pjsip_modules_running; then
     harness_ok "PJSIP modules Running" "res_pjsip.so and chan_pjsip.so both Running"
 else
-    harness_blocked "res_pjsip.so/chan_pjsip.so not both Running (checked 5 times over 8s)"
+    harness_blocked "res_pjsip.so/chan_pjsip.so not both Running (checked 15 times over ~28s)"
 fi
 
 # --- 3. Log in, check for collisions, provision via the real UI -----------

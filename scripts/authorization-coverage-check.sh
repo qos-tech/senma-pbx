@@ -40,7 +40,7 @@ expected_open_actions() {
     case "$1" in
         default_auth) echo 'login logout redefine recuperation' ;;
         default_error) echo 'error sneperror' ;;
-        default_index) echo 'add index' ;;
+        default_index) echo 'add dashboardadd index' ;;
         default_information) echo 'index' ;;
         default_newversion) echo 'index' ;;
         default_notifications) echo 'index remove markread' ;;

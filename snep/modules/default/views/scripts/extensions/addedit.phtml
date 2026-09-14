@@ -177,6 +177,20 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
         </div>
 
         <div class="form-group">
+          <label class="col-sm-3 control-label" for="webrtc"><?php echo $this->translate("WebRTC endpoint");?></label>
+          <div class="col-sm-6">
+            <div class="checkbox">
+              <?php if(!empty($this->extension['webrtc'])){?>
+                <label><input type="checkbox" name="webrtc" id="webrtc" value="1" checked/><?php echo $this->translate("Enabled");?></label>
+              <?php }else{ ?>
+                <label><input type="checkbox" name="webrtc" id="webrtc" value="1"/><?php echo $this->translate("Enabled");?></label>
+              <?php } ?>
+            </div>
+            <span class="help-block"><?php echo $this->translate("Enable for browser/WebPhone clients that register over the public WSS path. Forces DTLS-SRTP media (Asterisk webrtc=yes) and disables direct media. Prefer codecs ulaw/alaw (PCMU/PCMA); Opus is not available in this Asterisk build. Pin transport to wss when possible.");?></span>
+          </div>
+        </div>
+
+        <div class="form-group">
           <label class="col-sm-3 control-label" for="transport_id"><?php echo $this->translate("PJSIP Transport");?></label>
           <div class="col-sm-6">
             <select class="form-control" name="transport_id" id="transport_id">

@@ -155,17 +155,20 @@ fi
 # PART C -- WSS vs native TLS certificate ownership wording (Phase 16)
 # =============================================================================
 
-log "==> [C] existing seeded wss transport: certificate-ownership wording is WSS-specific"
-WSS_ID="$(db_query "SELECT id FROM pjsip_transports WHERE protocol='wss' LIMIT 1;")"
+log "==> [C] existing seeded wss transport: certificate-ownership wording is WSS/proxy-specific"
+# TASK-0035A: the seeded signaling row keeps name='wss' but protocol=ws
+# (private backend behind the app reverse proxy). Prefer name, accept
+# legacy protocol='wss' if an older DB shape is still present.
+WSS_ID="$(db_query "SELECT id FROM pjsip_transports WHERE name='wss' OR protocol IN ('ws','wss') ORDER BY CASE name WHEN 'wss' THEN 0 ELSE 1 END LIMIT 1;")"
 if [ -z "$WSS_ID" ]; then
-    harness_bad "wss transport fixture available" "no protocol='wss' row found -- expected the TASK-0018/0029A seed row to still exist"
+    harness_bad "wss transport fixture available" "no name='wss' / protocol ws|wss row found -- expected the seeded websocket signaling transport"
 else
     WSS_EDIT="$(mktemp)"; harness_register_best_effort_cleanup "wss edit page temp file" "rm -f '$WSS_EDIT'"
     fetch "${BASE_URL}/index.php/default/pjsip-transports/edit/id/${WSS_ID}" "$WSS_EDIT" >/dev/null
-    if grep -q "process-wide HTTP/TLS listener" "$WSS_EDIT" && ! grep -q "applies directly to this transport's own PJSIP TLS context" "$WSS_EDIT"; then
-        harness_ok "WSS edit page shows WSS-specific certificate wording" "correctly distinguishes the global HTTP/TLS listener model from a per-transport TLS context (Phase 16)"
+    if grep -q "reverse proxy" "$WSS_EDIT" && ! grep -q "applies directly to this transport's own PJSIP TLS context" "$WSS_EDIT"; then
+        harness_ok "WSS edit page shows WSS/proxy-specific certificate wording" "public TLS at reverse proxy; Asterisk cert fields optional for private WS backend (TASK-0035A)"
     else
-        harness_bad "WSS edit page shows WSS-specific certificate wording" "expected the WSS-specific explanation, not the native-TLS one"
+        harness_bad "WSS edit page shows WSS/proxy-specific certificate wording" "expected the proxy-termination explanation, not the native-TLS one"
     fi
     if grep -q '<span class="label label-' "$WSS_EDIT" && grep -qE "Diagnostics" "$WSS_EDIT"; then
         harness_ok "transport edit page has a Diagnostics section with a runtime badge" "Phase 9 -- previously absent from the edit page entirely"

@@ -224,6 +224,7 @@ class ExtensionsController extends Zend_Controller_Action {
           'authenticate' => isset($post['authenticate']) ? 1 : 0,
           'qualify' => isset($post['qualify']) ? 'yes' : 'no',
           'transport_id' => isset($post['transport_id']) ? $post['transport_id'] : '',
+          'webrtc' => isset($post['webrtc']) ? 1 : 0,
           'pickupgroup' => isset($post['pickup_group']) ? $post['pickup_group'] : '',
           'directmedia' => isset($post['directmedia']) ? $post['directmedia'] : 'no',
           'dtmfmode' => isset($post['dtmf']) ? $post['dtmf'] : 'rfc2833',
@@ -391,6 +392,7 @@ class ExtensionsController extends Zend_Controller_Action {
           // reference for -- a fresh add always offers exactly the
           // currently-enabled transports plus Automatic.
           $extension['transport_id'] = '';
+          $extension['webrtc'] = 0;
           $this->view->extension = $extension;
           $this->view->transports = Snep_PjsipTransports_Manager::getEnabled();
 
@@ -836,6 +838,14 @@ class ExtensionsController extends Zend_Controller_Action {
             $blf = (isset($formData["blf"]))? $formData["blf"]: "";
             $dtmfmode = (isset($formData["dtmf"]))? $formData["dtmf"]: "";
             $directmedia = $formData["directmedia"];
+            // TASK-0035B: WebRTC mode is an explicit endpoint contract flag.
+            // When enabled, force directmedia=no server-side (DTLS-SRTP
+            // media must hairpin through Asterisk; direct media would
+            // bypass that path).
+            $webrtc = isset($formData['webrtc']) ? 1 : 0;
+            if ($webrtc) {
+              $directmedia = 'no';
+            }
             // TASK-0028Y: "calllimit" is no longer a form field (removed
             // from addedit.phtml -- see that file's own comment and
             // docs/tasks/0028y-pjsip-parameter-regression-closure.md,
@@ -1054,6 +1064,8 @@ class ExtensionsController extends Zend_Controller_Action {
               // silently preserve the old explicit value while the UI
               // claims Automatic was saved.
               "transport_id" => $transportId,
+              // TASK-0035B: WebRTC endpoint contract flag (0/1).
+              "webrtc" => $webrtc,
             );
 
             if ($update) {

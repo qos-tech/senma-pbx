@@ -58,7 +58,14 @@ class Snep_PermissionPlugin extends Zend_Controller_Plugin_Abstract {
         'default_docs'           => true, // read-only local documentation viewer, no PBX/account data
         'default_information'    => true, // dashboard greeting widget ("Welcome to Snep, <user>")
         'default_newversion'     => true, // read-only vendor version-check display, content-hardened by TASK-0024/0025
-        'default_notifications'  => true, // low-stakes, self-service vendor notice feed (view/dismiss only, no PBX or account data); gating it would silently break for every non-superuser profile today since profiles_permissions has zero rows
+        // TASK-0034P: authenticated-open READ of the shared vendor-notice
+        // feed only. Mutations (mark-read / remove) are NOT covered by this
+        // bypass anymore -- see $writeActionsOnAlwaysAllow. The previous
+        // "self-service dismiss" claim was factually wrong: core_notifications
+        // has no user_id, and setRead/removeNotification key the vendor API
+        // on the installation $_SESSION['uuid'], so dismiss is shared
+        // PBX-wide state, not per-user acknowledgement.
+        'default_notifications'  => true,
         // ITC registration status page: GET remains authenticated-open so
         // any logged-in user can view status. TASK-0034O corrected the
         // previous "read-only" claim -- POST (and the former GET-side
@@ -204,6 +211,26 @@ class Snep_PermissionPlugin extends Zend_Controller_Plugin_Abstract {
         'default_register' => true,
     );
 
+    /**
+     * TASK-0034P: alwaysAllow controllers whose specific non-index
+     * actions still mutate shared/global state and therefore must demand
+     * the matching "<module>_<controller>_write" grant. Values are the
+     * action names Zend may report for the route (hyphenated URL form
+     * and the compressed coverage-inventory form). Controllers listed
+     * here remain authenticated-open for every action NOT named below
+     * (notifications index GET stays open). Same fall-through shape as
+     * $writeOnPostIndex above.
+     *
+     * Key: "<module>_<controller>", value: list of action names.
+     */
+    private static $writeActionsOnAlwaysAllow = array(
+        // Shared vendor-notice board: local core_notifications is a
+        // PBX-wide cache (no user ownership column); vendor mutations
+        // use the installation ITC uuid. Any authenticated zero-grant
+        // user previously could mark-read/delete notices for everyone.
+        'default_notifications' => array('mark-read', 'markread', 'remove'),
+    );
+
     public function __construct() {
 
     }
@@ -242,15 +269,19 @@ class Snep_PermissionPlugin extends Zend_Controller_Plugin_Abstract {
         $action = $request->getActionName();
         $key = $module . '_' . $controller;
 
-        // TASK-0034O: $alwaysAllow still means "any authenticated user may
-        // REACH this controller" for ordinary GET/read traffic, but an
-        // opt-in $writeOnPostIndex entry can still require write for POST
-        // to index -- the same shape TASK-0034L/M already use for
-        // non-alwaysAllow controllers. Controllers on $alwaysAllow that
-        // are NOT listed in $writeOnPostIndex remain fully open when
-        // authenticated (notifications dismiss, docs, etc. -- unchanged).
+        // TASK-0034O/P: $alwaysAllow still means "any authenticated user
+        // may REACH this controller" for ordinary GET/read traffic, but
+        // opt-in write gates can still require write for:
+        //   - POST to index ($writeOnPostIndex, TASK-0034O), or
+        //   - named mutating actions ($writeActionsOnAlwaysAllow, TASK-0034P).
+        // Controllers on $alwaysAllow not listed in either map remain
+        // fully open when authenticated (docs, simulator, etc.).
         if (isset(self::$alwaysAllow[$key])) {
-            if (!($action == 'index' && $request->isPost() && isset(self::$writeOnPostIndex[$key]))) {
+            $writeOnPostIndex = ($action == 'index' && $request->isPost()
+                && isset(self::$writeOnPostIndex[$key]));
+            $writeNamedAction = (isset(self::$writeActionsOnAlwaysAllow[$key])
+                && in_array($action, self::$writeActionsOnAlwaysAllow[$key], true));
+            if (!$writeOnPostIndex && !$writeNamedAction) {
                 return;
             }
             // Fall through: classify as write and enforce below.

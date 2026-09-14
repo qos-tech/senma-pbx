@@ -1,5 +1,17 @@
 # TASK-0034E — Production WSS Certificate Trust & Runtime Verification
 
+## TASK-0035A amendment (WSS TLS termination)
+
+**SUPERSEDED BY TASK-0035A** for the assumption that Asterisk itself must
+present the trusted public WSS certificate on a published `:8089` listener.
+
+- Historical TASK-0034E evidence (cert-check tooling, fixture detection,
+  runtime peek, consecutive regressions at the time) remains preserved.
+- Under TASK-0035A the public trust surface is the SENMA reverse proxy
+  (`app` Apache HTTPS/`/asterisk/ws`); Asterisk exposes private plain WS
+  on `:8088` for the proxy backend only.
+- See `docs/tasks/0035a-reverse-proxy-wss-tls-termination-pilot-realignment.md`.
+
 Status: Resolved. Two consecutive full `make regression` PASS runs
 (41/41 each, including the new `wss-certificate-runtime-smoke` suite),
 `make lint` PASS, `make doctor` 0 FAIL, `make secrets-check` MATCH, `make

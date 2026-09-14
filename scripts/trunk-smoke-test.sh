@@ -277,14 +277,16 @@ pjsip_modules_running_on() {
 }
 MODS_OK=1
 for svc in asterisk provider; do
-    if ! harness_retry 5 2 -- pjsip_modules_running_on "$svc"; then
+    # TASK-0034Q: same readiness-window widen as pjsip-lifecycle-smoke
+    # (5×2s → 15×2s) for the documented inter-suite PJSIP reload race.
+    if ! harness_retry 15 2 -- pjsip_modules_running_on "$svc"; then
         MODS_OK=0
     fi
 done
 if [ "$MODS_OK" = "1" ]; then
     harness_ok "PJSIP modules Running" "res_pjsip.so and chan_pjsip.so Running on both asterisk and provider"
 else
-    harness_blocked "res_pjsip.so/chan_pjsip.so not both Running on both instances"
+    harness_blocked "res_pjsip.so/chan_pjsip.so not both Running on both instances (checked 15×2s each)"
 fi
 
 # --- 3. Log in --------------------------------------------------------------

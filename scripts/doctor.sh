@@ -327,17 +327,24 @@ check_asterisk_pjsip_module() {
 
 check_asterisk_http_wss() {
     if [ "$(container_state asterisk)" != "running" ]; then
-        record "Asterisk HTTP/WSS listener" "SKIP" "asterisk container is not running"
+        record "Asterisk HTTP/WS backend" "SKIP" "asterisk container is not running"
         return
     fi
     local out
     out="$($COMPOSE exec -T asterisk asterisk -rx "http show status" 2>/dev/null)"
-    if printf '%s' "$out" | grep -qi "Server Enabled"; then
-        local https_line
-        https_line="$(printf '%s' "$out" | grep -i "HTTPS Server" | head -1)"
-        record "Asterisk HTTP/WSS listener" "PASS" "${https_line:-HTTP server enabled}"
+    # TASK-0035A: public WSS terminates at the app reverse proxy. Asterisk
+    # must expose private plain HTTP/WS for the proxy backend; Asterisk-side
+    # HTTPS is optional and no longer required for pilot WSS.
+    if printf '%s' "$out" | grep -qiE "Server Enabled|HTTP Server Enabled"; then
+        local http_line
+        http_line="$(printf '%s' "$out" | grep -iE "HTTP Server Enabled|Server Enabled and Bound|Bound to" | head -1)"
+        if printf '%s' "$out" | grep -qiE "8088"; then
+            record "Asterisk HTTP/WS backend" "PASS" "${http_line:-private WS backend enabled}"
+        else
+            record "Asterisk HTTP/WS backend" "WARN" "HTTP enabled but :8088 not observed -- proxy backend may be unreachable"
+        fi
     else
-        record "Asterisk HTTP/WSS listener" "WARN" "HTTP server not reported enabled (WSS/media-over-websocket unavailable)"
+        record "Asterisk HTTP/WS backend" "WARN" "HTTP server not reported enabled (proxy WSS backend unavailable)"
     fi
 }
 

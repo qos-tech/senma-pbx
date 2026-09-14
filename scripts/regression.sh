@@ -159,6 +159,8 @@ run_suite "cnl-upload-authorization-security" "cnl-upload-authorization-security
 # mutates itc_consumers). Placed next to the CNL authz suite as the other
 # TASK-0034M follow-up that closed a distinct authorization mechanism.
 run_suite "itc-registration-authorization-security" "itc-registration-authorization-security-smoke-test.sh"
+run_suite "notification-dismiss-authorization-security" "notification-dismiss-authorization-security-smoke-test.sh"
+run_suite "dashboard-preferences-authorization-security" "dashboard-preferences-authorization-security-smoke-test.sh"
 run_suite "http-smoke"             "smoke-test.sh"
 
 # TASK-0027A: fixed-timestamp proof of harness_cdr_report_window(),
@@ -197,6 +199,9 @@ run_suite "pjsip-lifecycle-smoke"  "pjsip-lifecycle-smoke-test.sh"
 # the task); running suites strictly serially (this file's own header
 # comment) is exactly what makes that safe here.
 run_suite "wss-platform-smoke"     "wss-platform-smoke-test.sh"
+run_suite "wss-proxy-termination-smoke" "wss-proxy-termination-smoke-test.sh"
+run_suite "webrtc-endpoint-contract-smoke" "webrtc-endpoint-contract-smoke-test.sh"
+run_suite "webrtc-browser-nat-smoke" "webrtc-browser-nat-smoke-test.sh"
 # TASK-0029A: TLS/WSS certificate management -- placed right after
 # wss-platform-smoke (the closest-related existing suite: both restart
 # the asterisk container) and before transport-smoke.

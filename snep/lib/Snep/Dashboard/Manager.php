@@ -47,9 +47,19 @@ class Snep_Dashboard_Manager {
      */
     public static function get() {
         $db = Zend_Registry::get('db');
-
-        $dashboard = $db->query("SELECT dashboard FROM users WHERE id='$_SESSION[id_user]'")->fetchObject();
-        $array = unserialize($dashboard->dashboard);
+        // TASK-0034Q: always keyed by the authenticated session user.
+        // Column is users.id; session stores it as id_user. Bound query
+        // replaces prior string interpolation of the session id.
+        $userId = (int) $_SESSION['id_user'];
+        $row = $db->fetchRow(
+            $db->select()
+                ->from('users', array('dashboard'))
+                ->where('id = ?', $userId)
+        );
+        if (!$row || !isset($row['dashboard'])) {
+            return array();
+        }
+        $array = unserialize($row['dashboard']);
         if (is_array($array))
             return $array;
         else
@@ -79,7 +89,12 @@ class Snep_Dashboard_Manager {
                 $itens_verificados[] = $value;
         }
         $db = Zend_Registry::get('db');
-        $db->update("users", array('dashboard' => serialize($itens_verificados)), "id = '$_SESSION[id_user]'");
+        $userId = (int) $_SESSION['id_user'];
+        $db->update(
+            'users',
+            array('dashboard' => serialize($itens_verificados)),
+            array('id = ?' => $userId)
+        );
     }
 
     /**

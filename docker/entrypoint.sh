@@ -112,4 +112,41 @@ php /usr/local/bin/bootstrap-admin.php || echo "[entrypoint] bootstrap-admin.php
 # 0033d-diagnostics-logging-storage-lifecycle.md LOG LIFECYCLE.
 /usr/local/bin/log-rotate-app.sh &
 
+# TASK-0035A: public WSS/HTTPS certificate material for the Apache TLS
+# vhost. Operators may bind-mount real cert/key over these paths (or set
+# PUBLIC_WSS_CERT_FILE / PUBLIC_WSS_KEY_FILE to existing in-container
+# paths). When absent, mint a DEV-ONLY self-signed fixture so local
+# `make up` can exercise the proxy path without a public CA. Pilot
+# acceptance still requires a non-fixture trusted certificate -- see
+# scripts/wss-cert-check.sh --pilot and
+# docs/tasks/0035a-reverse-proxy-wss-tls-termination-pilot-realignment.md.
+SENMA_PUBLIC_CERT_DIR=/etc/senma/certs
+SENMA_PUBLIC_CERT="${PUBLIC_WSS_CERT_FILE:-$SENMA_PUBLIC_CERT_DIR/public-wss.crt}"
+SENMA_PUBLIC_KEY="${PUBLIC_WSS_KEY_FILE:-$SENMA_PUBLIC_CERT_DIR/public-wss.key}"
+mkdir -p "$SENMA_PUBLIC_CERT_DIR"
+if [ -n "${PUBLIC_WSS_CERT_FILE:-}" ] && [ -n "${PUBLIC_WSS_KEY_FILE:-}" ]; then
+    if [ "$PUBLIC_WSS_CERT_FILE" != "$SENMA_PUBLIC_CERT_DIR/public-wss.crt" ]; then
+        cp -f "$PUBLIC_WSS_CERT_FILE" "$SENMA_PUBLIC_CERT_DIR/public-wss.crt"
+    fi
+    if [ "$PUBLIC_WSS_KEY_FILE" != "$SENMA_PUBLIC_CERT_DIR/public-wss.key" ]; then
+        cp -f "$PUBLIC_WSS_KEY_FILE" "$SENMA_PUBLIC_CERT_DIR/public-wss.key"
+    fi
+    SENMA_PUBLIC_CERT="$SENMA_PUBLIC_CERT_DIR/public-wss.crt"
+    SENMA_PUBLIC_KEY="$SENMA_PUBLIC_CERT_DIR/public-wss.key"
+fi
+if [ ! -f "$SENMA_PUBLIC_CERT" ] || [ ! -f "$SENMA_PUBLIC_KEY" ]; then
+    echo "[entrypoint] generating DEV-ONLY public WSS TLS fixture at $SENMA_PUBLIC_CERT_DIR (TASK-0035A)"
+    _pub_host="${WSS_PUBLIC_HOSTNAME:-localhost}"
+    openssl req -x509 -newkey rsa:2048 -nodes \
+        -keyout "$SENMA_PUBLIC_KEY" \
+        -out "$SENMA_PUBLIC_CERT" \
+        -days 825 \
+        -subj "/CN=senma-public-wss-dev" \
+        -addext "subjectAltName=DNS:${_pub_host},DNS:localhost,DNS:app" \
+        >/dev/null 2>&1
+fi
+chmod 644 "$SENMA_PUBLIC_CERT"
+chmod 600 "$SENMA_PUBLIC_KEY"
+chown www-data:www-data "$SENMA_PUBLIC_CERT" "$SENMA_PUBLIC_KEY" || true
+
 exec "$@"

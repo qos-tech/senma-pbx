@@ -307,6 +307,13 @@ harness_require_containers app asterisk db
 
 harness_require_env DB_USER DB_PASSWORD DB_NAME
 
+# Capture suite start in DB time. Restart recovery waits can push this
+# suite well past 5 minutes (observed ~50 minutes under load), so
+# audit assertions must not use a sliding NOW()-5m window that ages out
+# the early Restart rows this suite itself wrote.
+SUITE_START="$(db_query "SELECT NOW();")"
+log "suite start (DB clock): ${SUITE_START}"
+
 ASTERISK_CID="$($COMPOSE ps -q asterisk)"
 ASTERISK_NAME="$(docker inspect "$ASTERISK_CID" --format '{{.Name}}' | sed 's#^/##')"
 NETWORK_NAME="$(harness_asterisk_test_network "$ASTERISK_CID")"
@@ -529,11 +536,11 @@ if harness_wait_asterisk_ready && harness_restore_asterisk_post_restart; then
 else
     bad "odbc/cdr ready after restarts" "Asterisk restarted successfully but ODBC/CDR runtime did not recover"
 fi
-AUDIT_ROWS="$(db_query "SELECT COUNT(*) FROM logs_users WHERE \`table\`='asterisk' AND datetime >= NOW() - INTERVAL 5 MINUTE;")"
+AUDIT_ROWS="$(db_query "SELECT COUNT(*) FROM logs_users WHERE \`table\`='asterisk' AND action='Restart' AND datetime >= '${SUITE_START}';")"
 if [ "${AUDIT_ROWS:-0}" -ge 3 ]; then
-    ok "audit trail recorded" "${AUDIT_ROWS} restart audit rows in the last 5 minutes"
+    ok "audit trail recorded" "${AUDIT_ROWS} Restart audit rows since suite start (${SUITE_START})"
 else
-    bad "audit trail recorded" "expected at least 3 rows, found '${AUDIT_ROWS}'"
+    bad "audit trail recorded" "expected at least 3 Restart rows since ${SUITE_START}, found '${AUDIT_ROWS}'"
 fi
 
 # --- E. authorization (TASK-0022) ----------------------------------------
@@ -821,11 +828,11 @@ fi
 
 # --- E9. audit trail includes the rejected attempts ----------------------
 
-DENIED_ROWS="$(db_query "SELECT COUNT(*) FROM logs_users WHERE action='RestartDenied' AND datetime >= NOW() - INTERVAL 5 MINUTE;")"
+DENIED_ROWS="$(db_query "SELECT COUNT(*) FROM logs_users WHERE action='RestartDenied' AND datetime >= '${SUITE_START}';")"
 if [ "${DENIED_ROWS:-0}" -ge 2 ]; then
-    ok "authorization denials audited" "${DENIED_ROWS} RestartDenied rows in the last 5 minutes"
+    ok "authorization denials audited" "${DENIED_ROWS} RestartDenied rows since suite start (${SUITE_START})"
 else
-    bad "authorization denials audited" "expected at least 2 RestartDenied rows, found '${DENIED_ROWS}'"
+    bad "authorization denials audited" "expected at least 2 RestartDenied rows since ${SUITE_START}, found '${DENIED_ROWS}'"
 fi
 
 harness_complete

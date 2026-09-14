@@ -157,7 +157,7 @@ pjsip_modules_running() {
     $COMPOSE exec -T asterisk asterisk -rx 'module show like res_pjsip.so' 2>&1 | grep -q "Running" \
         && $COMPOSE exec -T asterisk asterisk -rx 'module show like chan_pjsip.so' 2>&1 | grep -q "Running"
 }
-harness_retry 5 2 -- pjsip_modules_running || harness_blocked "PJSIP modules not Running -- cannot provision fixtures"
+harness_retry 15 2 -- pjsip_modules_running || harness_blocked "PJSIP modules not Running -- cannot provision fixtures"
 
 ASTERISK_CID="$($COMPOSE ps -q asterisk)"
 NETWORK_NAME="$(harness_asterisk_test_network "$ASTERISK_CID")"

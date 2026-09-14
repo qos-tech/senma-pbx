@@ -327,7 +327,7 @@ pjsip_modules_running() {
     $COMPOSE exec -T asterisk asterisk -rx 'module show like res_pjsip.so' 2>&1 | grep -q "Running" \
         && $COMPOSE exec -T asterisk asterisk -rx 'module show like chan_pjsip.so' 2>&1 | grep -q "Running"
 }
-if harness_retry 5 2 -- pjsip_modules_running; then
+if harness_retry 15 2 -- pjsip_modules_running; then
     harness_ok "PJSIP modules Running" "res_pjsip.so and chan_pjsip.so Running"
 else
     harness_blocked "res_pjsip.so/chan_pjsip.so not both Running"

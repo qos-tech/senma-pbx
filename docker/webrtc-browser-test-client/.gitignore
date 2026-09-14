@@ -1,0 +1,10 @@
+# TASK-0035C disposable browser WebRTC harness
+#
+# Not part of the production SENMA runtime. Vendored JsSIP browser
+# bundle + Chromium automation for real-browser signaling/media proof.
+# Credentials must be supplied at runtime (env/CLI), never committed.
+
+node_modules/
+npm-debug.log*
+package-lock.json
+*.result.json
