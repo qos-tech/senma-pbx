@@ -133,6 +133,10 @@ run_suite "session-csrf-security"  "session-csrf-security-smoke-test.sh"
 # first, don't let it hide behind an unrelated authorization failure"
 # reason session-csrf-security's own placement comment gives.
 run_suite "auth-hardening-security" "auth-hardening-security-smoke-test.sh"
+# TASK-0035E1: trusted reverse-proxy client IP for login throttle.
+# Placed immediately after auth-hardening-security (same F22 throttle
+# surface; proves attribution when behind an explicitly trusted proxy).
+run_suite "trusted-proxy-login-throttle-security" "trusted-proxy-login-throttle-security-smoke-test.sh"
 # TASK-0026I: placed right after auth-hardening-security and before
 # authorization -- same reasoning as the other security suites' own
 # placement (an independent trust-boundary proof needing its own

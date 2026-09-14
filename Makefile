@@ -314,6 +314,12 @@ session-csrf-security-smoke: up
 auth-hardening-security-smoke: up
 	@set -a; . ./.env; set +a; bash scripts/auth-hardening-security-smoke-test.sh
 
+# TASK-0035E1: trusted reverse-proxy client IP resolution for login
+# throttle attribution (Snep_Security_ClientIp + TRUSTED_PROXY_CIDRS).
+# Deliberately separate from `make smoke` -- never run implicitly by it.
+trusted-proxy-login-throttle-security-smoke: up
+	@set -a; . ./.env; set +a; bash scripts/trusted-proxy-login-throttle-security-smoke-test.sh
+
 # TASK-0026I: exercises the F25/F26/F28 information-disclosure and
 # contained-path-traversal findings -- error.phtml's now-gated exception
 # message, expose_php/raw-SQL-in-JSON disclosure, and DocsController's
