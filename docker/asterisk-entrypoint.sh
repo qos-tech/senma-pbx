@@ -256,6 +256,17 @@ if [ ! -f "$ASTERISK_ETC/musiconhold.conf" ]; then
     cp "$ASTERISK_CONFIG_SRC/musiconhold.conf" "$ASTERISK_ETC/musiconhold.conf"
 fi
 
+# TASK-0035C: existing volumes never received rtp.conf (TASK-0034B's
+# narrowed 10000-10199 lived only under snep/install/etc/asterisk/ and
+# was never copied into /etc/asterisk). Without this file Asterisk uses
+# compiled-in defaults 5000-31000, which diverge from compose.pilot.yaml's
+# published 10000-10199/udp window. Seed when missing; never overwrite an
+# operator-customized rtp.conf that is already present.
+if [ ! -f "$ASTERISK_ETC/rtp.conf" ] && [ -f "$ASTERISK_CONFIG_SRC/rtp.conf" ]; then
+    echo "[asterisk-entrypoint] seeding rtp.conf (TASK-0035C, align RTP range with pilot publish window)"
+    cp "$ASTERISK_CONFIG_SRC/rtp.conf" "$ASTERISK_ETC/rtp.conf"
+fi
+
 if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
     echo "[asterisk-entrypoint] /etc/asterisk not yet populated, assembling from vendored config"
 
