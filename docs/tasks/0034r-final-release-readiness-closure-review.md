@@ -10,6 +10,15 @@ No reproducible `PILOT_BLOCKER` was found. Canonical gates passed twice
 consecutively. Remaining items are explicitly classified as
 `PILOT_CONSTRAINT`, `POST_PILOT_DEBT`, or `DEAD/OBSOLETE`.
 
+
+
+## TASK-0035A amendment (WSS TLS termination)
+
+The WSS-specific interpretation that Asterisk itself must present the trusted
+public certificate is **SUPERSEDED BY TASK-0035A**. Final release-readiness
+closure otherwise stands. See
+`docs/tasks/0035a-reverse-proxy-wss-tls-termination-pilot-realignment.md`.
+
 ## Predecessor
 
 - Parent: `docs/tasks/0034-release-readiness-production-pilot-gate.md`

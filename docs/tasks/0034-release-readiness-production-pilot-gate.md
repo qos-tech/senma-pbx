@@ -1,6 +1,34 @@
+
+## TASK-0035A amendment (WSS TLS termination)
+
+Finding CH-2 / TASK-0034E direct-Asterisk public WSS certificate requirement for
+pilot WSS signaling is **SUPERSEDED BY TASK-0035A** for the public WSS trust
+surface: TLS may terminate at the supported SENMA reverse proxy; Asterisk may
+use private WS. Native SIP TLS and WebRTC DTLS remain separate lifecycles.
+Historical TASK-0034E evidence is preserved; see
+`docs/tasks/0035a-reverse-proxy-wss-tls-termination-pilot-realignment.md`.
+
 # TASK-0034 — Release Readiness & Production Pilot Gate
 
-## UPDATE (TASK-0034R) — authoritative closure status
+## UPDATE (TASK-0035) — first pilot deployment attempt
+
+TASK-0035 attempted production-pilot deployment/soak on the available
+host. **Result: `PILOT_DEPLOYMENT_BLOCKED`.**
+
+Product/code readiness from TASK-0034R (`READY_WITH_NON_BLOCKING_DEBT`)
+is **unchanged**. The blocker is environmental/contractual: no authorized
+real pilot host with public DNS and a trusted WSS certificate (fixture
+cert remains `NOT_ACCEPTABLE_FOR_PILOT`). No closed 0034 decision was
+reopened.
+
+Authoritative 0035 record:
+
+`docs/tasks/0035-production-pilot-deployment-soak-validation.md`
+
+Recommended next: provision a real pilot host + trusted WSS cert, then
+re-run TASK-0035 (or TASK-0035A) through soak.
+
+## UPDATE (TASK-0034R) — authoritative product/code closure status
 
 **Final 0034-series closure review: `READY_WITH_NON_BLOCKING_DEBT`.**
 
