@@ -29,10 +29,10 @@
 
 set -uo pipefail
 
-BODY="$(curl -sS --max-time 4 http://localhost/ 2>&1)"
+BODY="$(curl -sS --max-time 4 "${APP_HEALTHCHECK_URL:-http://localhost/}" 2>&1)"
 RC=$?
 if [ "$RC" -ne 0 ]; then
-    echo "FAIL: HTTP request to / failed (curl exit $RC)"
+    echo "FAIL: HTTP request to ${APP_HEALTHCHECK_URL:-http://localhost/} failed (curl exit $RC)"
     exit 1
 fi
 

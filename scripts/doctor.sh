@@ -686,10 +686,14 @@ check_certificate() {
             record "TLS/WSS certificate" "WARN" "could not confirm the live WSS listener's certificate (connection failed) -- see 'make cert-check'"
             ;;
         SELF_SIGNED*)
-            case "$fixture" in
-                yes*) record "TLS/WSS certificate" "WARN" "dev-fixture certificate in use -- must be replaced before pilot go-live (docs/operations/production-release-runbook.md step 4)" ;;
-                *) record "TLS/WSS certificate" "WARN" "self-signed certificate -- confirm this is intentional (private CA deployments should set ca_list_file)" ;;
-            esac
+            if [ "${TLS_TERMINATION_MODE:-}" = "external" ]; then
+                record "TLS/WSS certificate" "PASS" "TLS_TERMINATION_MODE=external — local SENMA certificate is not the public trust surface (validate NPM/public endpoint via make cert-check PILOT=1)"
+            else
+                case "$fixture" in
+                    yes*) record "TLS/WSS certificate" "WARN" "dev-fixture certificate in use -- must be replaced before pilot go-live (docs/operations/production-release-runbook.md step 4)" ;;
+                    *) record "TLS/WSS certificate" "WARN" "self-signed certificate -- confirm this is intentional (private CA deployments should set ca_list_file)" ;;
+                esac
+            fi
             ;;
         TRUSTED*)
             case "$trust" in

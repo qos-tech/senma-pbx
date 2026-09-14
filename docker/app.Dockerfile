@@ -33,6 +33,7 @@ RUN apt-get update \
     && a2enconf mag-servername
 
 WORKDIR /var/www/html/snep
+COPY docker/apache-mag.conf /etc/senma/apache-mag.conf.template
 COPY docker/apache-mag.conf /etc/apache2/sites-available/000-default.conf
 COPY docker/php-mag.ini /usr/local/etc/php/conf.d/zz-mag.ini
 COPY docker/entrypoint.sh /usr/local/bin/docker-entrypoint.sh

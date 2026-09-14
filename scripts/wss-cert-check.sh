@@ -152,8 +152,63 @@ echo "KEY_PATH: $KEY"
 echo "CA_LIST_FILE: ${CAFILE:-(none configured)}"
 echo "HOSTNAME: ${HOSTNAME_VALUE:-(not configured)}"
 echo "SIGNALING_TRANSPORT: id=${_ROW_ID} protocol=${SIGNALING_PROTOCOL:-?} bind=${_ROW_BIND_ADDR}:${BIND_PORT}"
-echo "TERMINATION_MODEL: reverse-proxy (public TLS at app:443 /asterisk/ws -> ws://asterisk:8088/ws)"
+TLS_MODE="${TLS_TERMINATION_MODE:-senma}"
+echo "TLS_TERMINATION_MODE: $TLS_MODE"
+if [ "$TLS_MODE" = "external" ]; then
+    echo "TERMINATION_MODEL: external (public TLS at external proxy/NPM; SENMA HTTP backend + /asterisk/ws -> private WS)"
+else
+    echo "TERMINATION_MODEL: reverse-proxy (public TLS at app:443 /asterisk/ws -> private Asterisk WS)"
+fi
 echo "ASTERISK_CERT_FILE_REF: ${_ROW_CERT:-(none -- expected for private WS)}"
+
+# TASK-0035E2: external TLS termination — public certificate belongs to
+# NPM/proxy, not SENMA's local fixture. Pilot acceptance evaluates the
+# public endpoint (WSS_PUBLIC_HOSTNAME:443) and must not fail solely
+# because the local DEV fixture still exists on the HTTP backend host.
+if [ "$TLS_MODE" = "external" ] && [ "$PILOT" = "1" ]; then
+    if [ -z "$HOSTNAME_VALUE" ]; then
+        echo "TRUST_STATE: UNKNOWN"
+        echo "PILOT_ACCEPTANCE: NOT_ACCEPTABLE_FOR_PILOT (external TLS mode requires WSS_PUBLIC_HOSTNAME)"
+        exit 1
+    fi
+    EXT_CONNECT="${OVERRIDE_CONNECT:-${HOSTNAME_VALUE}:443}"
+    EXT_SNI="${OVERRIDE_SNI:-$HOSTNAME_VALUE}"
+    echo "EXTERNAL_RUNTIME_ENDPOINT: $EXT_CONNECT (SNI=$EXT_SNI)"
+    EXT_FP=""
+    EXT_SUBJECT=""
+    if EXT_PEM="$(echo | timeout 8 openssl s_client -connect "$EXT_CONNECT" -servername "$EXT_SNI" 2>/dev/null | openssl x509 2>/dev/null)"; then
+        EXT_FP="$(printf '%s\n' "$EXT_PEM" | openssl x509 -noout -fingerprint -sha256 2>/dev/null | sed 's/^.*=//')"
+        EXT_SUBJECT="$(printf '%s\n' "$EXT_PEM" | openssl x509 -noout -subject 2>/dev/null)"
+        EXT_SANS="$(printf '%s\n' "$EXT_PEM" | openssl x509 -noout -ext subjectAltName 2>/dev/null | tr '\n' ' ')"
+        echo "EXTERNAL_SUBJECT: $EXT_SUBJECT"
+        echo "EXTERNAL_FINGERPRINT_SHA256: $EXT_FP"
+        if printf '%s' "$EXT_SUBJECT$EXT_SANS" | grep -qi "$HOSTNAME_VALUE"; then
+            EXT_HOST_MATCH="yes"
+        else
+            EXT_HOST_MATCH="no"
+        fi
+        echo "EXTERNAL_HOSTNAME_MATCH: $EXT_HOST_MATCH"
+        if printf '%s' "$EXT_SUBJECT" | grep -qi 'senma-public-wss-dev'; then
+            echo "TRUST_STATE: SELF_SIGNED"
+            echo "PILOT_ACCEPTANCE: NOT_ACCEPTABLE_FOR_PILOT (public endpoint still presents SENMA local fixture — external terminator misconfigured)"
+            exit 1
+        fi
+        if [ "$EXT_HOST_MATCH" != "yes" ]; then
+            echo "TRUST_STATE: HOSTNAME_MISMATCH"
+            echo "PILOT_ACCEPTANCE: NOT_ACCEPTABLE_FOR_PILOT (public certificate does not cover WSS_PUBLIC_HOSTNAME)"
+            exit 1
+        fi
+        # Local fixture presence is informational only in external mode.
+        echo "LOCAL_FIXTURE_NOTE: ignored for pilot acceptance under TLS_TERMINATION_MODE=external"
+        echo "TRUST_STATE: TRUSTED (external terminator)"
+        echo "PILOT_ACCEPTANCE: PILOT_ACCEPTABLE"
+        exit 0
+    else
+        echo "TRUST_STATE: RUNTIME_UNREACHABLE"
+        echo "PILOT_ACCEPTANCE: NOT_ACCEPTABLE_FOR_PILOT (could not fetch public certificate at $EXT_CONNECT)"
+        exit 1
+    fi
+fi
 
 # --- Existence / permissions -------------------------------------------
 
