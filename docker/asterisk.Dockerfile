@@ -37,6 +37,7 @@ RUN apt-get update \
         build-essential ca-certificates curl \
         libedit-dev libjansson-dev libsqlite3-dev libssl-dev libxml2-dev \
         libcurl4-openssl-dev unixodbc-dev uuid-dev pkg-config \
+        libsrtp2-dev \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /usr/src
@@ -75,6 +76,7 @@ RUN apt-get update \
     && apt-get install -y --no-install-recommends \
         ca-certificates libedit2 libjansson4 libsqlite3-0 libssl3 \
         libxml2 libcurl4 unixodbc odbc-mariadb uuid-runtime \
+        libsrtp2-1 \
     # TASK-0009: the real SENMA AGI entrypoints (bind-mounted below, see
     # compose.yaml) now run inside this container for the first time --
     # previously it had no PHP interpreter at all. Traced the actual
