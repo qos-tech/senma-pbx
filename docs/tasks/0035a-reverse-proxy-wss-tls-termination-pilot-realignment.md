@@ -270,3 +270,10 @@ Re-score pilot WSS readiness as:
 - Operational trust: still **BLOCKED** until a non-fixture public cert + hostname are provisioned on the proxy
 
 Do not invalidate the rest of TASK-0035's successful evidence.
+
+## Follow-on: TASK-0035B (endpoint / media)
+
+Public WSS TLS termination is owned by this task. The supported
+WebRTC **endpoint/media** contract (`webrtc=yes`, DTLS-SRTP, ICE,
+codecs, AOR contact policy, real media proof) is documented in
+`docs/tasks/0035b-webrtc-endpoint-contract-real-media-validation.md`.

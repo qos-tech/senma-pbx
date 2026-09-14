@@ -323,10 +323,13 @@ These are concrete, reproducible blockers — not historical speculation.
 1. **TASK-0035A** — Provision real pilot host (Debian 14 or approved), DNS,
    trusted WSS certificate, non-placeholder secrets; re-run 0035 checklist
    through soak.
-2. **TASK-0035B** (optional process) — Harden check targets so
-   `migrate-check` / `secrets-check` / `reconcile-check` / `lint` do not
-   `--build` over an active release tag.
-3. Do **not** reopen 0034O–Q / 0034D architecture without new product
+2. **TASK-0035B** — WebRTC endpoint/media contract (implemented; see
+   `docs/tasks/0035b-webrtc-endpoint-contract-real-media-validation.md`).
+   Decision: `WEBRTC_CONTRACT_PASS_WITH_CONSTRAINTS`.
+3. **FOLLOW_UP_DEBT** (formerly sketched here as a second “0035B”) — Harden
+   check targets so `migrate-check` / `secrets-check` / `reconcile-check` /
+   `lint` do not `--build` over an active release tag.
+4. Do **not** reopen 0034O–Q / 0034D architecture without new product
    evidence.
 
 ---

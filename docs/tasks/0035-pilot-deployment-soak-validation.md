@@ -7,6 +7,8 @@
 - New supported model: public WSS TLS terminates at the SENMA reverse proxy
   (Apache in `app`); Asterisk receives private `ws://asterisk:8088/ws`.
 - See `docs/tasks/0035a-reverse-proxy-wss-tls-termination-pilot-realignment.md`.
+- WebRTC endpoint/media contract: see
+  `docs/tasks/0035b-webrtc-endpoint-contract-real-media-validation.md`.
 
 Unrelated TASK-0035 evidence (release/provenance/topology/migrate/secrets/
 reconcile/doctor-non-WSS/backup/restart/lint/regressions) remains **STILL_VALID**.
