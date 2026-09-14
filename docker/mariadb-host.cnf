@@ -1,0 +1,8 @@
+# TASK-0035E2: MariaDB must bind loopback only when the db service uses
+# Docker host networking. Mounted only by compose.host.yaml.
+#
+# Expected: 127.0.0.1:3306
+# Forbidden: 0.0.0.0:3306 on a dedicated PBX host LAN/public interface.
+
+[mysqld]
+bind-address = 127.0.0.1

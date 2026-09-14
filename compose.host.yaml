@@ -1,8 +1,3 @@
-# TASK-0035E2 — Pilot Compose overlay (content-equivalent to compose.host.yaml).
-#
-# Kept as the stable `make pilot-up` / `-f compose.pilot.yaml` path.
-# Edit compose.host.yaml and re-sync this file when changing host networking.
-
 # TASK-0035E2 — Host-networking pilot/production overlay.
 #
 # Model B (documented in

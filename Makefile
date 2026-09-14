@@ -83,13 +83,11 @@ config:
 up:
 	COMPOSE_PROFILES="$(FIXTURE_PROFILE)" $(COMPOSE) $(COMPOSE_FILES) up -d --build $(SERVICES)
 
-# TASK-0034B: pilot/production-style deployment -- layers
-# compose.pilot.yaml's SIP/WSS/RTP host-port exposure (TASK-0034 CH-7)
-# on top of the base compose.yaml (which stays internal-only for
-# development), and deliberately starts only the services a pilot
-# needs -- excluding the `provider` dev-only trunk-simulator fixture
-# (TASK-0034 CH-3, structurally closed by TASK-0034C's Compose profile
-# gate -- see compose.yaml's own header comment).
+# TASK-0034B / TASK-0035E2: pilot/production-style deployment.
+# TASK-0035E2: compose.pilot.yaml is now the host-networking overlay
+# (alias of compose.host.yaml) — core services use `network_mode: host`
+# with loopback binds for DB/AMI/Asterisk HTTP. Docker `ports:` maps are
+# no longer the pilot exposure boundary. Native Linux only.
 #
 # TASK-0034C: `COMPOSE_PROFILES=` is hardcoded empty here, not read from
 # $(FIXTURE_PROFILE) -- deliberately. Every other Compose-invoking target
