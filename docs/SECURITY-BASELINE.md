@@ -122,6 +122,13 @@ be updated whenever a change alters any invariant below.
   source IP alone (credential-stuffing/scanning guard).
 - Both windows auto-expire; a successful login clears only that exact
   `(ip, username)` pair's failure history.
+- TASK-0035E1: the source IP is resolved by `Snep_Security_ClientIp`
+  (`snep/lib/Snep/Security/ClientIp.php`). Default (`TRUSTED_PROXY_CIDRS`
+  empty) keeps `REMOTE_ADDR` only. When the connecting address is in an
+  explicitly configured trusted-proxy CIDR list, `X-Forwarded-For` /
+  `X-Real-IP` may supply the real client — never blindly, never via
+  trust-all (`0.0.0.0/0`). See
+  `docs/tasks/0035e1-trusted-reverse-proxy-client-ip-login-throttle-hardening.md`.
 - Scope: browser login only. The standalone API has no rate limiting
   (stateless Basic-auth has a different threat shape; tracked as
   Product Readiness debt, not a pilot blocker on its own).

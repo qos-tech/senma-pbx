@@ -88,6 +88,14 @@ Edit `.env`:
 - If the pilot deploys behind a trusted TLS-terminating reverse proxy that
   itself sets (and cannot be spoofed on) `X-Forwarded-Proto`, set
   `SENMA_TRUST_PROXY_HTTPS=1`. Otherwise leave unset.
+- If the pilot deploys behind a trusted reverse proxy that forwards the
+  real client IP (e.g. Nginx Proxy Manager setting `X-Real-IP` /
+  `X-Forwarded-For`), set `TRUSTED_PROXY_CIDRS` to that proxy's CIDR
+  (example: `TRUSTED_PROXY_CIDRS=10.60.20.20/32`). Leave empty for
+  direct/standalone deployments — login throttling then continues to key
+  on `REMOTE_ADDR` only. Never use `0.0.0.0/0`. Prefer restricting
+  direct backend HTTP access to the proxy/network. See
+  `docs/tasks/0035e1-trusted-reverse-proxy-client-ip-login-throttle-hardening.md`.
 - Remove/ignore `TRUNK_TEST_USERNAME`/`TRUNK_TEST_SECRET` — these only
   matter if the `provider` fixture service is intentionally kept in the
   topology (it should not be, for a production pilot; see Phase 4/35).

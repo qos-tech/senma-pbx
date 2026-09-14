@@ -306,6 +306,41 @@ On an authorized **REAL_PILOT_HOST** (Debian 14 preferred):
 
 Do **not** open TURN implementation until a real external NAT failure proves it.
 
+### Follow-up: I7 login throttle behind NPM (TASK-0035E1)
+
+Real-pilot observation after 0035D: NPM correctly forwards client IP
+headers while `AuthController` throttled on `REMOTE_ADDR` (the proxy),
+collapsing all clients into one rate-limit bucket. Remediation lives in
+`docs/tasks/0035e1-trusted-reverse-proxy-client-ip-login-throttle-hardening.md`
+(`TRUSTED_PROXY_CIDRS` + `Snep_Security_ClientIp`).
+
+Incident status after TASK-0035E1:
+
+```text
+I4 OPEN
+I5 OPEN
+I6 OPEN
+I7 IMPLEMENTATION_CLOSED
+I7 PILOT_RUNTIME_PROOF_PENDING
+```
+
+```text
+v0.1.0-rc.3 must not be mutated.
+
+Recommended next pilot candidate:
+v0.1.0-rc.4
+```
+
+Pilot NPM operational example (config only, never hard-coded in code):
+
+```text
+pilot NPM:
+10.60.20.20
+
+pilot config:
+TRUSTED_PROXY_CIDRS=10.60.20.20/32
+```
+
 ## Documentation updates
 
 - This file is the authoritative 0035D closure.
