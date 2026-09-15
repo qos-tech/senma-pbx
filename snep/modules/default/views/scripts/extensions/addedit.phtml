@@ -307,14 +307,13 @@ $this->headScript()->appendFile($this->baseUrl() . "/includes/javascript/passwor
             <?php $st = $this->extension['runtime_status']; ?>
             <?php if ($st === null): ?>
               <span class="text-muted">&mdash; <?php echo $this->translate("not available for this extension's technology");?></span>
-            <?php else:
-              $badgeClass = array('ACTIVE' => 'label-success', 'PENDING' => 'label-warning', 'DEGRADED' => 'label-warning', 'INACTIVE' => 'label-default', 'DISABLED' => 'label-default', 'ERROR' => 'label-danger', 'UNKNOWN' => 'label-default');
-              $stateText = array('ACTIVE' => 'Active', 'PENDING' => 'Pending', 'DEGRADED' => 'Degraded', 'INACTIVE' => 'Inactive', 'DISABLED' => 'Disabled', 'ERROR' => 'Error', 'UNKNOWN' => 'Unknown');
-              $cls = isset($badgeClass[$st['state']]) ? $badgeClass[$st['state']] : 'label-default';
-              $txt = isset($stateText[$st['state']]) ? $stateText[$st['state']] : $st['state'];
-            ?>
-              <span class="label <?php echo $cls; ?>"><?php echo $this->translate($txt); ?></span>
-              <p class="help-block"><?php echo $this->escape($st['detail']); ?></p>
+            <?php else: ?>
+              <?php // TASK-0035E6: shared StatusBadge + Presenter (same as
+                    // trunks/transports Diagnostics) — no local class/label maps. ?>
+              <?php echo $this->statusBadge($st['state'], array(
+                'detail' => isset($st['detail']) ? $st['detail'] : '',
+                'showDetail' => true,
+              )); ?>
             <?php endif; ?>
           </div>
         </div>

@@ -160,7 +160,8 @@ class Snep_Asterisk_Operations {
 
         if ($dispatch === null) {
             if ($healthy) {
-                return self::state('RUNNING', 'Asterisk operacional.');
+                // TASK-0035E6: RUNNING primary alone is enough when healthy.
+                return self::state('RUNNING', '');
             }
             return self::state('UNAVAILABLE', 'Não foi possível conectar ao Asterisk (nenhum reinício foi solicitado pelo SENMA).');
         }
@@ -169,7 +170,7 @@ class Snep_Asterisk_Operations {
 
         if ($healthy) {
             unset($_SESSION[self::SESSION_KEY]);
-            return self::state('RUNNING', 'Asterisk reiniciado e operacional novamente.', $dispatch, $elapsed);
+            return self::state('RUNNING', '', $dispatch, $elapsed);
         }
 
         if ($probe['login_ok'] && !$probe['version_ok']) {

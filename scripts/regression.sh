@@ -229,6 +229,8 @@ run_suite "wss-certificate-runtime-smoke" "wss-certificate-runtime-smoke-test.sh
 # tls-cert-management-smoke (the closest-related existing suite) and
 # before transport-smoke.
 run_suite "pjsip-runtime-status-smoke" "pjsip-runtime-status-smoke-test.sh"
+# TASK-0035E6: status detail / operational feedback UX (deterministic presenter).
+run_suite "status-detail-ux" "status-detail-ux-smoke-test.sh"
 # TASK-0031: Extensions + Trunks administration experience -- placed
 # right after pjsip-runtime-status-smoke (the closest-related existing
 # suite: both exercise ExtensionsController/TrunksController's real add/

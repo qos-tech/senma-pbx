@@ -121,8 +121,14 @@
                         </p>
                         <p id="restartStateLine">
                             <?php echo $this->translate("Status"); ?>:
-                            <strong id="restartStateLabel"><?php echo $this->escape($this->restart_state['state']); ?></strong>
-                            — <span id="restartStateDetail"><?php echo $this->escape($this->restart_state['detail']); ?></span>
+                            <strong id="restartStateLabel"><?php echo $this->escape($this->restart_state['state']); ?></strong><?php
+                              $restartDetail = isset($this->restart_state['detail']) ? trim((string) $this->restart_state['detail']) : '';
+                              if ($restartDetail !== ''):
+                            ?><span id="restartStateSep"> — </span><span id="restartStateDetail"><?php echo $this->escape($restartDetail); ?></span><?php
+                              else:
+                            ?><span id="restartStateSep" style="display:none;"> — </span><span id="restartStateDetail" style="display:none;"></span><?php
+                              endif;
+                            ?>
                         </p>
 
                         <?php /* TASK-0022: server-side-only gate. This hides
@@ -438,8 +444,17 @@ if(new_version){
     if (!state || !state.state) {
       return;
     }
+    // TASK-0035E6: primary + detail from the same snapshot; empty detail
+    // hides the separator so a prior poll cannot leave stale prose.
     jQuery('#restartStateLabel').text(state.state);
-    jQuery('#restartStateDetail').text(state.detail || '');
+    var detail = (state.detail || '').toString();
+    if (detail !== '') {
+      jQuery('#restartStateSep').show();
+      jQuery('#restartStateDetail').text(detail).show();
+    } else {
+      jQuery('#restartStateSep').hide();
+      jQuery('#restartStateDetail').text('').hide();
+    }
   }
 
   function stopPolling() {
@@ -466,7 +481,9 @@ if(new_version){
         pollInFlight = false;
         if (pollAttempts >= MAX_POLL_ATTEMPTS) {
           stopPolling();
-          jQuery('#restartStateDetail').append(' (' + "<?php echo $this->translate('polling stopped -- refresh the page to check again'); ?>" + ')');
+          // Ensure the detail line is visible before appending the note.
+          jQuery('#restartStateSep').show();
+          jQuery('#restartStateDetail').show().append(' (' + "<?php echo $this->translate('polling stopped -- refresh the page to check again'); ?>" + ')');
         }
       });
   }

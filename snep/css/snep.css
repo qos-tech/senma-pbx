@@ -1585,3 +1585,15 @@ ul.snep-exportadata {
   -ms-transform: rotate(45deg);
   transform: rotate(45deg);
 }
+
+/* TASK-0035E6: secondary status detail under Diagnostics badges.
+   Secondary to the primary label; one line; does not blow up cards/tables. */
+.snep-status-detail {
+  margin-top: 6px;
+  margin-bottom: 0;
+  max-width: 36em;
+  font-size: 12px;
+  line-height: 1.35;
+  word-wrap: break-word;
+  overflow-wrap: break-word;
+}
