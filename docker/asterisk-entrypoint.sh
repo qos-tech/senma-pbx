@@ -261,6 +261,23 @@ if [ ! -f "$ASTERISK_ETC/rtp.conf" ] && [ -f "$ASTERISK_CONFIG_SRC/rtp.conf" ]; 
     cp "$ASTERISK_CONFIG_SRC/rtp.conf" "$ASTERISK_ETC/rtp.conf"
 fi
 
+# TASK-0035E3: project-owned logger.conf contract. Existing asterisk-etc
+# volumes still carry the TASK-0005 "full-only" file (no console channel),
+# which is exactly why `asterisk -rvvv` shows no useful live diagnostics
+# even after `core set verbose/debug`. Reconcile from the bind-mounted
+# source every start so recreate/reboot/release converge without a manual
+# in-container edit. logger.conf is not customer-owned state.
+if [ -f "$ASTERISK_CONFIG_SRC/logger.conf" ]; then
+    if [ ! -f "$ASTERISK_ETC/logger.conf" ] \
+        || ! grep -qE '^[[:space:]]*console[[:space:]]*=>' "$ASTERISK_ETC/logger.conf" \
+        || ! grep -qE '^[[:space:]]*full[[:space:]]*=>' "$ASTERISK_ETC/logger.conf" \
+        || ! grep -qE '^[[:space:]]*console[[:space:]]*=>.*debug' "$ASTERISK_ETC/logger.conf" \
+        || ! grep -qE '^[[:space:]]*full[[:space:]]*=>.*debug' "$ASTERISK_ETC/logger.conf"; then
+        echo "[asterisk-entrypoint] reconciling logger.conf (TASK-0035E3 console+full debug-capable contract)"
+        cp "$ASTERISK_CONFIG_SRC/logger.conf" "$ASTERISK_ETC/logger.conf"
+    fi
+fi
+
 if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
     echo "[asterisk-entrypoint] /etc/asterisk not yet populated, assembling from vendored config"
 

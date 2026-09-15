@@ -311,6 +311,25 @@ check_asterisk_cli() {
     fi
 }
 
+# TASK-0035E3: report console logger capability. Never FAIL merely because
+# runtime debug is currently off -- that is the desired default.
+check_asterisk_console_logger() {
+    if [ "$(container_state asterisk)" != "running" ]; then
+        record "Asterisk console logger" "SKIP" "asterisk container is not running"
+        return
+    fi
+    local channels
+    channels="$($COMPOSE exec -T asterisk asterisk -rx "logger show channels" 2>/dev/null)"
+    if printf '%s' "$channels" | grep -Eqi 'Console|console' \
+        && printf '%s' "$channels" | grep -Eqi 'Console|console' | grep -q 'DEBUG'; then
+        record "Asterisk console logger" "PASS" "console channel present with DEBUG capability (runtime debug remains opt-in)"
+    elif printf '%s' "$channels" | grep -Eqi 'Console|console'; then
+        record "Asterisk console logger" "WARN" "console channel present but DEBUG level missing -- see docker/asterisk-config/logger.conf"
+    else
+        record "Asterisk console logger" "WARN" "console channel missing -- interactive asterisk -rvvv diagnostics will be limited"
+    fi
+}
+
 check_asterisk_pjsip_module() {
     if [ "$(container_state asterisk)" != "running" ]; then
         record "PJSIP module loaded" "SKIP" "asterisk container is not running"
@@ -723,6 +742,7 @@ check_db_migration_status
 check_app_http
 check_app_content
 check_asterisk_cli
+check_asterisk_console_logger
 check_asterisk_pjsip_module
 check_asterisk_http_wss
 check_asterisk_ami
