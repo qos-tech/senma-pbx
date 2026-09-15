@@ -1,10 +1,10 @@
-.PHONY: dev dev-up up pilot-config pilot-up release-build release-info release-artifact-smoke down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke cnl-upload-authorization-security-smoke itc-registration-authorization-security-smoke notification-dismiss-authorization-security-smoke dashboard-preferences-authorization-security-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke wss-proxy-termination-smoke webrtc-endpoint-contract-smoke webrtc-browser-nat-smoke host-networking-architecture-smoke asterisk-console-observability-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke fresh-install-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate ami-acl-smoke
+.PHONY: dev dev-build dev-up ensure-dev-stack require-runtime up pilot-config pilot-up release-build release-info release-artifact-smoke release-immutability-smoke down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke cnl-upload-authorization-security-smoke itc-registration-authorization-security-smoke notification-dismiss-authorization-security-smoke dashboard-preferences-authorization-security-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke wss-proxy-termination-smoke webrtc-endpoint-contract-smoke webrtc-browser-nat-smoke host-networking-architecture-smoke asterisk-console-observability-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke fresh-install-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate ami-acl-smoke
 
 COMPOSE ?= docker compose
 
 # TASK-0034B: let a pilot operator's shell session make every `up`-based
 # target (including `lint`/`migrate-check`/`secrets-check`/
-# `reconcile-check`'s own `up` prerequisite, and the `make up` calls in
+# `reconcile-check` (require-runtime), and the `make up` calls in
 # the Upgrade/Rollback runbook procedures) target the pilot compose
 # overlay and service list instead of silently falling back to the
 # base compose.yaml. Both default empty, so plain `make up`/`make dev`
@@ -66,22 +66,67 @@ export RELEASE_VERSION
 export GIT_COMMIT
 export BUILD_TIMESTAMP
 
-dev: doctor up
+# TASK-0035E4: lifecycle split -- build is never implied by start/runtime.
+#   build:            make dev-build | make release-build VERSION=...
+#   start (no build): make up | make pilot-up | make dev-up (after build)
+#   runtime ops:      require-runtime (never build/start)
+#   validation:       ensure-dev-stack (mutable :dev only; refuses release tags)
 
-# TASK-0034C: developer opt-in for the `provider` fixture -- the one
-# explicit, documented command that starts it locally (Phase 8). Plain
-# `make dev`/`make up` deliberately do not, so a fixture never appears by
-# accident; this target is how a developer who actually wants it (e.g. to
-# poke at it manually, or run `make asterisk-cli` equivalent debugging
-# against it) asks for it explicitly.
+refuse-non-dev-build:
+	@if [ "$(RELEASE_VERSION)" != "dev" ]; then \
+		echo "ERROR: build-capable Make targets refuse RELEASE_VERSION=$(RELEASE_VERSION) (TASK-0035E4 / I4)." >&2; \
+		echo "Mutable builds are only allowed for the 'dev' tag. For release images run:" >&2; \
+		echo "  make release-build VERSION=$(RELEASE_VERSION)" >&2; \
+		echo "For local validation, unset RELEASE_VERSION (or export RELEASE_VERSION=dev) first." >&2; \
+		exit 1; \
+	fi
+
+# Explicit mutable :dev image build. Never used by pilot/production.
+dev-build: refuse-non-dev-build
+	COMPOSE_PROFILES="$(FIXTURE_PROFILE)" $(COMPOSE) $(COMPOSE_FILES) build $(SERVICES)
+
+# Start/recreate using existing images only -- never builds (TASK-0035E4).
+up:
+	COMPOSE_PROFILES="$(FIXTURE_PROFILE)" $(COMPOSE) $(COMPOSE_FILES) up -d --no-build $(SERVICES)
+
+# Dev convenience: build mutable :dev images, then start without a second build.
+# Forces RELEASE_VERSION=dev so an exported release tag cannot leak into a rebuild.
+dev:
+	@$(MAKE) RELEASE_VERSION=dev doctor
+	@$(MAKE) RELEASE_VERSION=dev ensure-dev-stack
+
+# TASK-0034C + TASK-0035E4: developer opt-in for the `provider` fixture.
+# Builds :dev (explicitly) then starts with --no-build.
 dev-up: FIXTURE_PROFILE = dev
-dev-up: up
+dev-up:
+	@$(MAKE) RELEASE_VERSION=dev FIXTURE_PROFILE=dev ensure-dev-stack
+
+# Validation/dev fixture path: may build mutable :dev images only.
+# Used by lint/regression/smokes. Refuses when RELEASE_VERSION is a release tag.
+ensure-dev-stack: refuse-non-dev-build dev-build up
+
+# Runtime/operator prerequisite: stack must already be running.
+# Never builds, never starts, never retags.
+require-runtime:
+	@missing=""; \
+	for svc in app asterisk db; do \
+		cid="$$(COMPOSE_PROFILES="$(FIXTURE_PROFILE)" $(COMPOSE) $(COMPOSE_FILES) ps -q $$svc 2>/dev/null)"; \
+		if [ -z "$$cid" ]; then missing="$$missing $$svc"; continue; fi; \
+		state="$$(docker inspect -f '{{.State.Status}}' "$$cid" 2>/dev/null || true)"; \
+		if [ "$$state" != "running" ]; then missing="$$missing $$svc"; fi; \
+	done; \
+	if [ -n "$$missing" ]; then \
+		echo "ERROR: required runtime service(s) not running:$$missing" >&2; \
+		echo "Start the stack first with existing images:" >&2; \
+		echo "  make up                 # bridge/dev images already built" >&2; \
+		echo "  make dev-up             # explicit :dev build + start" >&2; \
+		echo "  make pilot-up           # release images (RELEASE_VERSION set)" >&2; \
+		echo "This operational target never builds or starts containers (TASK-0035E4 / I4)." >&2; \
+		exit 1; \
+	fi
 
 config:
 	COMPOSE_PROFILES="$(FIXTURE_PROFILE)" $(COMPOSE) config
-
-up:
-	COMPOSE_PROFILES="$(FIXTURE_PROFILE)" $(COMPOSE) $(COMPOSE_FILES) up -d --build $(SERVICES)
 
 # TASK-0034B / TASK-0035E2: pilot/production-style deployment.
 # TASK-0035E2: compose.pilot.yaml is now the host-networking overlay
@@ -100,7 +145,7 @@ up:
 pilot-config:
 	COMPOSE_PROFILES= $(COMPOSE) -f compose.yaml -f compose.pilot.yaml config
 
-# TASK-0034D: no `--build` (unlike `up`/`dev-up` above) -- pilot/
+# TASK-0034D / TASK-0035E4: `--no-build` (same as generic `up`) -- pilot/
 # production must consume the exact image `make release-build` already
 # produced and recorded (Phase 9's preferred model: "build occurs in the
 # release process -> immutable tagged image exists -> pilot/production
@@ -128,7 +173,7 @@ pilot-up:
 		echo "Run 'make release-build VERSION=$(RELEASE_VERSION)' first -- pilot-up never builds an image of its own." >&2; \
 		exit 1; \
 	fi
-	COMPOSE_PROFILES= $(COMPOSE) -f compose.yaml -f compose.pilot.yaml up -d app asterisk db
+	COMPOSE_PROFILES= $(COMPOSE) -f compose.yaml -f compose.pilot.yaml up -d --no-build app asterisk db
 
 # TASK-0034D: builds the SENMA-owned production images (app, asterisk --
 # never provider, TASK-0034 CH-3) with an explicit release version,
@@ -178,7 +223,7 @@ test:
 	@echo "No automated test suite is wired yet."
 	@echo "Add project tests before changing this target to report success."
 
-smoke: up
+smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/smoke-test.sh
 
 # TASK-0026A: static inventory -- every controller/action must be
@@ -200,7 +245,7 @@ harness-lib-selftest:
 # TASK-0026A: verifies the default-deny authorization boundary using an
 # isolated local-dev account.  It performs only harmless GETs and uses the
 # existing Users > Permission form for the grant/revoke lifecycle.
-authorization-smoke: up
+authorization-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/authorization-smoke-test.sh
 
 # TASK-0034M: CnlController's ZIP-upload authorization boundary plus the
@@ -208,7 +253,7 @@ authorization-smoke: up
 # oversized uploads, legitimate import). Deliberately separate from
 # `make smoke` and from `authorization-smoke` -- never run implicitly by
 # either.
-cnl-upload-authorization-security-smoke: up
+cnl-upload-authorization-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/cnl-upload-authorization-security-smoke-test.sh
 
 # TASK-0034O: ITC vendor-registration write surface behind
@@ -216,22 +261,22 @@ cnl-upload-authorization-security-smoke: up
 # Proves authenticated-open GET + write-gated POST + CSRF + GET no longer
 # rewrites itc_consumers. Deliberately separate from `make smoke` and
 # from `authorization-smoke`.
-itc-registration-authorization-security-smoke: up
+itc-registration-authorization-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/itc-registration-authorization-security-smoke-test.sh
 
 # TASK-0034P: NotificationsController dismiss/mark-read is shared
 # installation-scoped state (not per-user). Proves authenticated-open GET
 # + write-gated mark-read/remove + CSRF + DB unchanged on deny.
-notification-dismiss-authorization-security-smoke: up
+notification-dismiss-authorization-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/notification-dismiss-authorization-security-smoke-test.sh
 
 # TASK-0034Q: IndexController dashboard prefs are per-user self-service.
 # Proves GET no longer mutates, POST+CSRF quick-add/add, A↛B isolation,
 # unknown panel ids inert, and dashboard tiles are not an authz bypass.
-dashboard-preferences-authorization-security-smoke: up
+dashboard-preferences-authorization-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/dashboard-preferences-authorization-security-smoke-test.sh
 
-preauth-security-smoke: up
+preauth-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/preauth-security-smoke-test.sh
 
 # TASK-0026C: proves the F7-F11 SQL-injection boundaries (Extensions,
@@ -239,7 +284,7 @@ preauth-security-smoke: up
 # values behave as inert literal data through the real, authenticated
 # application flows, never a direct database connection. Deliberately
 # separate from `make smoke` -- never run implicitly by it.
-sql-security-smoke: up
+sql-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/sql-security-smoke-test.sh
 
 # TASK-0026J: proves the two residual SQL-injection sinks found by
@@ -247,7 +292,7 @@ sql-security-smoke: up
 # chan_sip/iax2 trunk lookup and CallsReportController's report-filter
 # SQL construction -- are closed. Deliberately separate from `make
 # smoke` -- never run implicitly by it.
-residual-sql-security-smoke: up
+residual-sql-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/residual-sql-security-smoke-test.sh
 
 # TASK-0026D: proves the F2-F5 shell/command-injection boundaries
@@ -256,7 +301,7 @@ residual-sql-security-smoke: up
 # a filename/directory allowlist) through the real, authenticated
 # application flows, never a direct shell/exec() call. Deliberately
 # separate from `make smoke` -- never run implicitly by it.
-shell-security-smoke: up
+shell-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/shell-security-smoke-test.sh
 
 # TASK-0026E: proves the F12-F15 PJSIP/Asterisk configuration-injection
@@ -266,7 +311,7 @@ shell-security-smoke: up
 # validation) never accepted in the first place, through the real,
 # authenticated application flows. Deliberately separate from
 # `make smoke` -- never run implicitly by it.
-pjsip-config-security-smoke: up
+pjsip-config-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/pjsip-config-security-smoke-test.sh
 
 # TASK-0026F: proves the F17 standalone-API authentication/service-
@@ -276,7 +321,7 @@ pjsip-config-security-smoke: up
 # selects a key into a finite, trusted registry (no path built from
 # request data). Deliberately separate from `make smoke` -- never run
 # implicitly by it.
-api-security-smoke: up
+api-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/api-security-smoke-test.sh
 
 # TASK-0026F1: proves the SQL-injection boundaries discovered during
@@ -286,7 +331,7 @@ api-security-smoke: up
 # authenticated standalone API dispatcher, never a direct database
 # connection. Deliberately separate from `make smoke` -- never run
 # implicitly by it.
-api-sql-security-smoke: up
+api-sql-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/api-sql-security-smoke-test.sh
 
 # TASK-0026G: proves the F18-F20 session-fixation/cookie/CSRF boundaries
@@ -297,7 +342,7 @@ api-sql-security-smoke: up
 # session-bound CSRF token (missing, invalid, or from a foreign session)
 # while GETs and the standalone Basic-auth API remain unaffected.
 # Deliberately separate from `make smoke` -- never run implicitly by it.
-session-csrf-security-smoke: up
+session-csrf-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/session-csrf-security-smoke-test.sh
 
 # TASK-0026H: proves the F21-F24/F27 authentication-hardening boundaries
@@ -309,13 +354,13 @@ session-csrf-security-smoke: up
 # password and unknown user are indistinguishable, and a fresh install no
 # longer ships an operational admin/admin123 credential. Deliberately
 # separate from `make smoke` -- never run implicitly by it.
-auth-hardening-security-smoke: up
+auth-hardening-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/auth-hardening-security-smoke-test.sh
 
 # TASK-0035E1: trusted reverse-proxy client IP resolution for login
 # throttle attribution (Snep_Security_ClientIp + TRUSTED_PROXY_CIDRS).
 # Deliberately separate from `make smoke` -- never run implicitly by it.
-trusted-proxy-login-throttle-security-smoke: up
+trusted-proxy-login-throttle-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/trusted-proxy-login-throttle-security-smoke-test.sh
 
 # TASK-0026I: exercises the F25/F26/F28 information-disclosure and
@@ -323,7 +368,7 @@ trusted-proxy-login-throttle-security-smoke: up
 # message, expose_php/raw-SQL-in-JSON disclosure, and DocsController's
 # allowlist-based path containment (including a symlink-escape proof).
 # Deliberately separate from `make smoke` -- never run implicitly by it.
-disclosure-path-security-smoke: up
+disclosure-path-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/disclosure-path-security-smoke-test.sh
 
 # TASK-0026S: proves snep/install/ (one-time installer/schema-migration
@@ -335,7 +380,7 @@ disclosure-path-security-smoke: up
 # application still works, and filesystem/CLI availability (Docker
 # bind-mount, php -l) is preserved. Deliberately separate from `make
 # smoke` -- never run implicitly by it.
-legacy-maintenance-exposure-security-smoke: up
+legacy-maintenance-exposure-security-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/legacy-maintenance-exposure-security-smoke-test.sh
 
 # TASK-0027A: deterministic, fixed-timestamp proof of
@@ -343,23 +388,23 @@ legacy-maintenance-exposure-security-smoke: up
 # report-window logic call-smoke/trunk-smoke depend on. Never reads the
 # wall clock, so it exercises the local-midnight/UTC-divergence boundary
 # on demand instead of only when the real clock happens to cross it.
-cdr-window-selftest: up
+cdr-window-selftest: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/cdr-window-selftest.sh
 
-call-smoke: up
+call-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/call-smoke-test.sh
 
 # TASK-0034A: Calls Report (web CallsReportController) regression suite.
-calls-report-smoke: up
+calls-report-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/calls-report-smoke-test.sh
 
 # TASK-0034C: this suite owns the `provider` fixture's lifecycle for its
 # own run -- FIXTURE_PROFILE=test is a target-specific variable, which
-# GNU Make also applies when building this target's own `up` prerequisite,
+# GNU Make also applies when building this target's own `ensure-dev-stack` prerequisite,
 # so `provider` starts here without requiring the operator to know or
 # pass anything. See the FIXTURE_PROFILE header comment above `up`.
 trunk-smoke: FIXTURE_PROFILE = test
-trunk-smoke: up
+trunk-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/trunk-smoke-test.sh
 
 # TASK-0028X: proves pjsip_external outbound dial-string generation --
@@ -369,10 +414,10 @@ trunk-smoke: up
 # structurally-wrong "PJSIP/<endpoint>/<destination>". See
 # docs/tasks/0028x-pjsip-external-dialstring-fix.md. Deliberately
 # separate from trunk-smoke -- a different trunk technology/fixture.
-pjsip-external-trunk-smoke: up
+pjsip-external-trunk-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/pjsip-external-trunk-smoke-test.sh
 
-transport-smoke: up
+transport-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/transport-smoke-test.sh
 
 # TASK-0028Y: registrationless PJSIP trunk (reverse_auth=0), qualify
@@ -383,7 +428,7 @@ transport-smoke: up
 # docs/tasks/0028y-pjsip-parameter-regression-closure.md. Deliberately
 # separate from trunk-smoke/call-smoke -- a different fixture profile
 # (no live call, no baresip/provider dependency).
-pjsip-lifecycle-smoke: up
+pjsip-lifecycle-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/pjsip-lifecycle-smoke-test.sh
 
 # TASK-0028Z: Asterisk built-in HTTP server + WSS platform enablement --
@@ -392,19 +437,19 @@ pjsip-lifecycle-smoke: up
 # convergence. Restarts/recreates the asterisk container itself
 # (deliberately, Phase 9 of the task) -- run in isolation from other
 # stateful suites, same as every other suite in this list.
-wss-platform-smoke: up
+wss-platform-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/wss-platform-smoke-test.sh
 
 # TASK-0035A: public WSS via app reverse proxy (not Asterisk :8089).
-wss-proxy-termination-smoke: up
+wss-proxy-termination-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/wss-proxy-termination-smoke-test.sh
 
 # TASK-0035B: WebRTC endpoint contract + media proof.
-webrtc-endpoint-contract-smoke: up
+webrtc-endpoint-contract-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/webrtc-endpoint-contract-smoke-test.sh
 
 # TASK-0035C: real browser / RTP / NAT contract smoke (deterministic + Chromium when available).
-webrtc-browser-nat-smoke: up
+webrtc-browser-nat-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/webrtc-browser-nat-smoke-test.sh
 
 # TASK-0035E2: host-networking architecture / local bind contract (static).
@@ -412,7 +457,7 @@ host-networking-architecture-smoke:
 	@set -a; . ./.env; set +a; bash scripts/host-networking-architecture-smoke-test.sh
 
 # TASK-0035E3: Asterisk console logger + runtime debug observability contract.
-asterisk-console-observability-smoke: up
+asterisk-console-observability-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/asterisk-console-observability-smoke-test.sh
 
 # TASK-0029A: TLS/WSS transport certificate management -- validation,
@@ -420,7 +465,7 @@ asterisk-console-observability-smoke: up
 # rotation, mismatched cert/key runtime-apply failure behavior, and
 # restart persistence. Restarts the asterisk container (same "run in
 # isolation" reasoning as wss-platform-smoke wss-proxy-termination-smoke above).
-tls-cert-management-smoke: up
+tls-cert-management-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/tls-cert-management-smoke-test.sh
 
 # TASK-0034E (closing TASK-0034 CH-2): read-only, secret-safe, runtime-
@@ -436,7 +481,7 @@ tls-cert-management-smoke: up
 # pilot acceptance (exits nonzero if NOT_ACCEPTABLE_FOR_PILOT) -- this is
 # the mandatory release-gate form; see docs/operations/
 # production-release-runbook.md Preflight section.
-cert-check wss-cert-check: up
+cert-check wss-cert-check: require-runtime
 	@set -a; . ./.env; set +a; bash scripts/wss-cert-check.sh $(if $(PILOT),--pilot)
 
 # TASK-0034E: focused regression coverage for the WSS certificate trust
@@ -449,7 +494,7 @@ cert-check wss-cert-check: up
 # rotates and restores the live `wss` transport's own certificate
 # through the real HTTP edit-form flow (same "run in isolation"
 # reasoning as tls-cert-management-smoke/wss-platform-smoke wss-proxy-termination-smoke above).
-wss-certificate-runtime-smoke: up
+wss-certificate-runtime-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/wss-certificate-runtime-smoke-test.sh
 
 # TASK-0029B: PJSIP runtime status visibility -- extension/trunk
@@ -460,7 +505,7 @@ wss-certificate-runtime-smoke: up
 # TASK-0034C: needs the `provider` fixture (reachable-trunk proof) -- see
 # trunk-smoke's own FIXTURE_PROFILE comment above.
 pjsip-runtime-status-smoke: FIXTURE_PROFILE = test
-pjsip-runtime-status-smoke: up
+pjsip-runtime-status-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/pjsip-runtime-status-smoke-test.sh
 
 # TASK-0031: Extensions + Trunks administration experience -- credential
@@ -469,7 +514,7 @@ pjsip-runtime-status-smoke: up
 # validation-failure form re-render, and no regression to delete-dependency
 # guards/CSRF/authorization. See
 # docs/tasks/0031-extensions-trunks-administration-experience.md.
-extensions-trunks-admin-experience-smoke: up
+extensions-trunks-admin-experience-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/extensions-trunks-admin-experience-smoke-test.sh
 
 # TASK-0032: Transport + shared runtime UX foundation -- shared status
@@ -482,26 +527,26 @@ extensions-trunks-admin-experience-smoke: up
 # transport list. Stops/restarts the asterisk container (Part E) -- same
 # "run in isolation" reasoning as pjsip-runtime-status-smoke. See
 # docs/tasks/0032-transport-shared-runtime-ux-foundation.md.
-transport-shared-runtime-ux-smoke: up
+transport-shared-runtime-ux-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/transport-shared-runtime-ux-smoke-test.sh
 
 # TASK-0028C: proves the reachable SIP/IAX-era dialplan/config constructs
 # closed by that task stay closed (context bleed, SIPAddHeader, callback
 # .call generation) -- see docs/tasks/0028c-pjsip-legacy-runtime-closure.md.
-dialplan-legacy-closure-smoke: up
+dialplan-legacy-closure-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/dialplan-legacy-closure-smoke-test.sh
 
 # TASK-0021: restarts the dev Asterisk container multiple times, including
 # while a real call is active. Deliberately separate from `make smoke` --
 # never run implicitly by it.
-restart-smoke: up
+restart-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/restart-smoke-test.sh
 
 # TASK-0024: deterministically simulates vendor-API failure (DNS,
 # refused, blackhole, TLS, HTTP 500, malformed/empty payload) using only
 # controlled local/reserved targets -- never the real vendor. Deliberately
 # separate from `make smoke` -- never run implicitly by it.
-external-failure-smoke: up
+external-failure-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/external-failure-smoke-test.sh
 
 # TASK-0025: proves vendor-controlled content (notifications, version
@@ -510,27 +555,27 @@ external-failure-smoke: up
 # real vendor. Deliberately separate from `make external-failure-smoke`
 # (that suite tests availability, this one tests content) -- never run
 # implicitly by `make smoke`.
-external-content-smoke: up
+external-content-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/external-content-smoke-test.sh
 
 # TASK-0027: php -l across snep/ (inside the app container), bash -n
 # across scripts/, XML well-formedness for resources.xml, and
 # git diff --check. Lightweight, reproducible, no external framework.
-lint: up
+lint: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/lint.sh
 
 # TASK-0027: the one canonical release-regression gate -- runs the full
 # supported suite serially, in a fixed dependency-respecting order, and
 # never treats BLOCKED/INCONCLUSIVE as PASS. See
 # docs/tasks/0027-regression-harness-reliability.md.
-# TASK-0034C: FIXTURE_PROFILE=test on `regression`'s own `up` prerequisite
+# TASK-0034C: FIXTURE_PROFILE=test on `regression`'s own `ensure-dev-stack` prerequisite
 # starts `provider` once, up front, for the three suites inside
 # regression.sh that need it (trunk-smoke, pjsip-runtime-status-smoke,
 # readiness-smoke -- regression.sh invokes each suite script directly, not
 # via `make <suite>`, so their own individual FIXTURE_PROFILE settings
 # don't apply on this path; only this line does).
 regression: FIXTURE_PROFILE = test
-regression: up
+regression: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/regression.sh
 
 # TASK-0033D: canonical read-only diagnostic entrypoint -- see
@@ -556,7 +601,7 @@ reset:
 # 0033a-backup-restore-disaster-recovery-foundation.md. DEST is optional
 # (defaults to ./backups); an operator never needs to know a Docker
 # volume name to use this.
-backup: up
+backup: require-runtime
 	@set -a; . ./.env; set +a; bash scripts/backup.sh $(if $(DEST),--dest "$(DEST)")
 
 # TASK-0033A: REPLACE-semantics restore. FROM is required. CONFIRM=RESTORE
@@ -570,7 +615,7 @@ restore:
 # TASK-0033A: lightweight, non-destructive backup/restore validation --
 # safe to run as part of `make regression` (never stops a container,
 # never touches a volume). See scripts/backup-smoke-test.sh.
-backup-smoke: up
+backup-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/backup-smoke-test.sh
 
 # TASK-0033A: the real, destructive disaster-recovery proof -- creates
@@ -582,7 +627,7 @@ backup-smoke: up
 # 0033a-backup-restore-disaster-recovery-foundation.md's "Regression"
 # section for why) -- run this explicitly, and expect it to take
 # noticeably longer than an ordinary smoke suite.
-backup-restore-smoke: up
+backup-restore-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/backup-restore-dr-smoke-test.sh
 
 # TASK-0034J (D1): genuinely isolated fresh-install proof -- its own
@@ -600,12 +645,12 @@ fresh-install-smoke:
 # 0033b-pjsip-configuration-reconciliation.md. Exit codes: 0 reconciled,
 # 2 files reconciled but runtime needs separate attention (restart
 # required, or Asterisk unreachable), 1 a real failure.
-reconcile: up
+reconcile: require-runtime
 	@$(COMPOSE) exec asterisk php /usr/local/bin/reconcile-pjsip.php
 
 # Non-mutating drift check -- never writes to disk, never touches
 # Asterisk. Exit codes: 0 in sync, 3 drifted, 1 invalid DB state.
-reconcile-check: up
+reconcile-check: require-runtime
 	@$(COMPOSE) exec asterisk php /usr/local/bin/reconcile-pjsip.php --check
 
 # TASK-0033F: apply every pending database schema migration, in order,
@@ -614,13 +659,13 @@ reconcile-check: up
 # current/applied, 1 a migration failed, 2 SCHEMA_UNKNOWN (refuses to
 # guess), 4 SCHEMA_AHEAD (refuses to act), 5 lock timeout (another
 # runner already in progress).
-migrate: up
+migrate: require-runtime
 	@$(COMPOSE) exec app php /usr/local/bin/migrate.php
 
 # Non-mutating: reports current/expected schema version and any pending
 # migrations, never applies anything. Exit codes: 0 current, 3 pending
 # (SCHEMA_BEHIND), 4 SCHEMA_AHEAD, 2 SCHEMA_UNKNOWN.
-migrate-check: up
+migrate-check: require-runtime
 	@$(COMPOSE) exec app php /usr/local/bin/migrate.php --check
 
 # TASK-0033B: regression coverage for the reconciliation contract --
@@ -630,7 +675,7 @@ migrate-check: up
 # deliberate delete-and-reconcile. Safe for `make regression` (no volume
 # destruction, unlike backup-restore-smoke) -- see scripts/
 # pjsip-reconcile-smoke-test.sh's own header.
-pjsip-reconcile-smoke: up
+pjsip-reconcile-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/pjsip-reconcile-smoke-test.sh
 
 # TASK-0033C: non-mutating secret-consistency check -- for each
@@ -641,7 +686,7 @@ pjsip-reconcile-smoke: up
 # reloads/restarts anything. See docs/tasks/
 # 0033c-secret-rotation-contract.md. Exit codes: 0 all MATCH, 3 drift
 # detected on at least one secret, 1 could not be determined/error.
-secrets-check: up
+secrets-check: require-runtime
 	@set -a; . ./.env; set +a; bash scripts/secrets-check.sh
 
 # TASK-0033C: reconciles every DECLARED secret in .env into its
@@ -655,16 +700,16 @@ secrets-check: up
 # CURRENT root password (never read from .env, never stored/logged).
 # Exit code: 0 if every secret ends ROTATED_SUCCESSFULLY, 1 if any ends
 # ROTATION_REJECTED (never a partial "success").
-rotate-secrets: up
+rotate-secrets: require-runtime
 	@set -a; . ./.env; set +a; bash scripts/rotate-secrets.sh
 
-rotate-db-password: up
+rotate-db-password: require-runtime
 	@set -a; . ./.env; set +a; bash scripts/rotate-secrets.sh --only db-password
 
-rotate-db-root-password: up
+rotate-db-root-password: require-runtime
 	@set -a; . ./.env; set +a; bash scripts/rotate-secrets.sh --only db-root-password
 
-rotate-ami-password: up
+rotate-ami-password: require-runtime
 	@set -a; . ./.env; set +a; bash scripts/rotate-secrets.sh --only ami-password
 
 # TASK-0034F (closing TASK-0034 CH-6): reconciles an EXISTING install's
@@ -676,7 +721,7 @@ rotate-ami-password: up
 # Idempotent (reports ALREADY_CURRENT if nothing to do); rolls back to
 # the previous coherent state on any post-migration verification
 # failure. See docs/tasks/0034f-production-ami-acl-scoping.md MIGRATION.
-ami-acl-migrate: up
+ami-acl-migrate: require-runtime
 	@set -a; . ./.env; set +a; bash scripts/ami-acl-migrate.sh
 
 # TASK-0034F: safe, non-mutating regression coverage for the AMI
@@ -686,7 +731,7 @@ ami-acl-migrate: up
 # ami-acl-smoke-test.sh's own header for exactly what it does and does
 # not do (a fresh-volume invalid-CIDR rejection proof is deliberately
 # NOT run here).
-ami-acl-smoke: up
+ami-acl-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/ami-acl-smoke-test.sh
 
 # TASK-0033C: safe, non-mutating regression coverage for the
@@ -696,7 +741,7 @@ ami-acl-smoke: up
 # secrets-consistency-smoke-test.sh's own header, and
 # secret-rotation-smoke, deliberately NOT part of `make regression`,
 # for the full destructive rotation proof.
-secrets-consistency-smoke: up
+secrets-consistency-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/secrets-consistency-smoke-test.sh
 
 # TASK-0033C: the real, destructive secret-rotation proof -- rotates
@@ -708,7 +753,7 @@ secrets-consistency-smoke: up
 # NOT part of `make regression` (mirrors backup-restore-smoke's own
 # precedent, see scripts/secret-rotation-smoke-test.sh's own header) --
 # run this explicitly.
-secret-rotation-smoke: up
+secret-rotation-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/secret-rotation-smoke-test.sh
 
 # TASK-0033D: safe, non-mutating regression coverage for `make doctor`
@@ -719,7 +764,7 @@ secret-rotation-smoke: up
 # doctor-smoke-test.sh's own header, and doctor-failure-smoke,
 # deliberately NOT part of `make regression`, for the real failure-
 # injection/log-rotation proof.
-doctor-smoke: up
+doctor-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/doctor-smoke-test.sh
 
 # TASK-0034C: focused, non-mutating regression coverage for the Compose
@@ -738,11 +783,17 @@ compose-profile-isolation-smoke:
 # between the app/asterisk images `up` just built, dirty-tree rejection,
 # MATCH/DRIFT/UNKNOWN classification (including a real UNKNOWN case: the
 # third-party `db` image, which carries no SENMA OCI labels at all).
-# Depends on `up` (needs real just-built labels to inspect) but never
+# Depends on `ensure-dev-stack` (needs real just-built :dev labels) but never
 # rebuilds, restarts, or mutates anything itself. See scripts/
 # release-artifact-smoke-test.sh's own header.
-release-artifact-smoke: up
+release-artifact-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/release-artifact-smoke-test.sh
+
+# TASK-0035E4: release immutability / I4 -- proves Make lifecycle split,
+# pilot-up never builds, release-info fails closed on missing evidence,
+# and operational targets do not mutate tagged image IDs.
+release-immutability-smoke:
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; bash scripts/release-immutability-smoke-test.sh
 
 # TASK-0033D: the real, destructive doctor-detection proof -- stops
 # asterisk/db/app one at a time (restoring each before moving to the
@@ -753,7 +804,7 @@ release-artifact-smoke: up
 # disrupting Asterisk. Deliberately NOT part of `make regression`
 # (mirrors secret-rotation-smoke's own precedent, see scripts/
 # doctor-failure-smoke-test.sh's own header) -- run this explicitly.
-doctor-failure-smoke: up
+doctor-failure-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/doctor-failure-smoke-test.sh
 
 # TASK-0033E: safe, non-mutating regression coverage for the readiness
@@ -768,7 +819,7 @@ doctor-failure-smoke: up
 # true when the fixture is intentionally active, i.e. here. See
 # trunk-smoke's own FIXTURE_PROFILE comment above.
 readiness-smoke: FIXTURE_PROFILE = test
-readiness-smoke: up
+readiness-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/readiness-smoke-test.sh
 
 # TASK-0033E: the real, destructive readiness-detection proof -- proves
@@ -781,14 +832,14 @@ readiness-smoke: up
 # regression` (mirrors doctor-failure-smoke's own precedent, see
 # scripts/readiness-failure-smoke-test.sh's own header) -- run this
 # explicitly.
-readiness-failure-smoke: up
+readiness-failure-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/readiness-failure-smoke-test.sh
 
 # TASK-0033F: safe, non-mutating regression coverage for the migration
 # runner against the live dev database -- current-install baselining/
 # recognition, `migrate-check` reporting SCHEMA_CURRENT, checksum
 # verification, no secret disclosure. Included in `make regression`.
-db-migration-smoke: up
+db-migration-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/db-migration-smoke-test.sh
 
 # TASK-0033F: the real, destructive proof -- isolated Compose project
@@ -797,5 +848,5 @@ db-migration-smoke: up
 # concurrent-runner locking. Deliberately NOT part of `make regression`
 # (mirrors readiness-failure-smoke/doctor-failure-smoke/secret-rotation-
 # smoke's own precedent) -- run this explicitly.
-db-migration-failure-smoke: up
+db-migration-failure-smoke: ensure-dev-stack
 	@bash scripts/db-migration-failure-smoke-test.sh

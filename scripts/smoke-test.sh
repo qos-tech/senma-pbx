@@ -64,9 +64,10 @@ row()  { RESULTS+=("$1|$2|$3"); }  # flow|status|detail
 # --- Pre-flight: validate the Docker environment ------------------------
 
 log "==> Validating Docker environment"
+# TASK-0035E4 / I4: this harness never builds. Make ensure-dev-stack (or
+# an explicit make up / make release-build + pilot-up) owns image lifecycle.
 if ! $COMPOSE ps app 2>/dev/null | grep -q "Up"; then
-    log "app container not running/healthy -- starting it (make up semantics)"
-    $COMPOSE up -d --build >&2
+    harness_blocked "app container not running -- start with 'make ensure-dev-stack' or 'make up' first (smoke-test never builds)"
 fi
 
 log "==> Waiting for app to answer HTTP"
