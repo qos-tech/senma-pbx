@@ -211,6 +211,8 @@ run_suite "webrtc-endpoint-contract-smoke" "webrtc-endpoint-contract-smoke-test.
 run_suite "webrtc-browser-nat-smoke" "webrtc-browser-nat-smoke-test.sh"
 # TASK-0035E2: host-networking compose/bind contract (static Model B proofs).
 run_suite "host-networking-architecture" "host-networking-architecture-smoke-test.sh"
+# TASK-0035E5 / I8: restore runtime topology preservation (static + resolver).
+run_suite "restore-runtime-topology" "restore-runtime-topology-smoke-test.sh"
 # TASK-0035E3: Asterisk console logger / runtime debug observability.
 run_suite "asterisk-console-observability" "asterisk-console-observability-smoke-test.sh"
 # TASK-0029A: TLS/WSS certificate management -- placed right after
