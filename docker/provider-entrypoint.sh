@@ -39,4 +39,17 @@ if [ ! -f "$ASTERISK_ETC/asterisk.conf" ]; then
         "$ASTERISK_ETC/pjsip.conf"
 fi
 
+# TASK-0035E3: same project-owned logger.conf contract as the main
+# asterisk entrypoint (console + full, debug-capable, opt-in volume).
+if [ -f "$PROVIDER_CONFIG_SRC/logger.conf" ]; then
+    if [ ! -f "$ASTERISK_ETC/logger.conf" ] \
+        || ! grep -qE '^[[:space:]]*console[[:space:]]*=>' "$ASTERISK_ETC/logger.conf" \
+        || ! grep -qE '^[[:space:]]*full[[:space:]]*=>' "$ASTERISK_ETC/logger.conf" \
+        || ! grep -qE '^[[:space:]]*console[[:space:]]*=>.*debug' "$ASTERISK_ETC/logger.conf" \
+        || ! grep -qE '^[[:space:]]*full[[:space:]]*=>.*debug' "$ASTERISK_ETC/logger.conf"; then
+        echo "[provider-entrypoint] reconciling logger.conf (TASK-0035E3 console+full debug-capable contract)"
+        cp "$PROVIDER_CONFIG_SRC/logger.conf" "$ASTERISK_ETC/logger.conf"
+    fi
+fi
+
 exec "$@"
