@@ -108,7 +108,7 @@ longer the pilot exposure boundary.
 ## I6 / I5 / I7 / I4
 
 ```text
-I4 OPEN
+I4 CLOSED (TASK-0035E4)
 
 I5 IMPLEMENTATION_CLOSED
 I5 PILOT_RUNTIME_PROOF_PENDING
@@ -122,7 +122,7 @@ I7 PILOT_RUNTIME_PROOF_PENDING
 
 | ID | Status | Notes |
 |---|---|---|
-| I4 | OPEN | avoid `--build` over immutable release tags |
+| I4 | CLOSED (TASK-0035E4) | `up`/`pilot-up` `--no-build`; ops → `require-runtime`; `release-info` fail-closed |
 | I5 | **IMPLEMENTATION_CLOSED** (external mode) | `TLS_TERMINATION_MODE=external` + cert-check public endpoint; local fixture not pilot-blocking |
 | I5 | **PILOT_RUNTIME_PROOF_PENDING** | real NPM public cert/SAN not proven here |
 | I6 | **IMPLEMENTATION_CLOSED** | `/asterisk/ws` on HTTP vhost; external TLS mode |

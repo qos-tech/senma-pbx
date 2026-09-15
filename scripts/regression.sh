@@ -75,6 +75,9 @@ run_suite "compose-profile-isolation-smoke" "compose-profile-isolation-smoke-tes
 # mutates anything itself. See scripts/release-artifact-smoke-test.sh's
 # own header.
 run_suite "release-artifact-smoke" "release-artifact-smoke-test.sh"
+# TASK-0035E4 / I4: Make lifecycle immutability -- operational targets
+# never rebuild release tags; release-info fails closed on missing evidence.
+run_suite "release-immutability-smoke" "release-immutability-smoke-test.sh"
 run_suite "preauth-security"       "preauth-security-smoke-test.sh"
 # TASK-0026C: placed right after preauth-security and before
 # authorization -- both are pre-/independent-of-authorization SQL-

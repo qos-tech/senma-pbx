@@ -346,7 +346,8 @@ fi
 # Phase F -- start db, import dump on top of its own fresh-boot schema
 # =====================================================================
 
-step "starting db" $COMPOSE up -d db
+# TASK-0035E4 / I4: restore recreates containers from existing images only.
+step "starting db" $COMPOSE up -d --no-build db
 
 db_ready() { $COMPOSE ps db 2>/dev/null | grep -q "(healthy)"; }
 if ! harness_retry 30 2 -- db_ready; then
@@ -377,7 +378,7 @@ fi
 # Phase G -- start asterisk, then app; verify basic readiness
 # =====================================================================
 
-step "starting asterisk" $COMPOSE up -d asterisk
+step "starting asterisk" $COMPOSE up -d --no-build asterisk
 asterisk_ready() { $COMPOSE ps asterisk 2>/dev/null | grep -q "(healthy)"; }
 harness_retry 15 2 -- asterisk_ready || blib_log "WARNING: asterisk container did not report healthy within ~30s -- continuing to check runtime state directly"
 
@@ -400,7 +401,7 @@ if ! harness_retry 10 1 -- odbc_ready; then
     blib_die "Asterisk's ODBC connection to MariaDB is not Connected after restore. The most likely cause: the restored asterisk-etc/res_odbc.conf was templated with DB credentials from backup time, and the CURRENT .env's DB_PASSWORD does not match them. Run 'make secrets-check' to confirm, then 'make rotate-secrets' to reconcile the restored installation onto the currently declared credentials (TASK-0033C). Check 'docker compose exec asterisk asterisk -rx \"odbc show all\"' and compare against the current .env."
 fi
 
-step "starting app" $COMPOSE up -d app
+step "starting app" $COMPOSE up -d --no-build app
 app_ready() { $COMPOSE ps app 2>/dev/null | grep -q "(healthy)"; }
 harness_retry 15 2 -- app_ready || blib_log "WARNING: app container did not report healthy within ~30s -- check 'docker compose logs app'"
 

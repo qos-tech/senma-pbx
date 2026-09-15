@@ -120,7 +120,8 @@ ensure_asterisk_up() {
         return 0
     fi
     slib_log "asterisk is not healthy -- (re)creating it with the just-corrected configuration"
-    $COMPOSE up -d --no-deps asterisk >/dev/null 2>&1
+    # TASK-0035E4 / I4: never rebuild release-tagged images during rotation.
+    $COMPOSE up -d --no-build --no-deps asterisk >/dev/null 2>&1
     while [ "$waited" -lt "$timeout" ]; do
         asterisk_is_up && return 0
         sleep 2

@@ -32,11 +32,12 @@
 #      values (Phase 18).
 #   5. `scripts/release-info.sh` reports DRIFT for both services against
 #      a manifest deliberately recording the wrong image id (Phase 26).
-#   6. `scripts/release-info.sh` reports UNKNOWN (not FAIL, not a crash)
-#      when no release-manifest.json exists at all (Phase 27 -- the
-#      normal state of a plain dev environment).
+#   6. `scripts/release-info.sh` reports UNKNOWN_FATAL (fail-closed,
+#      non-zero exit) when no release-manifest.json exists -- never a
+#      soft UNKNOWN/exit-0 that can print "no drift detected" without
+#      evidence (TASK-0035E4 / I4).
 #   7. release_image_label() (scripts/lib/release-lib.sh), the primitive
-#      release-info.sh's own UNKNOWN classification is built on, returns
+#      release-info.sh's own label inspection is built on, returns
 #      empty -- not an error -- for the third-party `db` image's absent
 #      org.opencontainers.image.revision label (Phase 27/29). Note: the
 #      official mariadb image DOES carry its own, unrelated
@@ -48,9 +49,9 @@
 #      a synthetic agreement -- exercised directly with synthetic
 #      inputs, deliberately NOT by building a real mismatched image pair
 #      (Phase 45's own text: "do not leave the main dev environment
-#      mixed afterward" -- the real MATCH/DRIFT/UNKNOWN proofs above
-#      already exercise every other part of the same code path against
-#      real containers).
+#      mixed afterward" -- the real MATCH/DRIFT/UNKNOWN_FATAL proofs
+#      above already exercise every other part of the same code path
+#      against real containers).
 #
 # Exit code: see scripts/lib/harness.sh (0=PASS 1=FAIL 2=BLOCKED 3=INCONCLUSIVE).
 
@@ -178,17 +179,20 @@ else
     fi
 fi
 
-# --- 6. UNKNOWN: no manifest at all -----------------------------------------
-log "==> 6: release-info.sh reports UNKNOWN with no manifest present"
+# --- 6. UNKNOWN_FATAL: no manifest at all (TASK-0035E4 fail-closed) ---------
+# Soft UNKNOWN + exit 0 previously printed "RESULT: no drift detected"
+# when evidence was missing -- that is unsafe. Missing manifest must now
+# be UNKNOWN_FATAL with a non-zero exit (never a false MATCH/no-drift).
+log "==> 6: release-info.sh reports UNKNOWN_FATAL (fail-closed) with no manifest present"
 rm -f "$REAL_MANIFEST"
 if bash "$SCRIPT_DIR/release-info.sh" --summary >/tmp/release-info-unknown.log 2>&1; then
-    if grep -q "^app:UNKNOWN$" /tmp/release-info-unknown.log && grep -q "^asterisk:UNKNOWN$" /tmp/release-info-unknown.log; then
-        harness_ok "6: UNKNOWN reported" "both app and asterisk report UNKNOWN with no manifest present (not a crash, exit 0)"
-    else
-        harness_bad "6: UNKNOWN reported" "expected app:UNKNOWN and asterisk:UNKNOWN -- see /tmp/release-info-unknown.log"
-    fi
+    harness_bad "6: UNKNOWN_FATAL reported" "release-info.sh exited 0 with no manifest present -- missing evidence must fail closed (TASK-0035E4) -- see /tmp/release-info-unknown.log"
 else
-    harness_bad "6: UNKNOWN reported" "release-info.sh exited non-zero with no manifest present -- UNKNOWN must never be treated as a failure -- see /tmp/release-info-unknown.log"
+    if grep -q "^app:UNKNOWN_FATAL$" /tmp/release-info-unknown.log && grep -q "^asterisk:UNKNOWN_FATAL$" /tmp/release-info-unknown.log; then
+        harness_ok "6: UNKNOWN_FATAL reported" "both app and asterisk report UNKNOWN_FATAL with no manifest; exit non-zero (no false 'no drift')"
+    else
+        harness_bad "6: UNKNOWN_FATAL reported" "expected app:UNKNOWN_FATAL and asterisk:UNKNOWN_FATAL -- see /tmp/release-info-unknown.log"
+    fi
 fi
 
 # --- 7. release_image_label() on a real image with no SENMA revision label -
