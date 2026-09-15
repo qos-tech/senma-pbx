@@ -1,4 +1,4 @@
-.PHONY: dev dev-build dev-up ensure-dev-stack require-runtime up pilot-config pilot-up release-build release-info release-artifact-smoke release-immutability-smoke down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke cnl-upload-authorization-security-smoke itc-registration-authorization-security-smoke notification-dismiss-authorization-security-smoke dashboard-preferences-authorization-security-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke wss-proxy-termination-smoke webrtc-endpoint-contract-smoke webrtc-browser-nat-smoke host-networking-architecture-smoke asterisk-console-observability-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke fresh-install-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate ami-acl-smoke
+.PHONY: dev dev-build dev-up ensure-dev-stack require-runtime up pilot-config pilot-up release-build release-info release-artifact-smoke release-immutability-smoke restore-runtime-topology-smoke down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke cnl-upload-authorization-security-smoke itc-registration-authorization-security-smoke notification-dismiss-authorization-security-smoke dashboard-preferences-authorization-security-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke wss-proxy-termination-smoke webrtc-endpoint-contract-smoke webrtc-browser-nat-smoke host-networking-architecture-smoke asterisk-console-observability-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke fresh-install-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate ami-acl-smoke
 
 COMPOSE ?= docker compose
 
@@ -608,9 +608,28 @@ backup: require-runtime
 # is required whenever the target already has existing SENMA state
 # (mirrors `make reset`'s typed-confirmation precedent) -- restore.sh
 # itself reports the exact reason if this is missing/wrong.
+# TASK-0035E5 / I8: restore must preserve runtime topology. When
+# RELEASE_VERSION is a real release tag (or COMPOSE_FILES already names
+# the pilot overlay), Make selects the same compose contract as
+# pilot-up -- never bare `docker compose` (which silently recreated
+# rc.5 into bridge networking). Dev/regression remains bridge. Never
+# builds (restore.sh uses --no-build; see TASK-0035E4).
 restore:
 	@test -n "$(FROM)" || (echo "Usage: make restore FROM=<path-to-backup.tar.gz> [CONFIRM=RESTORE]" && exit 1)
-	@set -a; . ./.env; set +a; bash scripts/restore.sh "$(FROM)" $(if $(filter RESTORE,$(CONFIRM)),--confirm)
+	@set -a; . ./.env; set +a; \
+	  if [ -z "$${SENMA_RUNTIME_MODE:-}" ] && [ -z "$${RESTORE_RUNTIME_MODE:-}" ]; then \
+	    case " $(COMPOSE_FILES) " in \
+	      *" compose.pilot.yaml "*|*" compose.host.yaml "*) export SENMA_RUNTIME_MODE=host ;; \
+	      *) \
+	        if [ "$(RELEASE_VERSION)" != "dev" ] && [ -n "$(RELEASE_VERSION)" ]; then \
+	          export SENMA_RUNTIME_MODE=host; \
+	          export COMPOSE_FILES="-f compose.yaml -f compose.pilot.yaml"; \
+	        else \
+	          export SENMA_RUNTIME_MODE=bridge; \
+	        fi ;; \
+	    esac; \
+	  fi; \
+	  bash scripts/restore.sh "$(FROM)" $(if $(filter RESTORE,$(CONFIRM)),--confirm)
 
 # TASK-0033A: lightweight, non-destructive backup/restore validation --
 # safe to run as part of `make regression` (never stops a container,
@@ -794,6 +813,11 @@ release-artifact-smoke: ensure-dev-stack
 # and operational targets do not mutate tagged image IDs.
 release-immutability-smoke:
 	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; bash scripts/release-immutability-smoke-test.sh
+
+# TASK-0035E5 / I8: restore must preserve pilot/host runtime topology and
+# never silently fall back to bare bridge compose.yaml.
+restore-runtime-topology-smoke:
+	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; bash scripts/restore-runtime-topology-smoke-test.sh
 
 # TASK-0033D: the real, destructive doctor-detection proof -- stops
 # asterisk/db/app one at a time (restoring each before moving to the

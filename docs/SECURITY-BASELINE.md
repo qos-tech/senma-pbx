@@ -76,6 +76,18 @@ be updated whenever a change alters any invariant below.
   without a manifest and OCI labels.
 - See `docs/tasks/0035e4-release-immutability-operational-target-hardening.md`.
 
+## Restore runtime topology (TASK-0035E5 / I8)
+
+- Restore preserves **runtime topology** separately from data REPLACE
+  semantics. Pilot/production (`RELEASE_VERSION != dev`) recreates
+  app/asterisk/db via `compose.yaml` + `compose.pilot.yaml`
+  (`network_mode: host`), never bare bridge `compose.yaml`.
+- `make restore` wires this automatically; direct `scripts/restore.sh`
+  uses `scripts/lib/compose-runtime.sh` and fails closed when ambiguous.
+- Restore never builds (`--no-build`) and must leave release image IDs
+  unchanged.
+- See `docs/tasks/0035e5-restore-runtime-topology-preservation.md`.
+
 ## CSRF policy
 
 - `Snep_CsrfPlugin` (`snep/modules/default/model/CsrfPlugin.php`),
