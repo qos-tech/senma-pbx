@@ -382,10 +382,13 @@ fi
 
 ACTIVE_STATE="$(status_cell_for "$EXT_PAGE" "SENMA status-smoke ${EXT_ACTIVE}")"
 ACTIVE_DETAIL="$(detail_cell_for "$EXT_PAGE" "SENMA status-smoke ${EXT_ACTIVE}")"
-if [ "$ACTIVE_STATE" = "ACTIVE" ] && [[ "$ACTIVE_DETAIL" == *"reachable"* ]]; then
-    harness_ok "extension registered+reachable status" "rendered as ACTIVE ($ACTIVE_DETAIL)"
+# TASK-0035E6: healthy ACTIVE uses an empty detail (primary badge alone).
+# Title attribute is omitted when detail is empty, so detail_cell_for
+# returns empty.
+if [ "$ACTIVE_STATE" = "ACTIVE" ] && [ -z "$ACTIVE_DETAIL" ]; then
+    harness_ok "extension registered+reachable status" "rendered as ACTIVE with no success-detail noise"
 else
-    harness_bad "extension registered+reachable status" "expected ACTIVE/reachable, got '$ACTIVE_STATE' ($ACTIVE_DETAIL)"
+    harness_bad "extension registered+reachable status" "expected ACTIVE with empty detail, got '$ACTIVE_STATE' ($ACTIVE_DETAIL)"
 fi
 
 DEGRADED_STATE="$(status_cell_for "$EXT_PAGE" "SENMA status-smoke ${EXT_DEGRADED}")"
