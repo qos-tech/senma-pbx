@@ -532,15 +532,31 @@ check_release_identity() {
     local out rc
     out="$(bash "$SCRIPT_DIR/release-info.sh" --summary 2>&1)"
     rc=$?
+    # TASK-0035E4: release-info fails closed on missing evidence
+    # (UNKNOWN_FATAL). On a plain :dev workspace with no
+    # release-manifest.json that is still expected -- SKIP, not PASS.
+    # DRIFT and release-mode UNKNOWN_FATAL remain FAIL.
+    if printf '%s' "$out" | grep -qE '^(app|asterisk):DRIFT$'; then
+        record "Release artifact identity" "FAIL" "DRIFT -- run 'make release-info' for detail" "$out"
+        return
+    fi
+    if printf '%s' "$out" | grep -qE '^(app|asterisk):UNKNOWN_FATAL$'; then
+        if [ ! -f "$REPO_ROOT/release-manifest.json" ] && [ "${RELEASE_VERSION:-dev}" = "dev" ]; then
+            record "Release artifact identity" "SKIP" "no release-manifest.json recorded yet -- expected for a :dev build; run 'make release-build VERSION=vX.Y.Z' before a pilot/production deploy" "$out"
+        else
+            record "Release artifact identity" "FAIL" "UNKNOWN_FATAL -- required release evidence unavailable (see 'make release-info')" "$out"
+        fi
+        return
+    fi
     case "$rc" in
         0)
-            if printf '%s' "$out" | grep -q "UNKNOWN"; then
-                record "Release artifact identity" "SKIP" "no release-manifest.json recorded yet -- expected for a dev build; run 'make release-build VERSION=vX.Y.Z' before a pilot/production deploy" "$out"
-            else
+            if printf '%s' "$out" | grep -qE '^(app|asterisk):MATCH$'; then
                 record "Release artifact identity" "PASS" "MATCH -- running images match the recorded release (see 'make release-info')" "$out"
+            else
+                record "Release artifact identity" "PASS" "no DRIFT/UNKNOWN_FATAL for running SENMA services" "$out"
             fi
             ;;
-        1) record "Release artifact identity" "FAIL" "DRIFT -- run 'make release-info' for detail" "$out" ;;
+        1) record "Release artifact identity" "FAIL" "release identity check failed -- run 'make release-info' for detail" "$out" ;;
         *) record "Release artifact identity" "UNKNOWN" "release-info.sh exited $rc" "$out" ;;
     esac
 }
