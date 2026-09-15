@@ -234,7 +234,8 @@ make ps      # confirm all services report healthy (app/asterisk/db only -- no p
 the mutable `dev` default (TASK-0034 CH-9's "no mutable-only release"
 invariant), and refuses again if the exact `senma-app:$RELEASE_VERSION`/
 `senma-asterisk:$RELEASE_VERSION` images aren't already present locally.
-Unlike `make up`, `pilot-up` never passes `--build` — it deploys the
+Unlike `make up` (which is also `--no-build` as of TASK-0035E4), `pilot-up`
+never builds — it deploys the
 *exact* image `release-build` just produced (same image id, not a
 same-inputs rebuild: two separate builds of the identical commit still
 legally differ, since `org.opencontainers.image.created` changes between
@@ -242,7 +243,9 @@ them — see the task doc's BUILD REPRODUCIBILITY BOUNDARY). This is why
 step 5 must run before this command, not concurrently with it, and why a
 production/pilot host should never run `make release-build` and `make
 pilot-up` for two different versions interleaved in the same shell
-session.
+session. If the tagged images are missing, `pilot-up` fails with an
+actionable `make release-build VERSION=…` message instead of silently
+building.
 
 **Keep `RELEASE_VERSION` exported for the rest of this operator shell
 session** (and every future session that manages this pilot host) —
@@ -259,14 +262,42 @@ just for image identity instead of port exposure. `make release-info`
 
 **Keep `COMPOSE_FILES`/`SERVICES` exported for the rest of this operator
 shell session** (and every future session that manages this pilot host).
-Every `make` target below that depends on `up` — `lint`, `migrate-check`,
-`secrets-check`, `reconcile-check` — re-runs `up` as a prerequisite. With
-these two variables unset, that re-run silently falls back to plain
-`docker compose up -d --build` against `compose.yaml` alone: it recreates
-`asterisk` **without** the pilot ports published in step 5 (silently
-undoing Finding CH-7's fix) — confirmed live during TASK-0034B. `make
-doctor` does not depend on `up` and is unaffected either way. See
-`docs/tasks/0034b-production-network-exposure-hardening.md`.
+TASK-0035E4 (closing incident I4) removed the old footgun where
+`lint` / `migrate-check` / `secrets-check` / `reconcile-check` /
+`backup` re-ran `up --build` as a prerequisite and could retag an
+immutable release image. Those operational targets now depend on
+`require-runtime` (fail if the stack is not already running; never
+build or start). Generic `make up` itself is `--no-build`. Validation
+targets (`lint`, `regression`, smokes) use `ensure-dev-stack`, which
+**refuses** to build when `RELEASE_VERSION != dev`. On a pilot host,
+keep `RELEASE_VERSION` set to the active release tag and do **not** run
+`ensure-dev-stack` / `dev-build` / `lint` / `regression` against that
+shell — use `make release-build VERSION=…` on a build host when new
+images are required. `make doctor` remains observational and does not
+depend on `up`. See
+`docs/tasks/0035e4-release-immutability-operational-target-hardening.md`
+and `docs/tasks/0034b-production-network-exposure-hardening.md`.
+
+**Supported operator lifecycle (TASK-0035E4):**
+
+```bash
+# DEV (mutable :dev only)
+make dev-build
+make dev-up          # or: make up   (existing images, --no-build)
+
+# RELEASE (immutable tags)
+make release-build VERSION=vX.Y.Z
+export RELEASE_VERSION=vX.Y.Z
+make pilot-up        # --no-build; fails if images missing
+
+# RUNTIME (never builds)
+make reconcile-check
+make migrate-check
+make secrets-check
+make backup
+make doctor
+make release-info    # expect MATCH; UNKNOWN_FATAL/DRIFT is a stop
+```
 
 **The `provider` dev-only trunk-simulator fixture (CH-3) cannot start
 from this path regardless of `COMPOSE_FILES`/`SERVICES`** — TASK-0034C
@@ -285,6 +316,9 @@ make release-info
 Expect `MATCH` for both `app` and `asterisk` against the manifest step 5
 wrote. `DRIFT` means the running images are not the ones just built —
 stop and investigate before proceeding; do not treat this as cosmetic.
+`UNKNOWN_FATAL` (missing manifest, missing OCI labels, or missing local
+tag) is also a hard stop as of TASK-0035E4 — `release-info` never reports
+a false "no drift detected" when required evidence is unavailable.
 
 ## 6. Verify readiness
 

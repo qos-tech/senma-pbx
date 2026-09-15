@@ -62,6 +62,20 @@ be updated whenever a change alters any invariant below.
   `/asterisk/ws` → `ws://127.0.0.1:8088/ws`.
 - See `docs/tasks/0035e2-host-networking-architecture-local-service-binding.md`.
 
+## Release image immutability (TASK-0035E4 / I4)
+
+- Operational Make targets (`backup`, `reconcile*`, `migrate*`,
+  `secrets-check`, `rotate-*`, `doctor`) must **never** rebuild or retag
+  release images. They require a running stack (`require-runtime`) or are
+  observational.
+- `make up` and `make pilot-up` use `--no-build`. Mutable builds are
+  explicit (`make dev-build` / `make ensure-dev-stack` for `:dev` only, or
+  `make release-build VERSION=…` for release tags).
+- `make release-info` fails closed (`UNKNOWN_FATAL` / `DRIFT`) when
+  release evidence is missing or disagrees — never a false "no drift"
+  without a manifest and OCI labels.
+- See `docs/tasks/0035e4-release-immutability-operational-target-hardening.md`.
+
 ## CSRF policy
 
 - `Snep_CsrfPlugin` (`snep/modules/default/model/CsrfPlugin.php`),
