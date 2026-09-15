@@ -481,3 +481,46 @@ Manual, unless the site already has external monitoring wired to these:
 No unexplained container restarts, no call failures attributable to
 SENMA, no disk/log runaway, no credential drift, and successful backups
 are the acceptance bar for the soak period defined in TASK-0034 Phase 40.
+
+---
+
+## Asterisk live debug (TASK-0035E3)
+
+Interactive CLI is the supported live-debug path. Persistent file logging
+continues at `/var/log/asterisk/full`.
+
+```bash
+docker compose \
+  -f compose.yaml \
+  -f compose.pilot.yaml \
+  exec asterisk \
+  asterisk -rvvv
+```
+
+Inside the CLI:
+
+```text
+core set verbose 5
+core set debug 5
+pjsip set logger on
+rtp set debug on
+```
+
+Cleanup (no restart required):
+
+```text
+pjsip set logger off
+rtp set debug off
+core set debug 0
+core set verbose 3
+```
+
+Notes:
+
+- `logger.conf` declares console+full with DEBUG **capability**; high-volume
+  DEBUG / PJSIP packet logger / RTP packet debug remain opt-in.
+- Packet/signaling debug may contain SIP credentials, Authorization
+  headers, phone numbers, IPs, and SDP. Disable after troubleshooting.
+- Secondary view: `docker compose logs -f asterisk` (foreground process +
+  console logger). See
+  `docs/tasks/0035e3-asterisk-console-logging-runtime-debug-observability.md`.
