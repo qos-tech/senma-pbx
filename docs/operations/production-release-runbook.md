@@ -465,10 +465,17 @@ never removed automatically) or from the previous deploy's own recorded
 
 ```bash
 git checkout <previous-release-tag>
-make release-build VERSION=<previous-release-tag>   # rebuilds the previous version's images (still present locally unless pruned)
+make release-build VERSION=<previous-release-tag>   # only if previous images were pruned; otherwise reuse local tags
 export RELEASE_VERSION=<previous-release-tag>
+# TASK-0035E5 / I8: make restore selects compose.yaml + compose.pilot.yaml
+# automatically when RELEASE_VERSION != dev (same topology as pilot-up).
+# Do NOT omit RELEASE_VERSION — a bare restore historically fell back to
+# bridge networking and required a manual `make pilot-up` to recover.
 make restore FROM=./backups/senma-backup-<pre-upgrade-ts>.tar.gz CONFIRM=RESTORE
-make pilot-up
+# After a correct restore, host networking is already present — do not
+# treat `make pilot-up` as a required "fix networking" step. Use
+# pilot-up only when containers must be recreated onto the release images
+# for another reason.
 make doctor
 make release-info   # confirm MATCH against <previous-release-tag>, not the failed upgrade's version
 ```
