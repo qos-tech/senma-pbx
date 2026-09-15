@@ -35,6 +35,7 @@
 #
 # Usage:
 #   scripts/restore.sh <path-to-backup.tar.gz> [--confirm] [--validate-only]
+#   scripts/restore.sh --print-runtime
 #
 #   --validate-only  Check archive integrity/completeness only -- never
 #                     touches a container or volume. Used by
@@ -47,7 +48,15 @@
 #                     typed-confirmation precedent for destructive
 #                     operations; scriptable via
 #                     `make restore FROM=... CONFIRM=RESTORE`.
+#   --print-runtime  Resolve and print SENMA_RUNTIME_MODE/COMPOSE, then
+#                     exit (TASK-0035E5). No archive required.
 #
+# Runtime topology (TASK-0035E5 / I8): destructive restore selects
+# bridge vs host via scripts/lib/compose-runtime.sh -- never silently
+# falls back to bare `docker compose` for a pilot/production session.
+# Prefer: export RELEASE_VERSION=vX.Y.Z (pilot) or SENMA_RUNTIME_MODE=
+# bridge|host. make restore wires the same contract automatically.
+
 # Exit code: 0 on a fully verified restore (or a clean --validate-only
 # pass); 1 on any validation failure or restore-step failure. Never
 # reports success on a partially-applied restore -- verification
@@ -62,24 +71,43 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib/backup-lib.sh"
 # shellcheck source=lib/harness.sh
 source "$SCRIPT_DIR/lib/harness.sh"
+# shellcheck source=lib/compose-runtime.sh
+source "$SCRIPT_DIR/lib/compose-runtime.sh"
 # Sourced only for harness_retry (a standalone bounded-retry helper with
 # no side effects at source time) -- this script does NOT call
 # harness_install_traps and does not use the PASS/FAIL/BLOCKED
 # vocabulary; it is a plain operator command with a plain 0/1 exit code.
+#
+# TASK-0035E5 / I8: COMPOSE is resolved AFTER --validate-only via
+# senma_resolve_compose_runtime (fail-closed). Never default to bare
+# `docker compose` for a destructive restore -- that silently dropped
+# pilot/host networking on v0.1.0-rc.5.
 
-COMPOSE="${SMOKE_COMPOSE:-docker compose}"
 ARCHIVE=""
 CONFIRMED=0
 VALIDATE_ONLY=0
+PRINT_RUNTIME=0
 
 while [ $# -gt 0 ]; do
     case "$1" in
         --confirm) CONFIRMED=1; shift ;;
         --validate-only) VALIDATE_ONLY=1; shift ;;
+        --print-runtime)
+            # Resolve and print the selected topology, then exit (no
+            # archive required). Used by focused topology smokes.
+            PRINT_RUNTIME=1; shift ;;
         -*) blib_die "unknown argument: $1" ;;
         *) ARCHIVE="$1"; shift ;;
     esac
 done
+
+if [ "$PRINT_RUNTIME" -eq 1 ]; then
+    senma_resolve_compose_runtime || exit 1
+    echo "SENMA_RUNTIME_MODE=${SENMA_RUNTIME_MODE}"
+    echo "COMPOSE=${COMPOSE}"
+    exit 0
+fi
+
 [ -n "$ARCHIVE" ] || blib_die "usage: restore.sh <path-to-backup.tar.gz> [--confirm] [--validate-only]"
 [ -f "$ARCHIVE" ] || blib_die "backup archive not found: $ARCHIVE"
 
@@ -160,6 +188,26 @@ blib_log "    created: $(blib_manifest_get "$MANIFEST" created_at)  git: $(blib_
 if [ "$VALIDATE_ONLY" -eq 1 ]; then
     echo "VALIDATE-ONLY: archive is valid and complete. No containers or volumes were touched."
     exit 0
+fi
+
+# =====================================================================
+# Phase A2 -- runtime topology selection (TASK-0035E5 / I8)
+# Data contents and runtime topology are distinct. Fail closed rather
+# than silently recreating pilot/production onto bridge compose.yaml.
+# =====================================================================
+
+senma_resolve_compose_runtime || blib_die "restore aborted: runtime topology could not be selected safely (see above)"
+
+# Record SENMA image IDs BEFORE recreate -- must be unchanged afterward
+# (TASK-0035E4 immutability: restore never builds/retags).
+BEFORE_APP_IMAGE=""
+BEFORE_AST_IMAGE=""
+RV_FOR_IDS="${RELEASE_VERSION:-dev}"
+if docker image inspect "senma-app:${RV_FOR_IDS}" >/dev/null 2>&1; then
+    BEFORE_APP_IMAGE="$(docker image inspect "senma-app:${RV_FOR_IDS}" --format '{{.Id}}')"
+fi
+if docker image inspect "senma-asterisk:${RV_FOR_IDS}" >/dev/null 2>&1; then
+    BEFORE_AST_IMAGE="$(docker image inspect "senma-asterisk:${RV_FOR_IDS}" --format '{{.Id}}')"
 fi
 
 # =====================================================================
@@ -409,12 +457,45 @@ if [ "$FAILED" -eq 1 ]; then
     blib_die "post-restore readiness verification failed -- see diagnostics above. The restore steps themselves completed, but the resulting stack is not provably usable."
 fi
 
+# =====================================================================
+# Phase H -- runtime topology + image immutability (TASK-0035E5 / I8)
+# =====================================================================
+
+blib_log "==> verifying restored runtime topology (${SENMA_RUNTIME_MODE})"
+if [ "$SENMA_RUNTIME_MODE" = "host" ]; then
+    if ! senma_verify_host_runtime_topology; then
+        blib_die "restore recreated containers but host-network topology was NOT preserved (I8). Data may be restored, but the stack is not in the supported pilot/production runtime. Do NOT treat this as success. Fix compose selection and re-run restore, or recover with 'make pilot-up' using the same RELEASE_VERSION (existing images only)."
+    fi
+    blib_log "    host topology OK: app/asterisk/db network_mode=host (no PortBindings)"
+else
+    if ! senma_verify_bridge_runtime_topology; then
+        blib_die "restore selected bridge but at least one core service came back as host networking -- refuse inconsistent topology"
+    fi
+    blib_log "    bridge topology OK: app/asterisk/db are not host-networked"
+fi
+
+# Image identity must not change across restore (no build / no retag).
+if [ -n "$BEFORE_APP_IMAGE" ]; then
+    AFTER_APP_IMAGE="$(docker image inspect "senma-app:${RV_FOR_IDS}" --format '{{.Id}}' 2>/dev/null || true)"
+    if [ "$BEFORE_APP_IMAGE" != "$AFTER_APP_IMAGE" ]; then
+        blib_die "senma-app:${RV_FOR_IDS} image id changed during restore (before=$BEFORE_APP_IMAGE after=$AFTER_APP_IMAGE) -- restore must never build or retag (TASK-0035E4)"
+    fi
+fi
+if [ -n "$BEFORE_AST_IMAGE" ]; then
+    AFTER_AST_IMAGE="$(docker image inspect "senma-asterisk:${RV_FOR_IDS}" --format '{{.Id}}' 2>/dev/null || true)"
+    if [ "$BEFORE_AST_IMAGE" != "$AFTER_AST_IMAGE" ]; then
+        blib_die "senma-asterisk:${RV_FOR_IDS} image id changed during restore (before=$BEFORE_AST_IMAGE after=$AFTER_AST_IMAGE) -- restore must never build or retag (TASK-0035E4)"
+    fi
+fi
+blib_log "    release image ids unchanged for senma-*:${RV_FOR_IDS}"
+
 echo
 echo "================================================================"
 echo "SENMA restore complete from: $ARCHIVE"
 echo "Backup created: $(blib_manifest_get "$MANIFEST" created_at)  git: $(blib_manifest_get "$MANIFEST" senma_git_describe)"
+echo "Runtime topology: ${SENMA_RUNTIME_MODE} via: ${COMPOSE}"
 echo "db/asterisk/app started and passed basic readiness checks (schema"
 echo "imported, PJSIP transports loaded, ODBC connected, app HTTP up)."
-echo "Run 'make ps' / 'make doctor' to confirm, and verify your own"
-echo "provisioning (extensions/trunks) through the admin UI."
+echo "Run 'make ps' / 'make doctor' / 'make release-info' to confirm, and"
+echo "verify your own provisioning (extensions/trunks) through the admin UI."
 echo "================================================================"
