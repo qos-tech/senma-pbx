@@ -18,7 +18,7 @@
  */
 
 /**
- * Shared status badge primitive (TASK-0032).
+ * Shared status badge primitive (TASK-0032 / TASK-0035E6).
  *
  * TASK-0029B established the 7-state runtime vocabulary (ACTIVE/DEGRADED/
  * PENDING/INACTIVE/DISABLED/ERROR/UNKNOWN, see Snep_PjsipStatus_Manager)
@@ -29,6 +29,11 @@
  * place that mapping is defined; every caller (Extensions, Trunks,
  * Transports -- list pages and Diagnostics sections alike) renders through
  * it instead of re-declaring its own copy of the class/label maps.
+ *
+ * TASK-0035E6: detail text is filtered through
+ * Snep_PjsipStatus_Presenter::operatorDetail() so healthy ACTIVE states
+ * stay quiet, redundant echoes of the primary label are dropped, and
+ * diagnostic/exception leakage never reaches the operator surface.
  *
  * Deliberately renders ONLY the badge (+ optional detail paragraph) --
  * never the surrounding <td>/data-attribute, which stays the calling
@@ -72,13 +77,14 @@ class Snep_View_Helper_StatusBadge extends Zend_View_Helper_Abstract {
      *   'detail'        string|null, plain product-language reason --
      *                    NEVER raw Asterisk CLI text (rendered as the
      *                    badge's title tooltip, and additionally as
-     *                    visible text when 'showDetail' is set).
+     *                    visible text when 'showDetail' is set). Filtered
+     *                    by Snep_PjsipStatus_Presenter before render.
      *   'showDetail'    bool, also render the detail as a visible
-     *                    <p class="help-block"> below the badge --
-     *                    for a Diagnostics section, where a hover-only
-     *                    tooltip is not enough (Phase 5's own "consistent
-     *                    tooltip/detail" requirement extended to a
-     *                    non-list context).
+     *                    <p class="help-block snep-status-detail"> below
+     *                    the badge -- for a Diagnostics section, where a
+     *                    hover-only tooltip is not enough. Omitted when
+     *                    the presenter returns an empty detail (healthy
+     *                    ACTIVE, redundant, or suppressed leak).
      *   'unavailableText' string, overrides the default "not applicable"
      *                    label used when $state is null.
      *   'timestamp'     string|null, rendered as small muted text next
@@ -103,7 +109,8 @@ class Snep_View_Helper_StatusBadge extends Zend_View_Helper_Abstract {
         // display purposes (never crashes, never invents a color) -- but
         // the raw state name is still shown, never silently swallowed.
         $txt = isset(self::$textMap[$state]) ? $view->translate(self::$textMap[$state]) : $view->escape($state);
-        $detail = isset($options['detail']) ? (string) $options['detail'] : '';
+        $rawDetail = isset($options['detail']) ? (string) $options['detail'] : '';
+        $detail = Snep_PjsipStatus_Presenter::operatorDetail($state, $rawDetail);
 
         $html = '<span class="label ' . $cls . '"';
         if ($detail !== '') {
@@ -116,7 +123,7 @@ class Snep_View_Helper_StatusBadge extends Zend_View_Helper_Abstract {
         }
 
         if (!empty($options['showDetail']) && $detail !== '') {
-            $html .= '<p class="help-block">' . $view->escape($detail) . '</p>';
+            $html .= '<p class="help-block snep-status-detail">' . $view->escape($detail) . '</p>';
         }
 
         return $html;

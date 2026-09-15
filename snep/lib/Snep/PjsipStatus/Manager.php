@@ -53,6 +53,11 @@
  * only -- never a raw Asterisk fragment (Phase 10's explicit
  * requirement).
  *
+ * TASK-0035E6: detail strings are short operator-facing explanations.
+ * Healthy ACTIVE states use an empty detail — the primary badge alone
+ * is enough. Snep_PjsipStatus_Presenter is the final UI gate (tooltip /
+ * help-block) and suppresses success noise / diagnostic leakage.
+ *
  * @category  Snep
  * @package   Snep
  */
@@ -122,11 +127,11 @@ class Snep_PjsipStatus_Manager {
 
         foreach ($rows as $row) {
             if (!empty($row['disabled'])) {
-                $statuses[$row['id']] = self::status(self::DISABLED, 'Extension disabled');
+                $statuses[$row['id']] = self::status(self::DISABLED, 'Disabled in configuration');
                 continue;
             }
             if ($endpoints === null) {
-                $statuses[$row['id']] = self::status(self::UNKNOWN, 'Could not query Asterisk runtime state');
+                $statuses[$row['id']] = self::status(self::UNKNOWN, 'Runtime status unavailable');
                 continue;
             }
             $qualifyEnabled = !empty($row['qualify']) && $row['qualify'] !== 'no';
@@ -151,10 +156,10 @@ class Snep_PjsipStatus_Manager {
      */
     private static function classifyContact($endpoint, $qualifyEnabled) {
         if ($endpoint === null) {
-            return self::status(self::UNKNOWN, 'Not found in Asterisk\'s runtime configuration -- it may not have been applied yet');
+            return self::status(self::UNKNOWN, 'Not yet present in Asterisk runtime');
         }
         if (count($endpoint['contacts']) === 0) {
-            return self::status(self::INACTIVE, 'No device registered');
+            return self::status(self::INACTIVE, 'No SIP contact registered');
         }
 
         // TASK-0029B: SENMA currently hardcodes max_contacts=1 for every
@@ -164,16 +169,15 @@ class Snep_PjsipStatus_Manager {
         // reachable/unmonitored, DEGRADED only if ALL are failing) is
         // written to stay correct if that ever changes, rather than
         // silently assuming exactly one.
+        //
+        // TASK-0035E6: healthy ACTIVE uses an empty detail (primary badge
+        // alone). Qualify RTT remains available via Asterisk CLI / logs
+        // when diagnosing — it is not operator-facing badge prose.
         $anyAvail = false;
         $anyNonQual = false;
-        $anyPending = false;
-        $rtts = array();
         foreach ($endpoint['contacts'] as $contact) {
             if ($contact['status'] === 'Avail') {
                 $anyAvail = true;
-                if ($contact['rtt'] !== 'nan') {
-                    $rtts[] = $contact['rtt'];
-                }
             } elseif ($contact['status'] === 'NonQual') {
                 // Ambiguous by construction: Asterisk uses the identical
                 // string both for "qualify is disabled for this AOR" and
@@ -183,20 +187,16 @@ class Snep_PjsipStatus_Manager {
                 $anyNonQual = true;
             }
         }
-        $anyUnavail = !$anyAvail && !$anyNonQual;
         if (!$qualifyEnabled) {
-            return self::status(self::ACTIVE, 'Registered -- reachability not monitored (qualify disabled)');
+            return self::status(self::ACTIVE, '');
         }
         if ($anyAvail) {
-            $detail = count($rtts) > 0
-                ? 'Registered -- reachable (' . implode('ms, ', $rtts) . 'ms)'
-                : 'Registered -- reachable';
-            return self::status(self::ACTIVE, $detail);
+            return self::status(self::ACTIVE, '');
         }
         if ($anyNonQual) {
-            return self::status(self::PENDING, 'Registered -- reachability check pending');
+            return self::status(self::PENDING, 'Reachability check pending');
         }
-        return self::status(self::DEGRADED, 'Registered -- not responding to reachability checks');
+        return self::status(self::DEGRADED, 'Not responding to reachability checks');
     }
 
     // =========================================================================
@@ -230,7 +230,7 @@ class Snep_PjsipStatus_Manager {
 
         foreach ($rows as $row) {
             if (!empty($row['disabled'])) {
-                $statuses[$row['id']] = self::status(self::DISABLED, 'Trunk disabled');
+                $statuses[$row['id']] = self::status(self::DISABLED, 'Disabled in configuration');
                 continue;
             }
             if ($row['technology'] === 'PJSIP_EXTERNAL') {
@@ -242,7 +242,7 @@ class Snep_PjsipStatus_Manager {
             if (!empty($row['reverse_auth'])) {
                 $statuses[$row['id']] = self::classifyRegistration($registrations, $objectName, $endpoints);
             } elseif ($endpoints === null) {
-                $statuses[$row['id']] = self::status(self::UNKNOWN, 'Could not query Asterisk runtime state');
+                $statuses[$row['id']] = self::status(self::UNKNOWN, 'Runtime status unavailable');
             } else {
                 $qualifyEnabled = !empty($row['qualify']) && $row['qualify'] !== 'no';
                 $statuses[$row['id']] = self::classifyContact(
@@ -266,7 +266,7 @@ class Snep_PjsipStatus_Manager {
      */
     private static function classifyRegistration($registrations, $objectName, $endpoints) {
         if ($registrations === null) {
-            return self::status(self::UNKNOWN, 'Could not query Asterisk runtime state');
+            return self::status(self::UNKNOWN, 'Runtime status unavailable');
         }
         if (!isset($registrations[$objectName])) {
             // The endpoint may still exist even with no registration
@@ -274,28 +274,33 @@ class Snep_PjsipStatus_Manager {
             // config has not been regenerated/reloaded yet) -- say so
             // precisely rather than a bare "not found".
             if ($endpoints !== null && isset($endpoints[$objectName])) {
-                return self::status(self::UNKNOWN, 'Endpoint loaded, but no outbound registration found -- configuration may not have been applied yet');
+                return self::status(self::UNKNOWN, 'Outbound registration not found yet');
             }
-            return self::status(self::UNKNOWN, 'Not found in Asterisk\'s runtime configuration -- it may not have been applied yet');
+            return self::status(self::UNKNOWN, 'Not yet present in Asterisk runtime');
         }
         $reg = $registrations[$objectName];
         switch ($reg['state']) {
             case 'Registered':
-                return self::status(self::ACTIVE, 'Registered' . ($reg['detail'] !== '' ? ' -- ' . $reg['detail'] : ''));
+                // Healthy: primary ACTIVE badge alone (exp timers stay in CLI).
+                return self::status(self::ACTIVE, '');
             case 'Rejected':
-                return self::status(self::ERROR, 'Registration rejected by the provider' . ($reg['detail'] !== '' ? ' ' . $reg['detail'] : ''));
+                return self::status(self::ERROR, 'Registration rejected by provider');
             case 'Unregistered':
             case 'Registering':
             case 'Request Sent':
             case 'Auth Sent':
-                return self::status(self::PENDING, 'Registering' . ($reg['detail'] !== '' ? ' -- ' . $reg['detail'] : ''));
+                return self::status(self::PENDING, 'Registration in progress');
             case 'Stopped':
                 return self::status(self::INACTIVE, 'Registration stopped');
             default:
                 // A real state Asterisk reported that this parser does
                 // not have a specific bucket for -- never fabricate a
-                // more specific answer than the evidence supports.
-                return self::status(self::UNKNOWN, 'Unrecognized registration state: ' . $reg['state']);
+                // more specific answer than the evidence supports. Log
+                // the raw state; do not put it in operator-facing detail
+                // (TASK-0035E6).
+                error_log('Snep_PjsipStatus_Manager: unrecognized registration state for '
+                    . $objectName . ': ' . $reg['state']);
+                return self::status(self::UNKNOWN, 'Unrecognized registration state');
         }
     }
 
@@ -310,27 +315,15 @@ class Snep_PjsipStatus_Manager {
      */
     private static function classifyExternal($endpoints, $externalEndpointName) {
         if ($endpoints === null) {
-            return self::status(self::UNKNOWN, 'Could not query Asterisk runtime state');
+            return self::status(self::UNKNOWN, 'Runtime status unavailable');
         }
         if (!isset($endpoints[$externalEndpointName])) {
-            return self::status(self::ERROR, "External endpoint '$externalEndpointName' not found in Asterisk -- verify it is provisioned outside SENMA");
+            // Name is useful operationally (operator must verify outside
+            // SENMA) but keep one short line — no long provisioning essay.
+            return self::status(self::ERROR, 'External endpoint not found in Asterisk');
         }
-        $contacts = $endpoints[$externalEndpointName]['contacts'];
-        if (count($contacts) === 0) {
-            return self::status(self::ACTIVE, 'External endpoint present (SENMA does not manage its configuration)');
-        }
-        $avail = false;
-        foreach ($contacts as $c) {
-            if ($c['status'] === 'Avail') {
-                $avail = true;
-            }
-        }
-        return self::status(
-            self::ACTIVE,
-            $avail
-                ? 'External endpoint present and reachable (SENMA does not manage its configuration)'
-                : 'External endpoint present, contact reachability unconfirmed (SENMA does not manage its configuration)'
-        );
+        // Existence-only observation for pjsip_external: healthy → empty detail.
+        return self::status(self::ACTIVE, '');
     }
 
     // =========================================================================

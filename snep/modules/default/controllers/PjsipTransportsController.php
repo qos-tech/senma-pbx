@@ -484,7 +484,8 @@ class PjsipTransportsController extends Zend_Controller_Action {
     protected function normalizeStatus($rawState) {
         switch ($rawState) {
             case 'active':
-                return array('state' => Snep_PjsipStatus_Manager::ACTIVE, 'detail' => $this->view->translate("Asterisk currently has this transport loaded, matching its saved configuration."));
+                // TASK-0035E6: healthy ACTIVE — primary badge alone.
+                return array('state' => Snep_PjsipStatus_Manager::ACTIVE, 'detail' => '');
             case 'restart_required':
                 return array('state' => Snep_PjsipStatus_Manager::PENDING, 'detail' => $this->view->translate("Configuration saved; Asterisk restart required to apply."));
             case 'disabled':
