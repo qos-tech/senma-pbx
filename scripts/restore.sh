@@ -290,6 +290,27 @@ fi
 step "restoring snep/includes/setup.conf" cp "$STAGE_DIR/fs/setup.conf" "$REPO_ROOT/snep/includes/setup.conf"
 step "restoring snep/arquivos/" bash -c "tar xzf '$STAGE_DIR/fs/arquivos.tar.gz' -C '$REPO_ROOT/snep'"
 
+# TASK-0035E8: re-apply directory-level recording contract after restore.
+# Directory only -- do not recursively rewrite a restored archive.
+# GID 3000 is senma-config (pinned in both images). Mode 2770 setgid.
+restore_recording_dir_contract() {
+    local dir="$REPO_ROOT/snep/arquivos"
+    mkdir -p "$dir"
+    # Prefer named group inside a throwaway rootful helper when available;
+    # fall back to numeric GID 3000 on the host.
+    if ! chgrp 3000 "$dir" 2>/dev/null; then
+        blib_log "WARNING: could not chgrp 3000 on $dir -- containers will retry via app entrypoint"
+    fi
+    chmod 2770 "$dir" || blib_die "cannot chmod 2770 on restored recording directory $dir"
+    local mode
+    mode="$(stat -c '%a' "$dir" 2>/dev/null || echo '')"
+    local other=$((8#${mode} % 8))
+    if [ "$((other & 2))" -ne 0 ]; then
+        blib_die "restored recording directory $dir is world-writable (mode $mode)"
+    fi
+}
+step "applying recording directory permissions" restore_recording_dir_contract
+
 # =====================================================================
 # Phase E -- restore Docker-managed volumes via a throwaway container
 # using the real `asterisk` service's own image/mounts (same pattern

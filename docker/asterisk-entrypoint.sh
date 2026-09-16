@@ -471,6 +471,47 @@ if [ -f "$ASTERISK_ETC/manager.conf" ]; then
     fi
 fi
 
+# TASK-0035E8: shared recording store must be mounted and writable by
+# asterisk before MixMonitor runs. App entrypoint owns directory-level
+# chown/chmod (root); this container runs as USER asterisk and only
+# verifies the contract. Prefer /var/spool/asterisk/monitor (bind of
+# host ./snep/arquivos); path_voz is the same host dir via override mount.
+RECORDING_MONITOR=/var/spool/asterisk/monitor
+RECORDING_PATH_VOZ=/var/www/html/snep/arquivos
+if [ ! -d "$RECORDING_MONITOR" ]; then
+    echo "[asterisk-entrypoint] ERROR: recording monitor path missing: $RECORDING_MONITOR (expected bind of ./snep/arquivos)" >&2
+    exit 1
+fi
+# Bounded wait: compose depends_on app service_started can race the app
+# entrypoint's first-lines chown/chmod. Poll up to 60s for writability.
+_recording_ready=0
+for _i in $(seq 1 60); do
+    if [ -w "$RECORDING_MONITOR" ]; then
+        _recording_ready=1
+        break
+    fi
+    sleep 1
+done
+if [ "$_recording_ready" != "1" ]; then
+    echo "[asterisk-entrypoint] ERROR: recording monitor path not writable by asterisk after 60s: $RECORDING_MONITOR -- app entrypoint must initialize ownership (www-data:senma-config mode 2770)" >&2
+    exit 1
+fi
+if [ -d "$RECORDING_PATH_VOZ" ] && [ ! -w "$RECORDING_PATH_VOZ" ]; then
+    echo "[asterisk-entrypoint] ERROR: path_voz recording path not writable: $RECORDING_PATH_VOZ" >&2
+    exit 1
+fi
+# Defense: refuse world-writable recording store.
+_mon_mode="$(stat -c '%a' "$RECORDING_MONITOR" 2>/dev/null || echo '')"
+if [ -n "$_mon_mode" ]; then
+    _mon_other=$((8#${_mon_mode} % 8))
+    if [ "$((_mon_other & 2))" -ne 0 ]; then
+        echo "[asterisk-entrypoint] ERROR: recording monitor $RECORDING_MONITOR is world-writable (mode $_mon_mode) -- refused" >&2
+        exit 1
+    fi
+fi
+# New MixMonitor files should be group-readable by senma-config (www-data).
+umask 0007
+
 # TASK-0033D: bounded-growth watcher for /var/log/asterisk/{full,queue_log}
 # -- no cron/systemd exists in this image, so this is backgrounded here
 # as a sibling process to Asterisk (still under this container's PID 1

@@ -186,6 +186,20 @@ if ($lastuserfield['data'] === "") {
 
 $recordPath = realpath($config->ambiente->path_voz).date("/Y-m-d");
 
+# TASK-0035E8: MixMonitor needs the dated subdirectory to exist. Create
+# it with group-writable mode so setgid on snep/arquivos keeps senma-config
+# ownership for app read/delete. Prefer monitor spool when that path is
+# the writable shared mount (same host ./snep/arquivos).
+$monitorRoot = '/var/spool/asterisk/monitor';
+if (is_dir($monitorRoot) && is_writable($monitorRoot)) {
+    $recordPath = $monitorRoot . date("/Y-m-d");
+}
+if (!is_dir($recordPath)) {
+    if (!@mkdir($recordPath, 0770, true) && !is_dir($recordPath)) {
+        $log->err("Cannot create recording directory: {$recordPath}");
+    }
+}
+
 if($config->general->record->format){
   $recordFormat = $config->general->record->format;
 }else{

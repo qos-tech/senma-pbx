@@ -1,6 +1,36 @@
 #!/bin/bash
 set -euo pipefail
 
+# TASK-0035E8: shared call-recording directory contract. Must run first so
+# Asterisk (depends_on app service_started) finds ./snep/arquivos writable
+# via /var/spool/asterisk/monitor and path_voz. Directory-level only --
+# never recursively rewrite a customer recording archive.
+#
+# Model: owner www-data, group senma-config (GID 3000, shared with
+# asterisk), mode 2770 (setgid). Asterisk writes via group; app reads/
+# deletes via owner+group. No 0777.
+SENMA_CONFIG_GROUP=senma-config
+RECORDING_DIR=/var/www/html/snep/arquivos
+if ! mkdir -p "$RECORDING_DIR"; then
+    echo "[entrypoint] ERROR: cannot create recording directory $RECORDING_DIR" >&2
+    exit 1
+fi
+if ! chown www-data:"$SENMA_CONFIG_GROUP" "$RECORDING_DIR"; then
+    echo "[entrypoint] ERROR: cannot set owner/group on $RECORDING_DIR (www-data:${SENMA_CONFIG_GROUP})" >&2
+    exit 1
+fi
+if ! chmod 2770 "$RECORDING_DIR"; then
+    echo "[entrypoint] ERROR: cannot set mode 2770 on $RECORDING_DIR" >&2
+    exit 1
+fi
+# Refuse world-writable recording store (other-write bit).
+_mode="$(stat -c '%a' "$RECORDING_DIR" 2>/dev/null || echo '000')"
+_other=$((8#${_mode} % 8))
+if [ "$((_other & 2))" -ne 0 ]; then
+    echo "[entrypoint] ERROR: recording directory $RECORDING_DIR is world-writable (mode $_mode) -- refused" >&2
+    exit 1
+fi
+
 SETUP_CONF=/var/www/html/snep/includes/setup.conf
 SETUP_CONF_DIST=/var/www/html/snep/includes/setup.conf.dist
 

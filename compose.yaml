@@ -87,19 +87,11 @@ services:
     depends_on:
       db:
         condition: service_healthy
-      # TASK-0033E: deliberately NOT `condition: service_healthy`.
-      # `app` has no HARD startup dependency on Asterisk being READY --
-      # docker/entrypoint.sh's own bootstrap (setup.conf generation,
-      # bootstrap-admin.php) only ever touches the database, and
-      # TASK-0029B already established (and this task preserves) that
-      # the application degrades gracefully when Asterisk/AMI is
-      # unavailable (runtime status -> UNKNOWN, admin UI stays usable)
-      # rather than being unusable. `service_started` keeps a sane
-      # default container-start ORDER for `make up` without coupling
-      # app's own readiness to Asterisk's, matching docs/tasks/
-      # 0033e-readiness-contract-hardening.md APP -> ASTERISK GATE.
-      asterisk:
-        condition: service_started
+      # TASK-0035E8: deliberately NOT waiting on asterisk. App entrypoint
+      # initializes the shared recording directory (./snep/arquivos) as
+      # root before Asterisk starts; asterisk depends_on app
+      # service_started for that ordering. App still degrades gracefully
+      # when AMI is unavailable (TASK-0029B / TASK-0033E).
     healthcheck:
       # TASK-0033E: replaces a bare `curl -f http://localhost/` (proved
       # only that Apache answers a socket, not that PHP bootstrapped or
@@ -182,6 +174,15 @@ services:
       # asterisk.conf points at /var/www/html/snep/agi. Read-only: this
       # container executes AGI scripts, it does not author them.
       - ./snep:/var/www/html/snep:ro
+      # TASK-0035E8: shared call-recording store. Host canonical path is
+      # ./snep/arquivos (single persistent recording directory; already
+      # covered by backup/restore). Mapped to Asterisk's monitor spool so
+      # MixMonitor writes land on the same host files the app serves via
+      # path_voz. The second mount overrides the :ro ./snep tree for the
+      # recording subtree only -- AGI still resolves path_voz under
+      # /var/www/html/snep/arquivos, and both views share one inode.
+      - ./snep/arquivos:/var/spool/asterisk/monitor
+      - ./snep/arquivos:/var/www/html/snep/arquivos
     # AMI (5038) is container-to-container only -- no host port published,
     # per TASK-0005's explicit instruction.
     depends_on:
@@ -207,6 +208,12 @@ services:
         # -- it does not change the DEGRADED-not-NOT_READY classification
         # of ODBC at runtime, it only removes a bad *initial* connection
         # attempt at Asterisk startup.
+      # TASK-0035E8: app entrypoint (root) initializes ./snep/arquivos
+      # ownership/mode before Asterisk must write recordings. service_started
+      # only -- not healthy -- so a slow app healthcheck cannot block
+      # Asterisk; recording-dir init runs early in docker/entrypoint.sh.
+      app:
+        condition: service_started
     healthcheck:
       # TASK-0033E: replaces `asterisk -rx "core show version"` alone --
       # TASK-0028V proved live that the CLI answers before res_pjsip.so
