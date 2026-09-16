@@ -238,13 +238,14 @@ log "==> queues"
 check "queues" "GET" "/index.php/default/queues" "-" "200" 'var controller = "queues"' "normal"
 
 log "==> systemstatus"
-# TASK-0006A fixed the loopback linfo request (127.0.0.1:80, not
-# SERVER_PORT); TASK-0006B fixed Asterisk_AMI::wait_response() to parse
-# Asterisk 22's Output:-framed Command responses. The marker below is the
-# real, AMI-derived Asterisk version string -- not just HTTP 200 -- so this
-# only passes when the full AMI round-trip genuinely works, matching the
-# exact Asterisk version pinned in docker/asterisk.Dockerfile. See
-# docs/tasks/0006-systemstatus-runtime.md.
+# TASK-0034I-R1: SystemstatusController collects host metrics via local
+# /proc (Snep_SystemStatus_HostResources), not a Zend_Http_Client self-call
+# to 127.0.0.1:80/lib/linfo (that stale loopback broke under TASK-0035E2
+# host networking where Apache listens on APACHE_HTTP_PORT, pilot default
+# 8080). TASK-0006B still covers AMI Output:-framed Command responses.
+# The marker below is the real AMI-derived Asterisk version string.
+# See docs/tasks/0006-systemstatus-runtime.md and
+# docs/tasks/0034i-system-status-dependency-runtime-resource-closure.md.
 check "systemstatus" "GET" "/index.php/default/systemstatus" "-" "200" 'Asterisk - 22.11.0' "normal"
 
 log "==> reports"

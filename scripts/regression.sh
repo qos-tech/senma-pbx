@@ -277,6 +277,13 @@ run_suite "asterisk-runtime-storage-smoke" "asterisk-runtime-storage-smoke-test.
 # own TEST_PASSWORD convention), and toggles only the empty, test-owned
 # MOH directory this task provisions -- never real customer content.
 run_suite "system-status-runtime-smoke" "system-status-runtime-smoke-test.sh"
+# TASK-0034I-R1: System Status dashboard (SystemstatusController) — placed
+# immediately after the Inspector suite. Covers removal of the stale
+# 127.0.0.1:80 linfo self-call, HostResources /proc collection, disclosure
+# containment, active-call UNKNOWN / restart safety copy, and the pilot
+# :8080 topology contract. See scripts/systemstatus-dashboard-smoke-test.sh
+# and docs/tasks/0034i-system-status-dependency-runtime-resource-closure.md.
+run_suite "systemstatus-dashboard-smoke" "systemstatus-dashboard-smoke-test.sh"
 # TASK-0033A: lightweight, non-destructive backup/restore validation --
 # placed after restart-smoke (both are infra/lifecycle-adjacent rather
 # than a specific controller's CRUD flow) and before the external-*
