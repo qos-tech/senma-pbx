@@ -39,6 +39,56 @@ log() { harness_log "$@"; }
 log "==> checking required containers"
 harness_require_containers app asterisk db
 
+# TASK-0035E11: capture live astdb owner/mode/hash BEFORE backup so we can
+# prove the backup path does not mutate the runtime file.
+LIVE_ASTDB_PRESENT=0
+LIVE_ASTDB_MODE=""
+LIVE_ASTDB_OWNER=""
+LIVE_ASTDB_HASH=""
+if LIVE_META="$($COMPOSE exec -T asterisk sh -c 'if test -f /var/lib/asterisk/astdb.sqlite3; then stat -c "%a %u:%g" /var/lib/asterisk/astdb.sqlite3; sha256sum /var/lib/asterisk/astdb.sqlite3; else echo ABSENT; fi' 2>/dev/null | tr -d '\r')"; then
+    if printf '%s' "$LIVE_META" | grep -q '^ABSENT'; then
+        harness_ok "live astdb optional baseline" "astdb.sqlite3 absent (optional component)"
+    else
+        LIVE_ASTDB_PRESENT=1
+        LIVE_ASTDB_MODE="$(printf '%s\n' "$LIVE_META" | sed -n '1p' | awk '{print $1}')"
+        LIVE_ASTDB_OWNER="$(printf '%s\n' "$LIVE_META" | sed -n '1p' | awk '{print $2}')"
+        LIVE_ASTDB_HASH="$(printf '%s\n' "$LIVE_META" | sed -n '2p' | awk '{print $1}')"
+        harness_ok "live astdb baseline captured" "mode=${LIVE_ASTDB_MODE} owner=${LIVE_ASTDB_OWNER} hash=${LIVE_ASTDB_HASH:0:12}..."
+    fi
+else
+    harness_blocked "could not query live /var/lib/asterisk/astdb.sqlite3 via asterisk container"
+fi
+
+# TASK-0035E11: isolated staged-copy proof (mirrors backup.sh copy_astdb).
+# Proves the host assembler UID can read the staged file after chmod 0644,
+# and that the staged checksum matches the live source — without mutating
+# the live file.
+if [ "$LIVE_ASTDB_PRESENT" = 1 ]; then
+    STAGE_PROOF="$(mktemp -d)"
+    harness_register_best_effort_cleanup "astdb staging proof dir" "rm -rf '$STAGE_PROOF'"
+    mkdir -p "$STAGE_PROOF/fs"
+    chmod 0777 "$STAGE_PROOF/fs"
+    if $COMPOSE run --rm --no-deps -T \
+        -v "$STAGE_PROOF/fs:/backup-output" \
+        --entrypoint sh asterisk -c \
+        'if test -f /var/lib/asterisk/astdb.sqlite3; then cp /var/lib/asterisk/astdb.sqlite3 /backup-output/astdb.sqlite3 && chmod 0644 /backup-output/astdb.sqlite3; else exit 2; fi' >&2; then
+        STAGED_MODE="$(stat -c '%a' "$STAGE_PROOF/fs/astdb.sqlite3" 2>/dev/null || true)"
+        STAGED_HASH="$(sha256sum "$STAGE_PROOF/fs/astdb.sqlite3" 2>/dev/null | awk '{print $1}')"
+        if [ "$STAGED_MODE" = "644" ]; then
+            harness_ok "staged astdb mode host-readable" "mode 644"
+        else
+            harness_bad "staged astdb mode host-readable" "expected mode 644, got '$STAGED_MODE'"
+        fi
+        if [ -n "$STAGED_HASH" ] && [ "$STAGED_HASH" = "$LIVE_ASTDB_HASH" ]; then
+            harness_ok "staged astdb checksum matches live" "sha256 match"
+        else
+            harness_bad "staged astdb checksum matches live" "live=${LIVE_ASTDB_HASH:-empty} staged=${STAGED_HASH:-unreadable}"
+        fi
+    else
+        harness_bad "staged astdb copy+chmod" "compose run copy_astdb analogue failed"
+    fi
+fi
+
 TMP_DEST="$(mktemp -d)"
 harness_register_best_effort_cleanup "temp backup destination" "rm -rf '$TMP_DEST'"
 
@@ -69,6 +119,41 @@ if [ "$ARCHIVE_MODE" = "600" ]; then
     harness_ok "artifact permissions restrictive" "mode 600"
 else
     harness_bad "artifact permissions restrictive" "expected mode 600, got '$ARCHIVE_MODE'"
+fi
+
+# TASK-0035E11: live astdb must be byte-identical (mode/owner/hash) after backup.
+if [ "$LIVE_ASTDB_PRESENT" = 1 ]; then
+    AFTER_META="$($COMPOSE exec -T asterisk sh -c 'stat -c "%a %u:%g" /var/lib/asterisk/astdb.sqlite3; sha256sum /var/lib/asterisk/astdb.sqlite3' 2>/dev/null | tr -d '\r')"
+    AFTER_MODE="$(printf '%s\n' "$AFTER_META" | sed -n '1p' | awk '{print $1}')"
+    AFTER_OWNER="$(printf '%s\n' "$AFTER_META" | sed -n '1p' | awk '{print $2}')"
+    AFTER_HASH="$(printf '%s\n' "$AFTER_META" | sed -n '2p' | awk '{print $1}')"
+    if [ "$AFTER_MODE" = "$LIVE_ASTDB_MODE" ] && [ "$AFTER_OWNER" = "$LIVE_ASTDB_OWNER" ] && [ "$AFTER_HASH" = "$LIVE_ASTDB_HASH" ]; then
+        harness_ok "live astdb unchanged by backup" "mode/owner/hash identical"
+    else
+        harness_bad "live astdb unchanged by backup" "before=${LIVE_ASTDB_MODE}/${LIVE_ASTDB_OWNER}/${LIVE_ASTDB_HASH} after=${AFTER_MODE}/${AFTER_OWNER}/${AFTER_HASH}"
+    fi
+
+    ASTDB_ENTRIES="$(tar -tzf "$ARCHIVE" | grep -E 'astdb\.sqlite3$' | wc -l | tr -d ' ')"
+    if [ "$ASTDB_ENTRIES" = "1" ]; then
+        harness_ok "final archive astdb entry once" "$(tar -tzf "$ARCHIVE" | grep -E 'astdb\.sqlite3$')"
+    else
+        harness_bad "final archive astdb entry once" "expected exactly 1 astdb.sqlite3 path, got $ASTDB_ENTRIES"
+    fi
+fi
+
+# TASK-0035E11: static security — no broad permission weakening in backup.sh.
+if grep -nE 'chmod[[:space:]]+-R[[:space:]]+777|chmod[[:space:]]+666|chmod[[:space:]]+-R[[:space:]]+666' "$SCRIPT_DIR/backup.sh"; then
+    harness_bad "no broad permission weakening in backup.sh" "found recursive 777 / mode 666 pattern"
+else
+    # The intentional STAGE_DIR/fs chmod 0777 (container write into host mount)
+    # and staged astdb 0644 remain; neither is world-writable file recursion.
+    harness_ok "no broad permission weakening in backup.sh" "no chmod -R 777 / 666"
+fi
+if grep -q 'chmod 0644 /backup-output/astdb.sqlite3' "$SCRIPT_DIR/backup.sh" \
+    && ! grep -q 'chmod 0644 /var/lib/asterisk/astdb.sqlite3' "$SCRIPT_DIR/backup.sh"; then
+    harness_ok "astdb chmod scoped to staged copy only" "0644 only under /backup-output"
+else
+    harness_bad "astdb chmod scoped to staged copy only" "missing staged chmod or live-path chmod present"
 fi
 
 log "==> validating the good archive (restore.sh --validate-only)"
