@@ -45,8 +45,22 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 # shellcheck source=lib/backup-lib.sh
 source "$SCRIPT_DIR/lib/backup-lib.sh"
+# shellcheck source=lib/compose-runtime.sh
+source "$SCRIPT_DIR/lib/compose-runtime.sh"
 
-COMPOSE="${SMOKE_COMPOSE:-docker compose}"
+# TASK-0035E5/E4A: resolve topology (pilot host vs bridge) the same way
+# restore does, then refuse missing release images before any compose-run.
+if [ -n "${SMOKE_COMPOSE:-}" ] || [ -n "${COMPOSE_FILES:-}" ] \
+   || [ -n "${SENMA_RUNTIME_MODE:-}" ] || [ -n "${RESTORE_RUNTIME_MODE:-}" ] \
+   || { [ -n "${RELEASE_VERSION:-}" ] && [ "${RELEASE_VERSION}" != "dev" ]; }; then
+    senma_resolve_compose_runtime || blib_die "backup aborted: runtime topology could not be selected safely"
+else
+    COMPOSE="${SMOKE_COMPOSE:-docker compose}"
+    SENMA_RUNTIME_MODE=bridge
+    export COMPOSE SENMA_RUNTIME_MODE
+fi
+senma_require_runtime_images || blib_die "backup aborted: required runtime images are not present locally (see above)"
+
 DEST="${REPO_ROOT}/backups"
 
 while [ $# -gt 0 ]; do
@@ -149,7 +163,7 @@ step "archiving snep/arquivos/" tar_arquivos || true
 #        the real `asterisk` service's own image/user/mounts, entrypoint
 #        overridden so the real bootstrap logic never runs) -----------------
 tar_asterisk_etc() {
-    $COMPOSE run --rm --no-deps -T \
+    senma_compose_run --rm --no-deps -T \
         -v "$STAGE_DIR/fs:/backup-output" \
         --entrypoint sh asterisk -c \
         'tar czf /backup-output/asterisk-etc.tar.gz -C /etc/asterisk .'
@@ -158,7 +172,7 @@ step "archiving asterisk-etc volume" tar_asterisk_etc || true
 
 # --- 5. astdb.sqlite3 (named volume, single file) ---------------------------
 copy_astdb() {
-    $COMPOSE run --rm --no-deps -T \
+    senma_compose_run --rm --no-deps -T \
         -v "$STAGE_DIR/fs:/backup-output" \
         --entrypoint sh asterisk -c \
         'test -f /var/lib/asterisk/astdb.sqlite3 && cp /var/lib/asterisk/astdb.sqlite3 /backup-output/astdb.sqlite3 || echo "[backup] astdb.sqlite3 not present yet -- skipping (not fatal, Asterisk creates it lazily)"'
@@ -176,7 +190,7 @@ step "copying astdb.sqlite3" copy_astdb || true
 # (asterisk container not yet recreated with the fixed entrypoint) will
 # not have this directory yet, which is not a backup failure.
 tar_asterisk_moh() {
-    $COMPOSE run --rm --no-deps -T \
+    senma_compose_run --rm --no-deps -T \
         -v "$STAGE_DIR/fs:/backup-output" \
         --entrypoint sh asterisk -c \
         'test -d /var/lib/asterisk/moh && tar czf /backup-output/asterisk-moh.tar.gz -C /var/lib/asterisk/moh . || echo "[backup] /var/lib/asterisk/moh not present yet -- skipping (asterisk container needs recreating with the TASK-0034I image)"'
@@ -193,7 +207,7 @@ step "archiving /var/lib/asterisk/moh" tar_asterisk_moh || true
 # living in the exact same per-language directories without a metadata
 # scheme this task does not introduce).
 tar_asterisk_sounds() {
-    $COMPOSE run --rm --no-deps -T \
+    senma_compose_run --rm --no-deps -T \
         -v "$STAGE_DIR/fs:/backup-output" \
         --entrypoint sh asterisk -c \
         'test -d /var/lib/asterisk/sounds && tar czf /backup-output/asterisk-sounds.tar.gz -C /var/lib/asterisk/sounds . || echo "[backup] /var/lib/asterisk/sounds not present yet -- skipping (asterisk container needs recreating with the TASK-0034I image)"'
