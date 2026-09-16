@@ -153,9 +153,15 @@ copy_setup_conf() {
 }
 step "copying snep/includes/setup.conf" copy_setup_conf || true
 
-# --- 3. arquivos/ (host bind mount, tar) ------------------------------------
+# --- 3. arquivos/ (host bind mount; tar via app container) -----------------
+# TASK-0035E8: directory mode 2770 (www-data:senma-config) means an
+# unprivileged host user cannot read the tree. Archive through the app
+# service (same path_voz mount) instead of host-side tar.
 tar_arquivos() {
-    tar czf "$STAGE_DIR/fs/arquivos.tar.gz" -C "$REPO_ROOT/snep" arquivos
+    senma_compose_run --rm --no-deps -T \
+        -v "$STAGE_DIR/fs:/backup-output" \
+        --entrypoint sh app -c \
+        'tar czf /backup-output/arquivos.tar.gz -C /var/www/html/snep arquivos'
 }
 step "archiving snep/arquivos/" tar_arquivos || true
 
