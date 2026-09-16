@@ -61,6 +61,7 @@ log "==> asserting every mandatory check name is present"
 MANDATORY_CHECKS=(
     "Docker daemon" "Container: app" "Container: asterisk" "Container: db"
     "Database reachable" "Application DB authentication" "Expected schema present"
+    "Administrator account" "Bootstrap admin secret file"
     "Application HTTP reachable" "Application renders login page"
     "Asterisk CLI reachable" "Asterisk console logger" "PJSIP module loaded" "Asterisk HTTP/WS backend" "AMI reachable"
     "PJSIP configuration" "Secrets" "Host disk free space" "Named volume usage"

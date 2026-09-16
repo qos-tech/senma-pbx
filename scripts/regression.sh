@@ -141,6 +141,10 @@ run_suite "session-csrf-security"  "session-csrf-security-smoke-test.sh"
 # first, don't let it hide behind an unrelated authorization failure"
 # reason session-csrf-security's own placement comment gives.
 run_suite "auth-hardening-security" "auth-hardening-security-smoke-test.sh"
+# TASK-0035E9: secure initial admin bootstrap (secret file, idempotency,
+# existing-admin/restore non-reset). Immediately after auth-hardening so
+# F27 regressions surface before broader authorization suites.
+run_suite "admin-bootstrap" "admin-bootstrap-smoke-test.sh"
 # TASK-0035E1: trusted reverse-proxy client IP for login throttle.
 # Placed immediately after auth-hardening-security (same F22 throttle
 # surface; proves attribution when behind an explicitly trusted proxy).

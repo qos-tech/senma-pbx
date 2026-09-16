@@ -534,8 +534,11 @@ fi
 
 # 22. The bootstrap mechanism is enforced, end to end: the sentinel
 # cannot authenticate as anything, and re-running the real bootstrap
-# script replaces it with a freshly generated, working credential.
+# script replaces it with a freshly generated, working credential
+# persisted only in secrets/bootstrap-admin-password (TASK-0035E9).
 db_query "UPDATE users SET password='!SENMA-BOOTSTRAP-PENDING!' WHERE name='${ADMIN_USER}';" >/dev/null
+rm -f "$REPO_ROOT/secrets/bootstrap-admin-password"
+harness_register_best_effort_cleanup "bootstrap secret leftover" "rm -f '$REPO_ROOT/secrets/bootstrap-admin-password'"
 SENTINEL_JAR="$(mktemp)"
 harness_register_best_effort_cleanup "sentinel-state cookie jar" "rm -f '$SENTINEL_JAR'"
 code_a="$(request "$SENTINEL_JAR" POST /index.php/auth/login "user=${ADMIN_USER}&password=admin123")"
@@ -548,11 +551,22 @@ else
 fi
 
 BOOTSTRAP_OUTPUT="$(app_exec "php /usr/local/bin/bootstrap-admin.php" 2>&1)"
-GENERATED_PASSWORD="$(printf '%s' "$BOOTSTRAP_OUTPUT" | grep 'password:' | sed -E 's/.*password: *//' | tr -d '\r')"
-if [ -z "$GENERATED_PASSWORD" ]; then
-    harness_bad "22b: bootstrap-admin.php generates and prints a fresh credential" "no password line found in output: $(printf '%s' "$BOOTSTRAP_OUTPUT" | head -c 300)"
+SECRET_FILE="$REPO_ROOT/secrets/bootstrap-admin-password"
+GENERATED_PASSWORD=""
+if [ ! -f "$SECRET_FILE" ]; then
+    harness_bad "22b: bootstrap-admin.php persists credential to secrets/" "secret missing; output: $(printf '%s' "$BOOTSTRAP_OUTPUT" | head -c 300)"
+elif printf '%s' "$BOOTSTRAP_OUTPUT" | grep -qiE 'password:[[:space:]]*[0-9a-f]{16,}'; then
+    harness_bad "22b: bootstrap-admin.php must not print plaintext password" "plaintext appears in output: $(printf '%s' "$BOOTSTRAP_OUTPUT" | head -c 300)"
+elif ! printf '%s' "$BOOTSTRAP_OUTPUT" | grep -q 'SENMA initial administrator credentials created'; then
+    harness_bad "22b: bootstrap-admin.php announces path-only success" "unexpected output: $(printf '%s' "$BOOTSTRAP_OUTPUT" | head -c 300)"
 else
-    harness_ok "22b: bootstrap-admin.php generates and prints a fresh credential" "credential printed to stdout, ${#GENERATED_PASSWORD} characters"
+    GENERATED_PASSWORD="$(tr -d '\r\n' < "$SECRET_FILE")"
+    MODE="$(stat -c '%a' "$SECRET_FILE" 2>/dev/null || stat -f '%OLp' "$SECRET_FILE")"
+    if [ "${#GENERATED_PASSWORD}" -ge 32 ] && [ "$MODE" = "600" ]; then
+        harness_ok "22b: bootstrap-admin.php persists secret (0600, no log plaintext)" "mode=$MODE len=${#GENERATED_PASSWORD}"
+    else
+        harness_bad "22b: bootstrap-admin.php persists secret (0600, no log plaintext)" "mode=$MODE len=${#GENERATED_PASSWORD}"
+    fi
 fi
 BOOTSTRAP_JAR="$(mktemp)"
 harness_register_best_effort_cleanup "bootstrap-generated cookie jar" "rm -f '$BOOTSTRAP_JAR'"
@@ -564,11 +578,15 @@ else
 fi
 # Idempotency: running it again while already bootstrapped must not
 # regenerate/print a new credential.
+FIRST_SECRET="$GENERATED_PASSWORD"
 REPLAY_OUTPUT="$(app_exec "php /usr/local/bin/bootstrap-admin.php" 2>&1)"
-if ! printf '%s' "$REPLAY_OUTPUT" | grep -q 'password:'; then
+SECOND_SECRET="$(tr -d '\r\n' < "$SECRET_FILE" 2>/dev/null || true)"
+if ! printf '%s' "$REPLAY_OUTPUT" | grep -qiE 'password:[[:space:]]*[0-9a-f]{16,}' \
+    && ! printf '%s' "$REPLAY_OUTPUT" | grep -q 'SENMA initial administrator credentials created' \
+    && [ "$FIRST_SECRET" = "$SECOND_SECRET" ]; then
     harness_ok "22d: bootstrap-admin.php is idempotent" "no second credential generated once already bootstrapped"
 else
-    harness_bad "22d: bootstrap-admin.php is idempotent" "unexpected second credential output: $(printf '%s' "$REPLAY_OUTPUT" | head -c 300)"
+    harness_bad "22d: bootstrap-admin.php is idempotent" "unexpected regeneration: $(printf '%s' "$REPLAY_OUTPUT" | head -c 300)"
 fi
 
 ENTRYPOINT_FILE="$REPO_ROOT/docker/entrypoint.sh"
