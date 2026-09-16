@@ -177,11 +177,18 @@ tar_asterisk_etc() {
 step "archiving asterisk-etc volume" tar_asterisk_etc || true
 
 # --- 5. astdb.sqlite3 (named volume, single file) ---------------------------
+# TASK-0035E11: runtime astdb is typically mode 0640 asterisk:asterisk
+# (uid 997). `cp` into the host-mounted STAGE_DIR/fs preserves that mode
+# and owner, so the host-side backup assembler (operator UID, e.g. 1000)
+# cannot sha256sum/tar the staged file ("Permission denied"). chmod 0644
+# applies ONLY to /backup-output/astdb.sqlite3 (the staged copy) — never
+# to the live /var/lib/asterisk/astdb.sqlite3. Final archive remains 0600
+# via blib_secure_path. astdb stays optional when absent.
 copy_astdb() {
     senma_compose_run --rm --no-deps -T \
         -v "$STAGE_DIR/fs:/backup-output" \
         --entrypoint sh asterisk -c \
-        'test -f /var/lib/asterisk/astdb.sqlite3 && cp /var/lib/asterisk/astdb.sqlite3 /backup-output/astdb.sqlite3 || echo "[backup] astdb.sqlite3 not present yet -- skipping (not fatal, Asterisk creates it lazily)"'
+        'if test -f /var/lib/asterisk/astdb.sqlite3; then cp /var/lib/asterisk/astdb.sqlite3 /backup-output/astdb.sqlite3 && chmod 0644 /backup-output/astdb.sqlite3; else echo "[backup] astdb.sqlite3 not present yet -- skipping (not fatal, Asterisk creates it lazily)"; fi'
 }
 step "copying astdb.sqlite3" copy_astdb || true
 
