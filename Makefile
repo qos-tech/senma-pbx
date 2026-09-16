@@ -818,6 +818,12 @@ release-artifact-smoke: ensure-dev-stack
 release-immutability-smoke:
 	@if [ -f .env ]; then set -a; . ./.env; set +a; fi; bash scripts/release-immutability-smoke-test.sh
 
+# TASK-0035E4A / I4: operational compose-run must fail closed when a
+# required image is missing (never pull/build fallback; Compose run has
+# no --no-build — enforced via senma_compose_run preflight).
+operational-compose-run-immutability-smoke: ensure-dev-stack
+	@set -a; . ./.env; set +a; bash scripts/operational-compose-run-immutability-smoke-test.sh
+
 # TASK-0035E5 / I8: restore must preserve pilot/host runtime topology and
 # never silently fall back to bare bridge compose.yaml.
 restore-runtime-topology-smoke:
