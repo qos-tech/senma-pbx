@@ -126,12 +126,15 @@ if [ -d "$AGI_DIR" ]; then
     chmod u+rwX "$AGI_DIR" || true
 fi
 
-# TASK-0026H (F27): idempotent -- only acts while the seeded admin row
-# still holds the install-time sentinel (see
-# snep/install/database/system_data.sql and docker/bootstrap-admin.php's
-# own docblock). Runs on every start, not just first boot, so a database
-# that only just became reachable (or was restored separately from the
-# app container's own first run) still gets bootstrapped.
+# TASK-0026H / TASK-0035E9 (F27): idempotent -- only acts while the
+# seeded admin row still holds the install-time sentinel (see
+# snep/install/database/system_data.sql and docker/bootstrap-admin.php).
+# Runs on every start, not just first boot, so a database that only
+# just became reachable still gets bootstrapped. Plaintext is written
+# only to the bind-mounted ./secrets directory (never to logs).
+# Failure is non-fatal to Apache startup but leaves the sentinel in
+# place when the secret file could not be published -- never a
+# DB-updated / secret-missing lockout from this path.
 php /usr/local/bin/bootstrap-admin.php || echo "[entrypoint] bootstrap-admin.php failed (non-fatal, see above)"
 
 # TASK-0035E2: when host networking (or explicit NAT env) is in use,

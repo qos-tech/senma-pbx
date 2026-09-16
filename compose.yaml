@@ -84,6 +84,12 @@ services:
       # Unix permissions (senma-config group, see asterisk-entrypoint.sh),
       # not by the mount flag, matching the asterisk-etc precedent above.
       - mag-asterisk-var:/var/lib/asterisk
+      # TASK-0035E9: operator-local bootstrap secret directory. Host path
+      # ./secrets (gitignored contents) is the only place the initial
+      # admin plaintext may exist. Not in webroot, not in the image,
+      # not in ordinary backups. See docker/bootstrap-admin.php and
+      # docs/tasks/0035e9-secure-initial-admin-credential-bootstrap.md.
+      - ./secrets:/run/senma/secrets
     depends_on:
       db:
         condition: service_healthy
