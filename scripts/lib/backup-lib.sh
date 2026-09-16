@@ -154,3 +154,103 @@ blib_check_free_space() {
         blib_die "insufficient free space at $dest: ${avail_kb}KB available, ~${required_kb}KB required. Free up space or choose a different destination (backup.sh --dest)."
     fi
 }
+
+# ---------------------------------------------------------------------
+# TASK-0035E12: recording store (snep/arquivos) via app container
+#
+# E8 mode 2770 (www-data:senma-config / GID 3000) intentionally blocks
+# unprivileged host uid from traversing/writing the tree. Backup already
+# archives through the app container; wipe/restore/normalize must follow
+# the same path. Callers MUST source compose-runtime.sh and set COMPOSE
+# (and have senma_compose_run available) before calling these helpers.
+# ---------------------------------------------------------------------
+
+# blib_require_compose_run -- fail closed if senma_compose_run is missing.
+blib_require_compose_run() {
+    if ! command -v senma_compose_run >/dev/null 2>&1; then
+        blib_die "senma_compose_run is required for recording-store operations (source scripts/lib/compose-runtime.sh and set COMPOSE first)"
+    fi
+    if [ -z "${COMPOSE:-}" ]; then
+        blib_die "COMPOSE is not set -- resolve runtime before recording-store operations"
+    fi
+}
+
+# blib_wipe_recording_store -- clear contents of ./snep/arquivos via the
+# app container's bind mount. Keeps the directory inode (bind-mount
+# target); does not chmod/chown the host tree from the host process.
+blib_wipe_recording_store() {
+    blib_require_compose_run
+    # Use bash (image has it): dash rejects bash-style 8# octal arithmetic.
+    senma_compose_run --rm --no-deps -T --entrypoint bash app -c '
+        set -euo pipefail
+        dir=/var/www/html/snep/arquivos
+        mkdir -p "$dir"
+        # Clear contents only -- never remove the mount-point directory.
+        find "$dir" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+        chown www-data:senma-config "$dir"
+        chmod 2770 "$dir"
+    '
+}
+
+# blib_restore_recording_store <arquivos.tar.gz> -- extract archive into
+# /var/www/html/snep (archive top-level prefix is "arquivos/") via the
+# app container, then normalize ownership/modes strictly inside that
+# subtree: directories 2770, files 0660, owner www-data:senma-config.
+blib_restore_recording_store() {
+    local archive="$1"
+    [ -n "$archive" ] && [ -f "$archive" ] || blib_die "blib_restore_recording_store: archive missing: ${archive:-<empty>}"
+    blib_require_compose_run
+    # Mount only the archive directory (read-only) + write through the
+    # service's existing ./snep bind. No docker.sock, no privileged.
+    local archive_dir archive_base
+    archive_dir="$(cd "$(dirname "$archive")" && pwd)"
+    archive_base="$(basename "$archive")"
+    senma_compose_run --rm --no-deps -T \
+        -v "${archive_dir}:/restore-input:ro" \
+        --entrypoint bash app -c "
+        set -euo pipefail
+        umask 0007
+        parent=/var/www/html/snep
+        dir=\"\$parent/arquivos\"
+        mkdir -p \"\$dir\"
+        find \"\$dir\" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+        tar xzf /restore-input/${archive_base} -C \"\$parent\"
+        # Scope recursive normalization to the restored recording subtree
+        # only -- never chown/chmod the rest of ./snep.
+        chown -R www-data:senma-config \"\$dir\"
+        find \"\$dir\" -type d -exec chmod 2770 {} +
+        find \"\$dir\" -type f -exec chmod 0660 {} +
+        # Refuse world-writable recording root (other-write bit).
+        mode=\$(stat -c '%a' \"\$dir\")
+        other=\$((8#\${mode} % 8))
+        if [ \$((other & 2)) -ne 0 ]; then
+            echo \"ERROR: restored recording directory is world-writable (mode \$mode)\" >&2
+            exit 1
+        fi
+        # Refuse world-readable restored files (other-read bit).
+        if find \"\$dir\" -type f -perm -0004 -print -quit | grep -q .; then
+            echo \"ERROR: restored recording tree contains world-readable files\" >&2
+            exit 1
+        fi
+    "
+}
+
+# blib_apply_recording_dir_contract -- directory-level reaffirmation of
+# the E8 contract after restore (root only). Safe if restore already
+# normalized the subtree; keeps recording-storage-smoke's contract marker.
+blib_apply_recording_dir_contract() {
+    blib_require_compose_run
+    senma_compose_run --rm --no-deps -T --entrypoint bash app -c '
+        set -euo pipefail
+        dir=/var/www/html/snep/arquivos
+        mkdir -p "$dir"
+        chown www-data:senma-config "$dir"
+        chmod 2770 "$dir"
+        mode=$(stat -c "%a" "$dir")
+        other=$((8#${mode} % 8))
+        if [ $((other & 2)) -ne 0 ]; then
+            echo "ERROR: recording directory is world-writable (mode $mode)" >&2
+            exit 1
+        fi
+    '
+}
