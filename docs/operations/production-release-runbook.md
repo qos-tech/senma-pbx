@@ -339,14 +339,26 @@ make ami-acl-smoke
 ```
 
 The first application boot generates a one-time admin credential and
-prints it once to container logs:
+stores the plaintext only in the operator-local secret file:
 
 ```bash
-make logs | grep -A2 bootstrap-admin
+# Path-only announcement in logs (never the plaintext):
+make logs | grep -A5 'initial administrator credentials'
+
+# Explicit retrieval (prints plaintext once, on demand):
+make bootstrap-admin-credentials
 ```
 
-**Capture this credential immediately — it is never shown again.** If
-missed, the only recovery path is a direct database credential reset.
+**Capture this credential immediately, log in, change the password, then
+delete the plaintext file:**
+
+```bash
+make bootstrap-admin-credentials-clear
+```
+
+If the secret file is missing and the password was never changed, the
+only recovery path is a direct database credential reset. Normal
+restarts, upgrades, and restores never regenerate the credential.
 
 ## 7. Run migration check
 

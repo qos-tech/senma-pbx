@@ -141,11 +141,17 @@ be updated whenever a change alters any invariant below.
   cannot authenticate under any submitted value.
 - `docker/entrypoint.sh` invokes `docker/bootstrap-admin.php` on every
   container start; the script is idempotent — it only acts while the
-  sentinel is still in place, generating a random 128-bit credential,
-  hashing it, and printing it once to container stdout
-  (`docker compose logs app` / `make logs`).
-- Fresh installs have no usable admin credential until bootstrap runs
-  and its one-time console output is read.
+  sentinel is still in place. It generates a cryptographically random
+  192-bit credential (`random_bytes(24)` / `openssl rand -hex 24`
+  shape), hashes it via `Snep_Security_Password::hash()`, and writes the
+  plaintext **only** to the operator-local file
+  `secrets/bootstrap-admin-password` (mode `0600`, bind-mounted from
+  `./secrets`). Plaintext is never printed to container logs.
+- Operators retrieve the credential explicitly with
+  `make bootstrap-admin-credentials` and may delete the plaintext after
+  first login with `make bootstrap-admin-credentials-clear` (DB hash
+  unchanged).
+- See `docs/tasks/0035e9-secure-initial-admin-credential-bootstrap.md`.
 
 ## Login rate limiting
 
