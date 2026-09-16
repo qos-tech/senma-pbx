@@ -535,3 +535,172 @@ has started or is claimed here.
 ## RECOMMENDATION
 
 `APPROVE_WITH_CONSTRAINTS` -- see checkpoint report's final recommendation and REMAINING DEBT above for the constraints.
+
+---
+
+# TASK-0034I-R1 / Pilot Regression Reopen
+
+**Status:** `SYSTEM_STATUS_RUNTIME_PASS_WITH_CONSTRAINTS`
+**Depends on:** TASK-0034I (Inspector runtime resources), TASK-0006A (historical
+linfo loopback), TASK-0035E2 (host networking), TASK-0035E6 (status-detail UX)
+**Does not:** mutate `v0.1.0-rc.10`, deploy, touch pilot admin, reopen SIP/PJSIP/NAT/TLS
+
+## Pilot evidence (TEXTE-PBX-001)
+
+System Status dashboard rendered a raw exception:
+
+```text
+Zend_Http_Client_Adapter_Exception:
+Unable to Connect to tcp://127.0.0.1:80
+Error #111: Connection refused
+```
+
+Stack included `SystemstatusController->indexAction()`.
+
+Supported pilot runtime after TASK-0035E2:
+
+| Service | Bind |
+|---|---|
+| Apache / SENMA HTTP | `*:8080` |
+| Asterisk HTTP/WS | `127.0.0.1:8088` |
+| AMI | `127.0.0.1:5038` |
+| MariaDB | `127.0.0.1:3306` |
+
+Any fixed assumption that SENMA is reachable at `127.0.0.1:80` is stale under
+host networking.
+
+## Exact failing call
+
+`snep/modules/default/controllers/SystemstatusController.php` (pre-R1):
+
+```php
+$linfoData = new Zend_Http_Client(
+    'http://127.0.0.1:80'
+    . str_replace("/index.php", "", $this->getFrontController()->getBaseUrl())
+    . '/lib/linfo/index.php?out=xml'
+);
+try {
+    $linfoData->request();
+    ...
+} catch (Zend_Http_Client_Exception $ex) {
+    echo $ex;  // raw exception dumped into the HTML fragment
+}
+```
+
+Call chain: browser → `/index.php/default/systemstatus` → `indexAction()` →
+loopback HTTP to linfo XML → used only for uptime (+ historically a broken
+swap override). CPU/RAM/disk already came from local `/proc` / `df`.
+
+## Root cause
+
+- **Why the self-call existed:** legacy SNEP scraped vendored linfo XML for
+  host metrics via HTTP rather than reading `/proc` directly for every field.
+- **Historical port 80:** TASK-0006A correctly observed that under *bridge*
+  Compose, Apache listens on container `:80` and host `MAG_HTTP_PORT` is only
+  a publish map. Hard-coding `127.0.0.1:80` fixed Docker-bridge loopback and
+  avoided trusting `SERVER_PORT` (Host-header spoofable).
+- **Why invalid under E2:** host-network pilot sets `APACHE_HTTP_PORT=8080`
+  (`compose.pilot.yaml`). Apache listens on `*:8080`; nothing listens on `:80`
+  → connection refused → catch echoed the exception into the UI.
+- **Classification:** configuration/topology drift **and** architectural debt
+  (HTTP self-call + `echo $ex` disclosure). Not fixed by merely swapping
+  `:80` → `:8080` (that would reintroduce another scattered port literal and
+  still couple System Status to Apache listen topology).
+
+## Chosen architecture
+
+**C — direct local invocation without HTTP self-call.**
+
+- New helper: `Snep_SystemStatus_HostResources` reads `/proc/uptime` and
+  formats the English uptime phrase the controller already translated.
+- Memory/swap stay on existing `sys_meminfo()` (`/proc/meminfo` +
+  `/proc/swaps`); the linfo swap override (which also swapped free/total) is
+  removed.
+- CPU/disk remain local `/proc/stat` + `df` (unchanged sources).
+- No configurable internal base URL; no Host / X-Forwarded-* derivation; no
+  new port literal in the controller.
+
+### Rejected alternatives
+
+| Option | Rejected because |
+|---|---|
+| A. Configurable internal SENMA base URL | Adds SSRF/trust surface and operator config for a metric that is already local; overkill |
+| B. Topology-derived localhost URL (`APACHE_HTTP_PORT`) | Still an HTTP self-call; duplicates listen-port knowledge; hangs/timeouts remain possible |
+| Keep linfo HTTP with bounded timeouts | Still topology-coupled; disclosure risk remains unless every failure path is perfect |
+
+## Error containment / operator model
+
+- No `echo $ex` / raw Zend / stack / path dumps on the dashboard.
+- Uptime read failure → field shows translated `Unavailable`; rest of page continues.
+- Restart poll JS `.fail` → `applyState({state:'UNAVAILABLE', detail:'Internal status service unavailable.'})` (E6-compatible; clears stale detail).
+- Diagnostic detail may go to `error_log` (uptime miss) without secrets.
+
+## Active calls / restart safety
+
+- `getActiveCallCount()` remains `int|null` (null ≠ fabricated `0`).
+- Template shows “Active call count is currently unavailable.” when null.
+- Immediate/graceful confirms add explicit copy: do not assume idle; graceful
+  still waits on Asterisk-tracked calls.
+- Destructive semantics preserved (explicit confirmations + CSRF + authz).
+
+## Partial degradation
+
+One host-metric failure does not abort distro/kernel/CPU/modules/MySQL/
+Asterisk/restart sections. Disk indicator degrades to Unavailable when no
+partitions are enumerated.
+
+## Tests
+
+- `scripts/systemstatus-dashboard-smoke-test.sh` (new) — static `:80` guard,
+  HostResources fixtures (healthy/empty/malformed/missing/recovery),
+  disclosure guard, pilot `:8080` contract, active-call UNKNOWN + restart
+  safety copy, restart-status JSON, live `/proc` without HTTP.
+- Wired into `Makefile` (`systemstatus-dashboard-smoke`) and
+  `scripts/regression.sh`.
+- Original `system-status-runtime-smoke` (Inspector) retained.
+
+## Pilot validation plan
+
+Do **not** deploy in this task.
+
+Future RC proof on TEXTE-PBX-001 must confirm:
+
+- System Status page renders without stack trace
+- Asterisk Restart section works
+- active-call count correct / UNKNOWN when AMI down
+- modules/resources still render
+- no request to `127.0.0.1:80`
+- failure injection degrades gracefully; recovery clears error state
+
+**`PILOT_SYSTEM_STATUS_PROOF_PENDING`** until real RC validation.
+
+## Separate debt (excluded from 0034I-R1)
+
+**backup staged astdb host-readable fix discovered during validation;
+intentionally excluded from 0034I-R1 scope.**
+
+During the first full regression attempt, `operational-compose-run-immutability`,
+`backup-smoke`, and `restore-runtime-topology` failed/blocked on a
+**pre-existing** host-staging permission issue: runtime
+`/var/lib/asterisk/astdb.sqlite3` is typically `0640 asterisk:asterisk`;
+`scripts/backup.sh` copied that mode into `STAGE_DIR`, so operator-UID
+checksum/tar steps got `Permission denied`. Unrelated to the System Status
+HTTP removal.
+
+A valid minimal fix (staged copy only: `chmod 0644` on
+`/backup-output/astdb.sqlite3` after `cp`; live volume permissions
+unchanged) was prototyped during validation, then **reverted from this
+branch** so it can land as a separate micro-task/PR. Treat any subsequent
+canonical-regression failure limited to that astdb staging symptom as:
+
+`KNOWN_EXTERNAL_GATE_BLOCKER: backup staged astdb host-readable`
+
+## E7 impact
+
+TASK-0035E7 remains paused. Do not mark TASK-0035 closed.
+`v0.1.0-rc.10` must not be mutated. Expected next candidate after merge:
+`v0.1.0-rc.11` (not created here).
+
+## Decision
+
+`SYSTEM_STATUS_RUNTIME_PASS_WITH_CONSTRAINTS`

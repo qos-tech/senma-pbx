@@ -44,11 +44,18 @@
                     </li>
                     <li>
                         <?php
-                        foreach ($this->indexData["space"] as $key => $value){
-                            if (!isset($maior) || $value["percent"] > $maior["percent"]){
-                                $maior = $value;
+                        $maior = null;
+                        if (!empty($this->indexData["space"]) && is_array($this->indexData["space"])) {
+                            foreach ($this->indexData["space"] as $key => $value){
+                                if ($maior === null || $value["percent"] > $maior["percent"]){
+                                    $maior = $value;
+                                }
                             }
                         }
+                        if ($maior === null){
+                            echo "<div class='sn-status-disk statusbar-indicator' style='color:#eccd61;' ></div>";
+                            echo "<span>" . $this->escape($this->translate("Unavailable")) . "</span>";
+                        } else {
                         if ($maior["percent"] <= 50){
                             echo "<div class='sn-status-disk statusbar-indicator' style='color:#96d190;' ></div>";
                         }else if ($maior["percent"] > 50 && $maior["percent"] <= 80){
@@ -58,6 +65,7 @@
                         }
                         ?>
                         <span><?php echo $maior["percent"]; ?></span>
+                        <?php } ?>
                     </li>
                 </ul>
             </div>
@@ -148,12 +156,18 @@
 
                         <div id="restartConfirmGraceful" class="restart-confirm" style="display:none;">
                             <p><?php echo $this->translate("O Asterisk aguardará o fim de todas as chamadas ativas antes de reiniciar. Durante a espera, comandos administrativos podem ficar indisponíveis e a ação não pode ser cancelada."); ?></p>
+                            <?php if ($this->active_call_count === null): ?>
+                            <p><em><?php echo $this->translate("Active call count is currently unavailable. The graceful restart will still wait for any live calls Asterisk is tracking."); ?></em></p>
+                            <?php endif; ?>
                             <button type="button" class="btn btn-primary restart-confirm-btn" data-mode="graceful"><?php echo $this->translate("Confirmar reinício gracioso"); ?></button>
                             <button type="button" class="btn restart-cancel-btn"><?php echo $this->translate("Cancelar"); ?></button>
                         </div>
 
                         <div id="restartConfirmNow" class="restart-confirm" style="display:none;">
                             <p><?php echo $this->translate("Esta ação encerrará imediatamente todas as chamadas ativas e reiniciará o Asterisk agora."); ?></p>
+                            <?php if ($this->active_call_count === null): ?>
+                            <p><em><?php echo $this->translate("Active call count is currently unavailable. Do not assume the system is idle."); ?></em></p>
+                            <?php endif; ?>
                             <button type="button" class="btn btn-danger restart-confirm-btn" data-mode="now"><?php echo $this->translate("Confirmar reinício imediato"); ?></button>
                             <button type="button" class="btn restart-cancel-btn"><?php echo $this->translate("Cancelar"); ?></button>
                         </div>
@@ -476,6 +490,15 @@ if(new_version){
         if (state.state === 'RUNNING' || state.state === 'ERROR') {
           stopPolling();
         }
+      })
+      .fail(function() {
+        // TASK-0034I-R1 / TASK-0035E6: polling failure must replace any
+        // prior detail with a normalized degraded snapshot — never leave
+        // stale prose and never inject raw transport error text.
+        applyState({
+          state: 'UNAVAILABLE',
+          detail: <?php echo json_encode($this->translate('Internal status service unavailable.'), JSON_HEX_TAG | JSON_HEX_AMP | JSON_HEX_APOS | JSON_HEX_QUOT); ?>
+        });
       })
       .always(function() {
         pollInFlight = false;

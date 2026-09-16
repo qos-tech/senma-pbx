@@ -37,7 +37,6 @@ class SystemstatusController extends Zend_Controller_Action {
     const ASTERISK_OPERATIONS_PERMISSION = 'default_asterisk-operations_write';
 
     private $systemInfo = array();
-    private $sysInfo = array() ;
 
     /**
      * indexAction - List information of services
@@ -58,42 +57,30 @@ class SystemstatusController extends Zend_Controller_Action {
           $_SESSION['cloud_noticed'] = true;
         }
 
-    		// TASK-0006: this is a loopback request to the same Apache container,
-    		// not to whatever host/port the browser used to reach us. The
-    		// host-published MAG_HTTP_PORT (e.g. 8080) is a Docker port mapping
-    		// that has no meaning inside the container -- Apache only ever
-    		// listens on 80 here (docker/apache-mag.conf). $_SERVER['SERVER_PORT']
-    		// must not be used either: under Apache's default UseCanonicalName
-    		// Off, it reflects the client's Host header (confirmed: a request
-    		// sent with Host: localhost:9999 made SERVER_PORT report 9999),
-    		// not the server's actual listening port. See
-    		// docs/tasks/0006-systemstatus-runtime.md.
-    		$linfoData = new Zend_Http_Client('http://127.0.0.1:80' . str_replace("/index.php", "", $this->getFrontController()->getBaseUrl()) . '/lib/linfo/index.php?out=xml');
-
-        try {
-            $linfoData->request();
-            $sysInfo = $linfoData->getLastResponse()->getBody();
-            $this->sysInfo = simplexml_load_string($sysInfo);
-        } catch (Zend_Http_Client_Exception $ex) {
-            echo $ex;
+        // TASK-0034I-R1: uptime comes from local /proc/uptime via
+        // Snep_SystemStatus_HostResources. The historical HTTP self-call to
+        // the container-internal default Apache port + vendored linfo XML
+        // endpoint broke under TASK-0035E2 host networking (Apache listens
+        // on APACHE_HTTP_PORT, pilot default 8080 — nothing on the old
+        // bridge-only listen port). Catching that failure used to echo the
+        // raw HTTP client exception into the page. Direct local reads
+        // remove the topology-coupled HTTP dependency and the
+        // SSRF/Host-header surface entirely. See
+        // docs/tasks/0034i-system-status-dependency-runtime-resource-closure.md
+        // (TASK-0034I-R1 section).
+        $uptimePhrase = Snep_SystemStatus_HostResources::uptimePhrase();
+        if ($uptimePhrase === null) {
+            error_log('SystemstatusController: host uptime unavailable (local /proc read failed)');
+            $this->systemInfo['uptime'] = $this->view->translate(Snep_SystemStatus_HostResources::UNAVAILABLE);
+        } else {
+            $view = $this->view;
+            $this->systemInfo['uptime'] = Snep_SystemStatus_HostResources::translateUptimePhrase(
+                $uptimePhrase,
+                function ($token) use ($view) {
+                    return $view->translate($token);
+                }
+            );
         }
-
-        // Server uptime
-
-        $uptimeRaw = (array)$this->sysInfo->core->uptime;
-
-        //$uptimeRaw = explode(",", $uptimeRaw[0]);
-        $uptimeRaw = explode(";", $uptimeRaw[0]);
-        $uptimeRaw = $uptimeRaw[0];
-        $search =  array('day', 'days', 'hour', 'hours', 'minute', 'minutes', 'second', 'seconds');
-        $replace = array();
-        foreach ($search as $key => $value) {
-            array_push($replace,$this->view->translate($value));
-        }
-
-        $uptimeRaw = str_replace($search,$replace,$uptimeRaw);
-
-        $this->systemInfo['uptime'] = $uptimeRaw;
 
 
         // Mysql
@@ -359,34 +346,37 @@ class SystemstatusController extends Zend_Controller_Action {
 
 
         $prevVal = shell_exec("cat /proc/stat");
-        $prevArr = explode(' ',trim($prevVal));
-        $prevTotal = $prevArr[2] + $prevArr[3] + $prevArr[4] + $prevArr[5];
-        $prevIdle = $prevArr[5];
+        $prevArr = explode(' ',trim((string) $prevVal));
+        $prevTotal = (isset($prevArr[2]) ? $prevArr[2] : 0) + (isset($prevArr[3]) ? $prevArr[3] : 0) + (isset($prevArr[4]) ? $prevArr[4] : 0) + (isset($prevArr[5]) ? $prevArr[5] : 0);
+        $prevIdle = isset($prevArr[5]) ? $prevArr[5] : 0;
         usleep(0.15 * 1000000);
         $val = shell_exec("cat /proc/stat");
-        $arr = explode(' ', trim($val));
-        $total = $arr[2] + $arr[3] + $arr[4] + $arr[5];
-        $idle = $arr[5];
+        $arr = explode(' ', trim((string) $val));
+        $total = (isset($arr[2]) ? $arr[2] : 0) + (isset($arr[3]) ? $arr[3] : 0) + (isset($arr[4]) ? $arr[4] : 0) + (isset($arr[5]) ? $arr[5] : 0);
+        $idle = isset($arr[5]) ? $arr[5] : 0;
         $intervalTotal = intval($total - $prevTotal);
-        $stat =  intval(100 * (($intervalTotal - ($idle - $prevIdle)) / $intervalTotal));
+        $stat = 0;
+        if ($intervalTotal > 0) {
+            $stat = intval(100 * (($intervalTotal - ($idle - $prevIdle)) / $intervalTotal));
+        }
 
         $this->systemInfo['usage'] = $stat;
 
 
-        // RAM Memory
+        // RAM Memory — local /proc/meminfo (+ /proc/swaps). TASK-0034I-R1
+        // removed the linfo HTTP override that previously replaced swap
+        // with values from the self-call XML (and swapped free/total).
         $this->systemInfo['memory'] = self::sys_meminfo();
 
-        $this->systemInfo['memory']['swap'] = array(
-            'total' => $this->byte_convert(floatval($this->sysInfo->memory->swap->core->free)),
-            'free' => $this->byte_convert(floatval($this->sysInfo->memory->swap->core->total)),
-            'used' => $this->byte_convert(floatval($this->sysInfo->memory->swap->core->used)),
-            'percent' => floatval($this->sysInfo->memory->swap->core->total) > 0 ? round(floatval($this->sysInfo->memory->swap->core->used) / floatval($this->sysInfo->memory->swap->core->total) * 100) : 0
-        );
-
         // Hard Disk
+        $this->systemInfo['space'] = array();
         $repeat = array();
         $cont = 0;
-        foreach($this->sys_fsinfo() as $key => $partition){
+        $fsinfo = $this->sys_fsinfo();
+        if (!is_array($fsinfo)) {
+            $fsinfo = array();
+        }
+        foreach($fsinfo as $key => $partition){
 
             // verifica valores duplicados de disco
             isset($repeat[$partition['mount_point']]) ? $repeat[$partition['mount_point']] += 1 : $repeat[$partition['mount_point']] = 1;
@@ -506,7 +496,9 @@ class SystemstatusController extends Zend_Controller_Action {
                 }
             }
             $results['ram']['used'] = $results['ram']['total'] - $results['ram']['free'];
-            $results['ram']['percent'] = round(($results['ram']['used'] * 100) / $results['ram']['total']);
+            $results['ram']['percent'] = ($results['ram']['total'] > 0)
+                ? round(($results['ram']['used'] * 100) / $results['ram']['total'])
+                : 0;
             // values for splitting memory usage
             if (isset($results['ram']['cached']) && isset($results['ram']['buffers'])) {
                 $results['ram']['app'] = $results['ram']['used'] - $results['ram']['cached'] - $results['ram']['buffers'];
@@ -530,7 +522,9 @@ class SystemstatusController extends Zend_Controller_Action {
                         $results['swap']['total'] += $ar_buf[2];
                         $results['swap']['used'] += $ar_buf[3];
                         $results['swap']['free'] = $results['swap']['total'] - $results['swap']['used'];
-                        $results['swap']['percent'] = round(($results['swap']['used'] * 100) / $results['swap']['total']);
+                        $results['swap']['percent'] = ($results['swap']['total'] > 0)
+                            ? round(($results['swap']['used'] * 100) / $results['swap']['total'])
+                            : 0;
                     }
                 }
             }
