@@ -226,7 +226,7 @@ target_has_existing_state() {
             return 0
         fi
     fi
-    if $COMPOSE run --rm --no-deps -T --entrypoint sh asterisk -c \
+    if senma_compose_run --rm --no-deps -T --entrypoint sh asterisk -c \
         'test -f /etc/asterisk/asterisk.conf' 2>/dev/null; then
         return 0
     fi
@@ -312,7 +312,7 @@ restore_asterisk_etc() {
     # than trusting tar to have preserved it -- asterisk is already a
     # senma-config member (same as the entrypoint), so this needs no
     # elevated privilege.
-    $COMPOSE run --rm --no-deps -T \
+    senma_compose_run --rm --no-deps -T \
         -v "$STAGE_DIR/fs:/restore-input:ro" \
         --entrypoint sh asterisk -c '
             set -e
@@ -331,7 +331,7 @@ step "restoring asterisk-etc volume" restore_asterisk_etc
 
 if [ -f "$STAGE_DIR/fs/astdb.sqlite3" ]; then
     restore_astdb() {
-        $COMPOSE run --rm --no-deps -T \
+        senma_compose_run --rm --no-deps -T \
             -v "$STAGE_DIR/fs:/restore-input:ro" \
             --entrypoint sh asterisk -c \
             'cp /restore-input/astdb.sqlite3 /var/lib/asterisk/astdb.sqlite3'
@@ -354,7 +354,7 @@ fi
 # starts, same as any genuinely fresh install.
 if [ -f "$STAGE_DIR/fs/asterisk-moh.tar.gz" ]; then
     restore_asterisk_moh() {
-        $COMPOSE run --rm --no-deps -T \
+        senma_compose_run --rm --no-deps -T \
             -v "$STAGE_DIR/fs:/restore-input:ro" \
             --entrypoint sh asterisk -c '
                 set -e
@@ -371,7 +371,7 @@ fi
 
 if [ -f "$STAGE_DIR/fs/asterisk-sounds.tar.gz" ]; then
     restore_asterisk_sounds() {
-        $COMPOSE run --rm --no-deps -T \
+        senma_compose_run --rm --no-deps -T \
             -v "$STAGE_DIR/fs:/restore-input:ro" \
             --entrypoint sh asterisk -c '
                 set -e

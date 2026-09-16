@@ -44,6 +44,16 @@
 
 SECRETS_LIB_LOADED=1
 
+# shellcheck source=compose-runtime.sh
+# Operational compose-run immutability (TASK-0035E4A). secrets-lib is
+# sourced from many operator scripts; load the shared helper once.
+if [ -z "${SENMA_COMPOSE_RUNTIME_LOADED:-}" ]; then
+    _slib_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+    # shellcheck source=compose-runtime.sh
+    source "$_slib_dir/compose-runtime.sh"
+    SENMA_COMPOSE_RUNTIME_LOADED=1
+fi
+
 # slib_run_sh <container> <script> -- runs a PURE FILESYSTEM operation
 # (read/write/backup/restore a config file in that service's own
 # volumes/mounts) via `docker compose run --rm --no-deps --entrypoint
@@ -65,13 +75,22 @@ SECRETS_LIB_LOADED=1
 # pattern scripts/backup.sh already established for reading the
 # asterisk-etc volume without booting Asterisk.
 #
+# TASK-0035E4A: always via senma_compose_run (local-image preflight +
+# --pull never) — a missing release image must fail closed, never
+# implicitly build a tagged image with revision=unknown (real-pilot
+# I4 regression on rc.7 backup). Compose `run` has no --no-build.
+#
 # Live-service checks (AMI login, DB/root auth, `manager reload`,
 # `odbc show all`) are NOT filesystem operations -- they need the real
 # running process and correctly stay on `docker compose exec` elsewhere
 # in this file.
 slib_run_sh() {
     local container="$1" script="$2"
-    $COMPOSE run --rm --no-deps -T --entrypoint sh "$container" -c "$script" 2>/dev/null
+    if [ -z "${COMPOSE:-}" ]; then
+        COMPOSE="${SMOKE_COMPOSE:-docker compose}"
+        export COMPOSE
+    fi
+    senma_compose_run --rm --no-deps -T --entrypoint sh "$container" -c "$script" 2>/dev/null
 }
 
 slib_log() { printf '%s\n' "$*" >&2; }

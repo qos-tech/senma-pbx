@@ -23,6 +23,12 @@
 #       ports. Returns 0 on success, 1 with diagnostics on failure.
 #   senma_verify_bridge_runtime_topology
 #       Asserts app/asterisk/db are NOT host-networked. Returns 0/1.
+#   senma_compose_run …
+#       Operational/ephemeral `compose run` via senma_compose_run (TASK-0035E4A).
+#   senma_require_local_image <repo:tag>
+#       Fail closed when a release image is not present locally.
+#   senma_require_release_images_if_tagged
+#       When RELEASE_VERSION != dev, require senma-app/asterisk tags.
 
 # shellcheck disable=SC2034
 # (COMPOSE / SENMA_RUNTIME_MODE are intentionally exported for callers)
@@ -274,3 +280,86 @@ senma_verify_bridge_runtime_topology() {
     done
     return "$fail"
 }
+
+# =========================================================================
+# TASK-0035E4A — operational compose-run immutability
+# =========================================================================
+#
+# Real-pilot trigger (E7): `bash scripts/backup.sh` with
+# RELEASE_VERSION=v0.1.0-rc.7 while the release image was absent locally.
+# Bare `docker compose run` then pulled (failed) and implicitly built
+# `senma-asterisk:v0.1.0-rc.7` with revision=unknown.
+# That violates I4 / release immutability.
+#
+# Platform note (Compose 2.40.x): `docker compose run` has NO `--no-build`
+# flag (unlike `up`). When a service declares `build:` and the named
+# `image:` is missing locally, `run` still builds by default — even with
+# `--pull never`. Operational immutability is therefore enforced by:
+#   1. fail-closed local image preflight (required), and
+#   2. `--pull never` (defense-in-depth against pull).
+#
+# Contract:
+#   Operational/runtime compose run MUST go through senma_compose_run.
+#   Missing required image MUST fail closed (never build/pull/fallback).
+#   Only `make release-build VERSION=...` may create release-tagged images.
+
+senma_require_local_image() {
+    local image="$1"
+    if [ -z "$image" ]; then
+        echo "ERROR: senma_require_local_image: image argument required" >&2
+        return 1
+    fi
+    if docker image inspect "$image" >/dev/null 2>&1; then
+        return 0
+    fi
+    local ver="${image##*:}"
+    echo "ERROR: required image ${image} is not available locally." >&2
+    if [ "$ver" = "dev" ]; then
+        echo "Build the development images first with:" >&2
+        echo "  make ensure-dev-stack" >&2
+    else
+        echo "Build the exact release first with:" >&2
+        echo "  make release-build VERSION=${ver}" >&2
+    fi
+    echo "Operational commands never build or pull release images (TASK-0035E4A / I4)." >&2
+    return 1
+}
+
+# Both SENMA images for the active RELEASE_VERSION (default :dev) must
+# already exist locally before any operational compose-run.
+senma_require_runtime_images() {
+    local rv="${RELEASE_VERSION:-dev}"
+    if [ -z "$rv" ]; then
+        rv=dev
+    fi
+    senma_require_local_image "senma-app:${rv}" || return 1
+    senma_require_local_image "senma-asterisk:${rv}" || return 1
+    return 0
+}
+
+# Back-compat alias used by backup preflight naming in TASK-0035E4A.
+senma_require_release_images_if_tagged() {
+    local rv="${RELEASE_VERSION:-dev}"
+    if [ -z "$rv" ] || [ "$rv" = "dev" ]; then
+        return 0
+    fi
+    senma_require_runtime_images
+}
+
+# Operational ephemeral container helper. Never allows Compose to build
+# or pull a missing image: preflight local tags, then `run --pull never`.
+# Callers must set COMPOSE first (resolve via senma_resolve_compose_runtime
+# or an explicit operator override). Remaining args are forwarded to
+# `compose run` after --pull never (e.g. --rm --no-deps -T --entrypoint …).
+senma_compose_run() {
+    if [ -z "${COMPOSE:-}" ]; then
+        echo "ERROR: senma_compose_run: COMPOSE is not set" >&2
+        return 1
+    fi
+    # Fail closed before Compose can attempt pull→build fallback.
+    senma_require_runtime_images || return 1
+    # shellcheck disable=SC2086
+    $COMPOSE run --pull never "$@"
+}
+
+SENMA_COMPOSE_RUNTIME_LOADED=1
