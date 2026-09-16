@@ -156,10 +156,11 @@ fi
 # 7. Restore reapplies contract
 # ---------------------------------------------------------------------------
 log "==> 7: restore reapplies recording permissions"
-if grep -q 'restore_recording_dir_contract\|chmod 2770' "$REPO_ROOT/scripts/restore.sh"; then
-    harness_ok "7: restore permission contract" "restore.sh reapplies 2770 contract"
+if grep -q 'restore_recording_dir_contract\|blib_apply_recording_dir_contract\|blib_restore_recording_store\|chmod 2770' "$REPO_ROOT/scripts/restore.sh" \
+   && grep -q 'blib_restore_recording_store\|blib_wipe_recording_store' "$REPO_ROOT/scripts/lib/backup-lib.sh"; then
+    harness_ok "7: restore permission contract" "restore.sh uses container-aware arquivos restore + 2770 contract"
 else
-    harness_bad "7: restore permission contract" "restore.sh missing recording dir contract"
+    harness_bad "7: restore permission contract" "restore.sh missing container-aware recording restore contract"
 fi
 
 # ---------------------------------------------------------------------------

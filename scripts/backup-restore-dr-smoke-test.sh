@@ -46,6 +46,10 @@ REPO_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 source "$SCRIPT_DIR/lib/harness.sh"
 # shellcheck source=lib/backup-lib.sh
 source "$SCRIPT_DIR/lib/backup-lib.sh"
+# shellcheck source=lib/compose-runtime.sh
+# TASK-0035E12: needed for senma_compose_run when wiping E8-restricted
+# snep/arquivos (host uid cannot rm under mode 2770).
+source "$SCRIPT_DIR/lib/compose-runtime.sh"
 harness_install_traps
 
 COMPOSE="${SMOKE_COMPOSE:-docker compose}"
@@ -285,9 +289,18 @@ for short in mag-db asterisk-etc mag-asterisk-var; do
     log "    removed volume: $vol"
 done
 rm -f "$REPO_ROOT/snep/includes/setup.conf"
-rm -rf "${REPO_ROOT:?}/snep/arquivos"
-mkdir -p "$REPO_ROOT/snep/arquivos"
-harness_ok "target actually destroyed" "mag-db/asterisk-etc/mag-asterisk-var volumes removed, setup.conf deleted, arquivos/ emptied"
+# TASK-0035E12: host cannot empty 2770 arquivos; wipe via app container.
+if ! blib_wipe_recording_store >&2; then
+    harness_bad "target actually destroyed" "failed to wipe snep/arquivos via app container"
+    harness_complete
+fi
+EMPTY_CHECK="$(senma_compose_run --rm --no-deps -T --entrypoint bash app -c \
+    'find /var/www/html/snep/arquivos -mindepth 1 -print -quit' 2>/dev/null | tr -d '\r' || true)"
+if [ -n "$EMPTY_CHECK" ]; then
+    harness_bad "target actually destroyed" "snep/arquivos still has contents after wipe: $EMPTY_CHECK"
+    harness_complete
+fi
+harness_ok "target actually destroyed" "mag-db/asterisk-etc/mag-asterisk-var volumes removed, setup.conf deleted, arquivos/ emptied via app container"
 
 # =====================================================================
 # 5. Restore
@@ -300,6 +313,49 @@ else
     harness_bad "restore completed" "restore.sh reported failure -- see output above. The target may be in a partial state; do not treat this stack as usable."
 fi
 [ "$_HARNESS_FAIL_COUNT" -gt 0 ] && { log "restore failed -- skipping further verification (already FAIL)"; harness_complete; }
+
+# TASK-0035E12: prove E8 recording-store contract survived container-aware
+# restore (app R/W, asterisk R/W, same backing inode, host still denied).
+log "==> verifying restored snep/arquivos permission contract (TASK-0035E12)"
+ARQ_STAT="$(senma_compose_run --rm --no-deps -T --entrypoint bash app -c \
+    'stat -c "%a %U %G" /var/www/html/snep/arquivos' 2>/dev/null | tr -d '\r')"
+if [ "$ARQ_STAT" = "2770 www-data senma-config" ]; then
+    harness_ok "arquivos root contract after restore" "$ARQ_STAT"
+else
+    harness_bad "arquivos root contract after restore" "expected '2770 www-data senma-config', got '${ARQ_STAT:-<empty>}'"
+fi
+PROBE="e12-dr-probe-$$"
+if senma_compose_run --rm --no-deps -T --entrypoint bash app -c "
+    set -euo pipefail
+    f=/var/www/html/snep/arquivos/${PROBE}
+    echo app-write > \"\$f\"
+    chmod 0660 \"\$f\"
+    cat \"\$f\" | grep -q app-write
+    rm -f \"\$f\"
+" >&2; then
+    harness_ok "app R/W/delete on restored arquivos" "www-data path_voz writable after restore"
+else
+    harness_bad "app R/W/delete on restored arquivos" "app container could not write/read/delete under arquivos"
+fi
+if $COMPOSE exec -T asterisk bash -c "
+    set -euo pipefail
+    f=/var/spool/asterisk/monitor/${PROBE}
+    echo ast-write > \"\$f\"
+    cat \"\$f\" | grep -q ast-write
+    # same backing via app path
+    test -f /var/www/html/snep/arquivos/${PROBE}
+    rm -f \"\$f\"
+" >&2; then
+    harness_ok "asterisk R/W + same backing on restored arquivos" "monitor and path_voz share restored store"
+else
+    harness_bad "asterisk R/W + same backing on restored arquivos" "asterisk could not write monitor path or paths diverged"
+fi
+if ls "$REPO_ROOT/snep/arquivos" >/dev/null 2>&1; then
+    # Host listing succeeding would mean E8 was weakened.
+    harness_bad "host negative access after restore" "unprivileged host unexpectedly listed snep/arquivos"
+else
+    harness_ok "host negative access after restore" "host uid cannot traverse 2770 arquivos (E8 preserved)"
+fi
 
 # The app container was stopped/removed and recreated by restore.sh --
 # any pre-restore PHP session is gone with it (session storage is not on
@@ -400,11 +456,21 @@ WSS_BOUND="$($COMPOSE exec -T asterisk asterisk -rx 'pjsip show transports' 2>&1
 [ "${WSS_BOUND:-0}" -gt 0 ] && harness_ok "WSS transport bound after restore" "pjsip show transports lists wss" \
     || harness_bad "WSS transport bound after restore" "no wss transport listed"
 
-HTTP_TLS_STATUS="$($COMPOSE exec -T asterisk asterisk -rx 'http show status' 2>&1)"
-if echo "$HTTP_TLS_STATUS" | grep -qi 'HTTPS Server Enabled'; then
-    harness_ok "HTTPS/WSS listener enabled after restore" "http show status reports HTTPS Server Enabled"
+# TASK-0035A: public WSS TLS terminates at the app reverse proxy.
+# Asterisk serves private plain HTTP/WS on 0.0.0.0:8088; Asterisk-side
+# HTTPS (tlsenable) is optional and normally absent. The pre-0035A
+# "HTTPS Server Enabled" assertion is no longer the supported contract
+# (and was masked until TASK-0035E12 unblocked arquivos restore).
+HTTP_WS_STATUS="$($COMPOSE exec -T asterisk asterisk -rx 'http show status' 2>&1)"
+if echo "$HTTP_WS_STATUS" | grep -qE 'Server Enabled and Bound to 0\.0\.0\.0:8088'; then
+    harness_ok "private HTTP/WS listener after restore" "http show status bound to 0.0.0.0:8088 (TASK-0035A)"
 else
-    harness_bad "HTTPS/WSS listener enabled after restore" "$HTTP_TLS_STATUS"
+    harness_bad "private HTTP/WS listener after restore" "$HTTP_WS_STATUS"
+fi
+if echo "$HTTP_WS_STATUS" | grep -qi 'HTTPS Server Enabled'; then
+    harness_ok "optional Asterisk HTTPS after restore" "present (not required for public WSS after TASK-0035A)"
+else
+    harness_ok "optional Asterisk HTTPS after restore" "absent (expected under reverse-proxy termination)"
 fi
 
 # See restore.sh's odbc_ready for why this checks active-connection
