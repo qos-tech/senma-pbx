@@ -1,9 +1,9 @@
 # TASK-0035E12 — Restore Arquivos Permission Compatibility
 
-**Status:** implementation complete — awaiting checkpoint authorization  
-**Decision:** `RESTORE_ARQUIVOS_PERMISSION_PASS_WITH_CONSTRAINTS`  
-**Debt closed:** `BACKUP_RESTORE_ARQUIVOS_HOST_PERMS_DEBT` (discovered in TASK-0035E11)  
-**Depends on:** TASK-0035E8 (recording storage 2770), TASK-0035E11 (astdb staging), TASK-0035E5 (restore topology)  
+**Status:** committed — PR pending
+**Decision:** `RESTORE_ARQUIVOS_PERMISSION_PASS_WITH_CONSTRAINTS`
+**Debt closed:** `BACKUP_RESTORE_ARQUIVOS_HOST_PERMS_DEBT` (discovered in TASK-0035E11)
+**Depends on:** TASK-0035E8 (recording storage 2770), TASK-0035E11 (astdb staging), TASK-0035E5 (restore topology)
 **Does not:** commit, push, tag, deploy, mutate `v0.1.0-rc.10`, destructive restore on TEXTE-PBX-001, touch `tmp-0035a/`
 
 ## Final decision (checkpoint)
