@@ -235,6 +235,35 @@ check_db_schema() {
     fi
 }
 
+# TASK-0035E9: administrator bootstrap state. Never prints plaintext,
+# hash, or secret contents -- only whether the admin row is past the
+# install sentinel, and whether the operator-local plaintext file still
+# exists (WARN; delete via make bootstrap-admin-credentials-clear after
+# first login/password change).
+check_admin_bootstrap() {
+    local secret_file="$REPO_ROOT/secrets/bootstrap-admin-password"
+    if [ "$(container_state db)" != "running" ]; then
+        record "Administrator account" "SKIP" "db container is not running"
+    elif [ -z "${DB_USER:-}" ] || [ -z "${DB_PASSWORD:-}" ] || [ -z "${DB_NAME:-}" ]; then
+        record "Administrator account" "UNKNOWN" "DB_USER/DB_PASSWORD/DB_NAME not set (source .env first)"
+    else
+        local pw
+        pw="$($COMPOSE exec -T db sh -c "read -r PW; MYSQL_PWD=\"\$PW\" mariadb -u'${DB_USER}' '${DB_NAME}' -N -e \"SELECT password FROM users WHERE name='admin' LIMIT 1;\"" <<< "$DB_PASSWORD" 2>/dev/null | tr -d '\r\n')"
+        if [ -z "$pw" ]; then
+            record "Administrator account" "UNKNOWN" "admin user row not found"
+        elif [ "$pw" = "!SENMA-BOOTSTRAP-PENDING!" ]; then
+            record "Administrator account" "FAIL" "admin still holds the install sentinel -- bootstrap did not complete (check app logs / secrets/ mount)"
+        else
+            record "Administrator account" "PASS" "administrator account initialized"
+        fi
+    fi
+    if [ -f "$secret_file" ]; then
+        record "Bootstrap admin secret file" "WARN" "initial administrator bootstrap credential file still exists -- delete with 'make bootstrap-admin-credentials-clear' after first login/password change"
+    else
+        record "Bootstrap admin secret file" "PASS" "no operator-local bootstrap plaintext present"
+    fi
+}
+
 # TASK-0033F: reuses docker/migrate.php's own detection logic (invoked
 # via `make migrate-check`'s exact command inside the app container)
 # rather than reimplementing schema-version comparison here (Phase 38's own explicit
@@ -754,6 +783,7 @@ for svc in app asterisk db provider; do check_container "$svc"; done
 check_db_reachable
 check_db_auth
 check_db_schema
+check_admin_bootstrap
 check_db_migration_status
 check_app_http
 check_app_content

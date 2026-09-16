@@ -11,3 +11,5 @@ log
 # this narrows what the Docker daemon even receives as build context.
 backups
 release-manifest.json
+# TASK-0035E9: never bake operator bootstrap plaintext into an image layer.
+secrets

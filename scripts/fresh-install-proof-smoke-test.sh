@@ -50,6 +50,10 @@ log() { harness_log "$@"; }
 
 FRESH_PROJECT="senma-freshcheck-$$"
 FRESH_PORT="${FRESH_INSTALL_PROOF_PORT:-18080}"
+# TASK-0035E9: primary stack also publishes MAG_HTTPS_PORT (default 8443).
+# Remap HTTPS for the isolated project so concurrent fresh-install proof
+# does not collide on the host TLS port.
+FRESH_HTTPS_PORT="${FRESH_INSTALL_PROOF_HTTPS_PORT:-18443}"
 OVERRIDE_FILE="$REPO_ROOT/docker/compose.fresh-check-override.yaml"
 FRESH_SUBNET_MAG="172.30.0.0/16"
 FRESH_SUBNET_CONTROL="172.31.0.0/24"
@@ -75,7 +79,10 @@ done
 if docker ps --format '{{.Ports}}' 2>/dev/null | grep -q ":${FRESH_PORT}->"; then
     harness_blocked "host port $FRESH_PORT is already published by another container -- set FRESH_INSTALL_PROOF_PORT to a free port"
 fi
-harness_ok 'preflight: isolation is genuinely free' "subnets $FRESH_SUBNET_MAG/$FRESH_SUBNET_CONTROL and port $FRESH_PORT unclaimed on this host"
+if docker ps --format '{{.Ports}}' 2>/dev/null | grep -q ":${FRESH_HTTPS_PORT}->"; then
+    harness_blocked "host port $FRESH_HTTPS_PORT is already published by another container -- set FRESH_INSTALL_PROOF_HTTPS_PORT to a free port"
+fi
+harness_ok 'preflight: isolation is genuinely free' "subnets $FRESH_SUBNET_MAG/$FRESH_SUBNET_CONTROL and ports $FRESH_PORT/$FRESH_HTTPS_PORT unclaimed on this host"
 
 log '==> Bringing up a brand-new, isolated Compose project (fresh containers, network, volumes)'
 set -a
@@ -85,6 +92,7 @@ set +a
 export COMPOSE_PROJECT_NAME="$FRESH_PROJECT"
 export MAG_HTTP_PORT="$FRESH_PORT"
 export SENMA_HTTP_PORT="$FRESH_PORT"
+export MAG_HTTPS_PORT="$FRESH_HTTPS_PORT"
 # Note: ASTERISK_AMI_ACL_SUBNET is NOT overridden here -- app/asterisk
 # load `env_file: .env` (compose.yaml), which reads the literal file on
 # disk and ignores this shell's exported env entirely for that key.
