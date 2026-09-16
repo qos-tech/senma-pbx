@@ -16,14 +16,16 @@
 #   1. stop app/asterisk/db (nothing should be writing to what we're
 #      about to replace)
 #   2. wipe the target: mag-db, asterisk-etc, mag-asterisk-var volumes;
-#      host-side setup.conf and arquivos/ content
+#      host-side setup.conf; arquivos/ contents via the app container
+#      (TASK-0035E12 -- E8 mode 2770 blocks host-side rm/tar/chmod)
 #   3. restore asterisk-etc + astdb.sqlite3 + setup.conf + arquivos/
 #      BEFORE any container that owns them starts -- this is what makes
 #      docker/entrypoint.sh's and docker/asterisk-entrypoint.sh's own
 #      first-boot guards (`[ ! -f ... ]`) work *for* us instead of
 #      against us: they see the restored files already present and skip
 #      regeneration entirely, so the exact restored secrets/config/cert
-#      survive untouched.
+#      survive untouched. arquivos/ is extracted via an ephemeral app
+#      container bind (same path_voz mount as backup), not host tar.
 #   4. start db, let its own first-boot init scripts run on the now-empty
 #      volume (harmless: the schema they install is fully superseded a
 #      moment later), then import the real dump on top -- mariadb-dump's
@@ -275,8 +277,10 @@ wipe_volume asterisk-etc
 wipe_volume mag-asterisk-var
 
 rm -f "$REPO_ROOT/snep/includes/setup.conf"
-rm -rf "${REPO_ROOT:?}/snep/arquivos"
-mkdir -p "$REPO_ROOT/snep/arquivos"
+# TASK-0035E12: wipe recording store via the app container. Host-side
+# rm/mkdir fails under the E8 2770 contract (deploy uid is not in GID
+# 3000 by design). Ephemeral compose run --rm; no privileged / docker.sock.
+step "wiping snep/arquivos/ via app container" blib_wipe_recording_store
 
 if [ "$FAILED" -eq 1 ]; then
     blib_die "wiping target state failed -- aborting before writing any restored data"
@@ -288,26 +292,18 @@ fi
 # =====================================================================
 
 step "restoring snep/includes/setup.conf" cp "$STAGE_DIR/fs/setup.conf" "$REPO_ROOT/snep/includes/setup.conf"
-step "restoring snep/arquivos/" bash -c "tar xzf '$STAGE_DIR/fs/arquivos.tar.gz' -C '$REPO_ROOT/snep'"
+# TASK-0035E12: extract + normalize arquivos via app container (same
+# bind as path_voz / backup tar_arquivos). Preserves E8 2770 root;
+# restored subtree files 0660, dirs 2770, www-data:senma-config.
+step "restoring snep/arquivos/ via app container" \
+    blib_restore_recording_store "$STAGE_DIR/fs/arquivos.tar.gz"
 
-# TASK-0035E8: re-apply directory-level recording contract after restore.
-# Directory only -- do not recursively rewrite a restored archive.
-# GID 3000 is senma-config (pinned in both images). Mode 2770 setgid.
+# TASK-0035E8 / E12: reaffirm directory-level recording contract after
+# restore (root only). Subtree normalization already ran inside
+# blib_restore_recording_store; this keeps the contract marker and
+# catches any drift of the root inode.
 restore_recording_dir_contract() {
-    local dir="$REPO_ROOT/snep/arquivos"
-    mkdir -p "$dir"
-    # Prefer named group inside a throwaway rootful helper when available;
-    # fall back to numeric GID 3000 on the host.
-    if ! chgrp 3000 "$dir" 2>/dev/null; then
-        blib_log "WARNING: could not chgrp 3000 on $dir -- containers will retry via app entrypoint"
-    fi
-    chmod 2770 "$dir" || blib_die "cannot chmod 2770 on restored recording directory $dir"
-    local mode
-    mode="$(stat -c '%a' "$dir" 2>/dev/null || echo '')"
-    local other=$((8#${mode} % 8))
-    if [ "$((other & 2))" -ne 0 ]; then
-        blib_die "restored recording directory $dir is world-writable (mode $mode)"
-    fi
+    blib_apply_recording_dir_contract
 }
 step "applying recording directory permissions" restore_recording_dir_contract
 
