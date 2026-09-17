@@ -799,3 +799,12 @@ Constraints:
 - Local `doctor-smoke` required removing the gitignored `release-manifest.json`
   left by the rc.12 release-build so `:dev` images are not compared as DRIFT
   (same class of environment precondition as E10).
+
+---
+
+# Follow-up: TASK-0034I-R3
+
+rc.13 pilot navigation exposed additional PHP 8 warnings (apt widget,
+CallsReport period/session, Zend HeadLink `$extras`). See dedicated document:
+
+`docs/tasks/0034i-r3-php8-runtime-warning-sweep.md`
