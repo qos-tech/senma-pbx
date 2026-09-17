@@ -704,3 +704,98 @@ TASK-0035E7 remains paused. Do not mark TASK-0035 closed.
 ## Decision
 
 `SYSTEM_STATUS_RUNTIME_PASS_WITH_CONSTRAINTS`
+
+---
+
+# TASK-0034I-R2 — Pilot Runtime Warning Hardening
+
+**Status:** implemented locally; final decision recorded at checkpoint (this section).
+**Depends on:** TASK-0034I-R1 (HTTP self-call / HostResources), rc.12 pilot proof
+**Does not:** mutate `v0.1.0-rc.12`, deploy, create `v0.1.0-rc.13`, reopen E7, touch `tmp-0035a/`
+
+## Pilot evidence (TEXTE-PBX-001 / v0.1.0-rc.12)
+
+R1 stale HTTP self-call removal remained **PASS** on real System Status access
+(`Zend_Http_Client` / `127.0.0.1:80` / raw exception disclosure absent).
+
+The same access then exposed three new PHP runtime warnings:
+
+| Loc | Warning | Code form |
+|---|---|---|
+| `SystemstatusController.php` ~55 | Undefined array key `"cloud_noticed"` | `if(!$_SESSION['cloud_noticed']) { ... }` |
+| ~545–546 | Trying to access array offset on false | `$register = Snep_Register_Manager::get();` then `$register['api_key']` / `['client_key']` |
+| ~606 | Undefined array key `1` | `str_getcsv($ast_v['data'], "\n")[1]` |
+
+## Root causes
+
+1. **cloud_noticed:** first authenticated session has no key; PHP 8+ warns on
+   direct `$_SESSION['cloud_noticed']` read. Intended semantics were
+   unset/false → run `CloudNotice()` once; true → skip.
+2. **register:** `Snep_Register_Manager::get()` does `$stmt->fetch()` on
+   `itc_register`. Empty table → PDO `false`. Indexing `false` as array warns.
+   Legitimate shapes: associative array (possibly missing keys), `false`,
+   theoretically `null`.
+3. **Asterisk version:** Asterisk 22 AMI accumulates `Output:` lines into
+   `response['data']` (often a **single** version line at index 0). Legacy
+   multi-line "Follows" payloads may have headers before the version.
+   Positional `[1]` is invalid for the common one-line case.
+
+## Chosen fixes
+
+Helper: `Snep_SystemStatus_OptionalRuntime`
+
+- `shouldRunCloudNotice($session)` — `empty($session['cloud_noticed'])`
+  (existence-safe; does not block first intended call).
+- `registerAuthPayload($register)` — never invents secrets; absent/false/null
+  → empty-string `api_key`/`client_key` so the historical host-inspect body
+  shape is preserved without fabricating credentials.
+- `asteriskVersionFromAmiCommand($amiResponse)` — defensive parse of AMI
+  `data`; returns `null` when unavailable/malformed. Controller maps null →
+  `Snep_SystemStatus_HostResources::UNAVAILABLE` ("Unavailable") and may
+  `error_log` a safe (non-secret) message.
+
+`CloudNotice()` remains legacy vendor **host-inspect** telemetry push
+(TASK-0024): fire-and-forget POST/PUT to configured `host_inspect` URL with
+TDM/OS/Asterisk inventory + auth payload. It performs external/network access
+when the config URL is set and the TTL gate allows. Failure is already
+isolated (transport/401 logging); it must not block the rest of System Status.
+Not deleted in R2 (still gated once-per-session); obsolete/dead deletion is
+separate debt if product decides to retire OpenS host-inspect.
+
+## Partial degradation / R1 regression
+
+Optional CloudNotice registration data and Asterisk version lookup failures
+must not break uptime/CPU/RAM/disk/modules/active-call/restart safety.
+R1 invariants preserved: no `Zend_Http_Client`, no HTTP self-call to `:80`,
+no raw exception/stack disclosure, HostResources remains local.
+
+## Tests
+
+`scripts/systemstatus-dashboard-smoke-test.sh` extended with:
+
+- static guards against the three unsafe forms
+- OptionalRuntime fixtures: session absent/false/true; register
+  false/null/missing-key/valid; AMI version false/empty/one-line/multi-line/
+  malformed/current-style; warn_count=0; no secret disclosure
+
+## Release / E7
+
+- `v0.1.0-rc.12` remains immutable. Next candidate after merge: `v0.1.0-rc.13`
+  (not created here).
+- TASK-0035E7 remains paused. rc.12 proofs for E10-R1 startup, Fail2ban,
+  release identity, and R1 HTTP removal stay valid. Final System Status
+  closure waits for R2 pilot validation on the next RC.
+
+## Decision
+
+`SYSTEM_STATUS_WARNING_HARDENING_PASS_WITH_CONSTRAINTS`
+
+Constraints:
+
+- R2 pilot proof on TEXTE-PBX-001 still pending (next RC candidate `v0.1.0-rc.13`;
+  not created here). rc.12 remains immutable.
+- `CloudNotice` / host-inspect vendor push retained (TASK-0024 TTL gates);
+  not deleted as obsolete in this task.
+- Local `doctor-smoke` required removing the gitignored `release-manifest.json`
+  left by the rc.12 release-build so `:dev` images are not compared as DRIFT
+  (same class of environment precondition as E10).

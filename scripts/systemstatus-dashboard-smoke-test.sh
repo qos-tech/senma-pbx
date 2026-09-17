@@ -90,6 +90,137 @@ else
     harness_bad 'dev/bridge port mapping unchanged' 'compose.yaml publish mapping drifted'
 fi
 
+echo '==> Static guard: TASK-0034I-R2 unsafe optional-runtime forms must stay gone'
+CTRL="$REPO_ROOT/snep/modules/default/controllers/SystemstatusController.php"
+OPT="$REPO_ROOT/snep/lib/Snep/SystemStatus/OptionalRuntime.php"
+if [ ! -f "$OPT" ]; then
+    harness_bad 'OptionalRuntime helper present' "missing $OPT"
+else
+    harness_ok 'OptionalRuntime helper present' 'Snep_SystemStatus_OptionalRuntime'
+fi
+# Exact pilot form: if(!$_SESSION['cloud_noticed']) — existence-unsafe.
+if grep -nE "!\s*\\\$_SESSION\[['\"]cloud_noticed['\"]\]" "$CTRL" >/dev/null; then
+    harness_bad 'no unsafe cloud_noticed session read' 'found !$_SESSION[cloud_noticed] boolean access'
+else
+    harness_ok 'no unsafe cloud_noticed session read' 'pilot form removed'
+fi
+if grep -nE 'shouldRunCloudNotice' "$CTRL" >/dev/null \
+    && grep -nE 'registerAuthPayload' "$CTRL" >/dev/null \
+    && grep -nE 'asteriskVersionFromAmiCommand' "$CTRL" >/dev/null; then
+    harness_ok 'controller uses OptionalRuntime helpers' 'cloud_noticed + register + version'
+else
+    harness_bad 'controller uses OptionalRuntime helpers' 'missing helper call site(s)'
+fi
+if grep -nE "\\\$register\[['\"]api_key['\"]\]|\\\$register\[['\"]client_key['\"]\]" "$CTRL" >/dev/null; then
+    harness_bad 'no unvalidated register secret indexing' 'found $register[api_key|client_key] without OptionalRuntime'
+else
+    harness_ok 'no unvalidated register secret indexing' 'registerAuthPayload only'
+fi
+# Executable form only (ignore comments documenting the historical hazard).
+if grep -nE 'str_getcsv\([^)]*\)\s*\[\s*1\s*\]' "$CTRL" | grep -vE '^\s*[0-9]+:\s*//' >/dev/null; then
+    harness_bad 'no unsafe str_getcsv(...)[1] version index' 'positional [1] reintroduced'
+else
+    harness_ok 'no unsafe str_getcsv(...)[1] version index' 'AMI version via OptionalRuntime parser'
+fi
+
+echo '==> OptionalRuntime fixtures (session / register / AMI version) — TASK-0034I-R2'
+OPT_OUT="$($COMPOSE exec -T app php -d display_errors=1 -d error_reporting=E_ALL -r "
+require_once '/var/www/html/snep/lib/Snep/SystemStatus/OptionalRuntime.php';
+require_once '/var/www/html/snep/lib/Snep/SystemStatus/HostResources.php';
+\$warns = array();
+set_error_handler(function (\$no, \$str) use (&\$warns) {
+    \$warns[] = \$str;
+    return true;
+});
+\$j = function (\$v) { return json_encode(\$v, JSON_UNESCAPED_SLASHES); };
+
+echo 'sess_absent=' . (Snep_SystemStatus_OptionalRuntime::shouldRunCloudNotice(array()) ? '1' : '0') . PHP_EOL;
+echo 'sess_false=' . (Snep_SystemStatus_OptionalRuntime::shouldRunCloudNotice(array('cloud_noticed' => false)) ? '1' : '0') . PHP_EOL;
+echo 'sess_true=' . (Snep_SystemStatus_OptionalRuntime::shouldRunCloudNotice(array('cloud_noticed' => true)) ? '1' : '0') . PHP_EOL;
+
+echo 'reg_false=' . \$j(Snep_SystemStatus_OptionalRuntime::registerAuthPayload(false)) . PHP_EOL;
+echo 'reg_null=' . \$j(Snep_SystemStatus_OptionalRuntime::registerAuthPayload(null)) . PHP_EOL;
+echo 'reg_no_api=' . \$j(Snep_SystemStatus_OptionalRuntime::registerAuthPayload(array('client_key' => 'ck-only'))) . PHP_EOL;
+echo 'reg_no_client=' . \$j(Snep_SystemStatus_OptionalRuntime::registerAuthPayload(array('api_key' => 'ak-only'))) . PHP_EOL;
+echo 'reg_ok=' . \$j(Snep_SystemStatus_OptionalRuntime::registerAuthPayload(array('api_key' => 'ak', 'client_key' => 'ck'))) . PHP_EOL;
+
+\$v = function (\$r) {
+    \$x = Snep_SystemStatus_OptionalRuntime::asteriskVersionFromAmiCommand(\$r);
+    return \$x === null ? 'NULL' : \$x;
+};
+echo 'ver_false=' . \$v(false) . PHP_EOL;
+echo 'ver_null=' . \$v(null) . PHP_EOL;
+echo 'ver_empty=' . \$v(array('data' => '')) . PHP_EOL;
+echo 'ver_nodata=' . \$v(array()) . PHP_EOL;
+echo 'ver_one=' . \$v(array('data' => 'Asterisk 22.11.0 built by root @ host')) . PHP_EOL;
+echo 'ver_multi=' . \$v(array('data' => \"Response: Follows\\nPrivilege: Command\\nAsterisk 22.11.0 built by root @ host\\n--END COMMAND--\\n\")) . PHP_EOL;
+echo 'ver_malformed=' . \$v(array('data' => \"garbage\\nno version token here\\n\")) . PHP_EOL;
+echo 'ver_current=' . \$v(array('data' => \"Asterisk 22.11.0 built by root @ buildkitsandbox on a x86_64 running Linux on 2026-09-16 13:55:12 UTC\\n\")) . PHP_EOL;
+echo 'unavailable_const=' . Snep_SystemStatus_HostResources::UNAVAILABLE . PHP_EOL;
+echo 'warn_count=' . count(\$warns) . PHP_EOL;
+if (count(\$warns) > 0) {
+    echo 'warns=' . implode('|', \$warns) . PHP_EOL;
+}
+" 2>&1 | tr -d '\r')"
+
+echo "$OPT_OUT" | grep -q '^sess_absent=1' \
+    && harness_ok 'session key absent -> CloudNotice runs' 'sess_absent=1' \
+    || harness_bad 'session key absent -> CloudNotice runs' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^sess_false=1' \
+    && harness_ok 'session key false -> CloudNotice runs' 'sess_false=1' \
+    || harness_bad 'session key false -> CloudNotice runs' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^sess_true=0' \
+    && harness_ok 'session key true -> CloudNotice skipped' 'sess_true=0' \
+    || harness_bad 'session key true -> CloudNotice skipped' "$OPT_OUT"
+
+echo "$OPT_OUT" | grep -q '^reg_false={"api_key":"","client_key":""}$' \
+    && harness_ok 'register false -> empty auth (no fabricate)' 'reg_false empty keys' \
+    || harness_bad 'register false -> empty auth (no fabricate)' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^reg_null={"api_key":"","client_key":""}$' \
+    && harness_ok 'register null -> empty auth' 'reg_null empty keys' \
+    || harness_bad 'register null -> empty auth' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^reg_no_api={"api_key":"","client_key":"ck-only"}$' \
+    && harness_ok 'register missing api_key' 'empty api_key, keep client_key' \
+    || harness_bad 'register missing api_key' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^reg_no_client={"api_key":"ak-only","client_key":""}$' \
+    && harness_ok 'register missing client_key' 'keep api_key, empty client_key' \
+    || harness_bad 'register missing client_key' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^reg_ok={"api_key":"ak","client_key":"ck"}$' \
+    && harness_ok 'register valid array' 'both keys preserved' \
+    || harness_bad 'register valid array' "$OPT_OUT"
+
+echo "$OPT_OUT" | grep -q '^ver_false=NULL$' \
+    && harness_ok 'AMI version false -> null' 'ver_false=NULL' \
+    || harness_bad 'AMI version false -> null' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^ver_empty=NULL$' \
+    && harness_ok 'AMI version empty -> null' 'ver_empty=NULL' \
+    || harness_bad 'AMI version empty -> null' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^ver_one=22.11.0$' \
+    && harness_ok 'AMI version one-line parse' 'ver_one=22.11.0' \
+    || harness_bad 'AMI version one-line parse' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^ver_multi=22.11.0$' \
+    && harness_ok 'AMI version multi-line parse' 'ver_multi=22.11.0' \
+    || harness_bad 'AMI version multi-line parse' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^ver_malformed=NULL$' \
+    && harness_ok 'AMI version malformed -> null' 'ver_malformed=NULL' \
+    || harness_bad 'AMI version malformed -> null' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^ver_current=22.11.0$' \
+    && harness_ok 'AMI version current-style parse' 'ver_current=22.11.0' \
+    || harness_bad 'AMI version current-style parse' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^unavailable_const=Unavailable$' \
+    && harness_ok 'operator Unavailable constant' 'Unavailable' \
+    || harness_bad 'operator Unavailable constant' "$OPT_OUT"
+echo "$OPT_OUT" | grep -q '^warn_count=0$' \
+    && harness_ok 'OptionalRuntime fixtures emit no PHP warnings' 'warn_count=0' \
+    || harness_bad 'OptionalRuntime fixtures emit no PHP warnings' "$OPT_OUT"
+
+# Secret disclosure guard on fixture output (must not echo real secrets; fixtures use placeholders).
+if echo "$OPT_OUT" | grep -qiE 'pass_sock|user_sock|ami.?secret|password='; then
+    harness_bad 'no secret disclosure in OptionalRuntime fixtures' "$OPT_OUT"
+else
+    harness_ok 'no secret disclosure in OptionalRuntime fixtures' 'no AMI/DB secret tokens'
+fi
+
 echo '==> HostResources unit fixtures (healthy / refused-empty / malformed / recovery)'
 # Injected via file path argument — models connection-refused / empty /
 # malformed / recovery without reintroducing an HTTP self-call.
@@ -171,6 +302,18 @@ if grep -qiE 'Zend_Http_Client_Adapter_Exception|Unable to Connect to tcp://127\
     harness_bad 'no raw exception/stack disclosure' "found forbidden disclosure signature in body (see $BODY)"
 else
     harness_ok 'no raw exception/stack disclosure' 'no Zend_Http / Connection refused / stack / path dump'
+fi
+
+# TASK-0034I-R2: pilot PHP Warning forms must not appear in the HTML body.
+if grep -qiE 'Undefined array key ["'\'']cloud_noticed|Trying to access array offset on false|Undefined array key 1|PHP Warning' "$BODY"; then
+    harness_bad 'no PHP warning disclosure on dashboard' "found PHP Warning / pilot key forms in body (see $BODY)"
+else
+    harness_ok 'no PHP warning disclosure on dashboard' 'no cloud_noticed/register/version warning text'
+fi
+if grep -qiE 'api_key|client_key' "$BODY"; then
+    harness_bad 'no registration secret disclosure in dashboard HTML' 'api_key/client_key leaked into body'
+else
+    harness_ok 'no registration secret disclosure in dashboard HTML' 'no api_key/client_key in response'
 fi
 
 if grep -qiE 'Server Status|Asterisk Restart|Memory Usage|Disk Usage' "$BODY"; then
