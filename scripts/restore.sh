@@ -263,8 +263,11 @@ step() {
 # Phase C -- stop services, wipe target (Phase 8 ordering)
 # =====================================================================
 
-step "stopping app/asterisk/db" $COMPOSE stop app asterisk db
-$COMPOSE rm -f app asterisk db >/dev/null 2>&1 || true
+# TASK-0035E10-R1: include senma-security in full-stack stop/rm so a
+# restore does not leave a stale Fail2ban container across wipe/recreate.
+# Asterisk still has no depends_on senma-security.
+step "stopping app/asterisk/db/senma-security" $COMPOSE stop app asterisk db senma-security
+$COMPOSE rm -f app asterisk db senma-security >/dev/null 2>&1 || true
 
 wipe_volume() {
     local short="$1" vol
@@ -470,6 +473,12 @@ step "starting app" $COMPOSE up -d --no-build app
 app_ready() { $COMPOSE ps app 2>/dev/null | grep -q "(healthy)"; }
 harness_retry 15 2 -- app_ready || blib_log "WARNING: app container did not report healthy within ~30s -- check 'docker compose logs app'"
 
+# TASK-0035E10-R1: bring senma-security back with the restored stack.
+# Fail-open: telephony already started; a missing Fail2ban image must not
+# undo a successful data restore, but we still attempt the canonical start.
+step "starting senma-security" $COMPOSE up -d --no-build senma-security \
+    || blib_log "WARNING: senma-security failed to start after restore (SECURITY_FAIL_OPEN_TELEPHONY) -- telephony remains up; run 'make doctor' / 'make security-status'"
+
 if [ "$FAILED" -eq 1 ]; then
     blib_die "post-restore readiness verification failed -- see diagnostics above. The restore steps themselves completed, but the resulting stack is not provably usable."
 fi
@@ -483,7 +492,7 @@ if [ "$SENMA_RUNTIME_MODE" = "host" ]; then
     if ! senma_verify_host_runtime_topology; then
         blib_die "restore recreated containers but host-network topology was NOT preserved (I8). Data may be restored, but the stack is not in the supported pilot/production runtime. Do NOT treat this as success. Fix compose selection and re-run restore, or recover with 'make pilot-up' using the same RELEASE_VERSION (existing images only)."
     fi
-    blib_log "    host topology OK: app/asterisk/db network_mode=host (no PortBindings)"
+    blib_log "    host topology OK: app/asterisk/db/senma-security network_mode=host (no PortBindings)"
 else
     if ! senma_verify_bridge_runtime_topology; then
         blib_die "restore selected bridge but at least one core service came back as host networking -- refuse inconsistent topology"

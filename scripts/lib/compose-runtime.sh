@@ -242,9 +242,16 @@ senma_resolve_compose_runtime() {
 
 senma_verify_host_runtime_topology() {
     local svc cid mode ports fail=0
-    for svc in app asterisk db; do
+    # TASK-0035E10-R1: canonical pilot host stack includes senma-security.
+    for svc in app asterisk db senma-security; do
         cid="$($COMPOSE ps -q "$svc" 2>/dev/null || true)"
         if [ -z "$cid" ]; then
+            # Security is fail-open for telephony, but host-topology verify
+            # after a full restore expects the canonical pilot set.
+            if [ "$svc" = "senma-security" ]; then
+                echo "WARNING: senma-security not running after restore — SIP Fail2ban inactive (SECURITY_FAIL_OPEN_TELEPHONY)" >&2
+                continue
+            fi
             echo "ERROR: $svc not running after restore — cannot verify host topology" >&2
             fail=1
             continue
