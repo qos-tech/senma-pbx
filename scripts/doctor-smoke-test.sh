@@ -66,6 +66,7 @@ MANDATORY_CHECKS=(
     "Asterisk CLI reachable" "Asterisk console logger" "PJSIP module loaded" "Asterisk HTTP/WS backend" "AMI reachable"
     "PJSIP configuration" "Secrets" "Host disk free space" "Named volume usage"
     "Asterisk full log" "Application error log" "Backup destination" "TLS/WSS certificate"
+    "SIP abuse protection"
 )
 MISSING=""
 for chk in "${MANDATORY_CHECKS[@]}"; do

@@ -1,4 +1,4 @@
-.PHONY: dev dev-build dev-up ensure-dev-stack require-runtime up pilot-config pilot-up release-build release-info release-artifact-smoke release-immutability-smoke operational-compose-run-immutability-smoke recording-storage-smoke restore-runtime-topology-smoke status-detail-ux-smoke down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke cnl-upload-authorization-security-smoke itc-registration-authorization-security-smoke notification-dismiss-authorization-security-smoke dashboard-preferences-authorization-security-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke admin-bootstrap-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke wss-proxy-termination-smoke webrtc-endpoint-contract-smoke webrtc-browser-nat-smoke host-networking-architecture-smoke asterisk-console-observability-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke system-status-runtime-smoke systemstatus-dashboard-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke fresh-install-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke bootstrap-admin-credentials bootstrap-admin-credentials-clear doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate ami-acl-smoke
+.PHONY: dev dev-build dev-up ensure-dev-stack require-runtime up pilot-config pilot-up release-build release-info release-artifact-smoke release-immutability-smoke operational-compose-run-immutability-smoke recording-storage-smoke restore-runtime-topology-smoke status-detail-ux-smoke sip-abuse-protection-smoke security-status security-bans security-unban security-reload down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke cnl-upload-authorization-security-smoke itc-registration-authorization-security-smoke notification-dismiss-authorization-security-smoke dashboard-preferences-authorization-security-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke admin-bootstrap-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke wss-proxy-termination-smoke webrtc-endpoint-contract-smoke webrtc-browser-nat-smoke host-networking-architecture-smoke asterisk-console-observability-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke system-status-runtime-smoke systemstatus-dashboard-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke fresh-install-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke bootstrap-admin-credentials bootstrap-admin-credentials-clear doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate ami-acl-smoke
 
 COMPOSE ?= docker compose
 
@@ -853,6 +853,36 @@ operational-compose-run-immutability-smoke: ensure-dev-stack
 # path_voz and Asterisk /var/spool/asterisk/monitor, with senma-config 2770.
 recording-storage-smoke: ensure-dev-stack
 	@set -a; . ./.env; set +a; bash scripts/recording-storage-smoke-test.sh
+
+# TASK-0035E10: SIP abuse protection (Fail2ban). Operational targets never
+# build. Smoke may start senma-security with --no-build if image present.
+sip-abuse-protection-smoke: ensure-dev-stack
+	@set -a; . ./.env; set +a; bash scripts/sip-abuse-protection-smoke-test.sh
+
+security-status: require-runtime
+	@set -a; . ./.env; set +a; \
+	  cid="$$(COMPOSE_PROFILES="$(FIXTURE_PROFILE)" $(COMPOSE) $(COMPOSE_FILES) ps -q senma-security 2>/dev/null)"; \
+	  if [ -z "$$cid" ]; then echo "ERROR: senma-security is not running (SECURITY_FAIL_OPEN_TELEPHONY — Asterisk may still be fine)" >&2; exit 1; fi; \
+	  docker exec "$$cid" fail2ban-client status
+
+security-bans: require-runtime
+	@set -a; . ./.env; set +a; \
+	  cid="$$(COMPOSE_PROFILES="$(FIXTURE_PROFILE)" $(COMPOSE) $(COMPOSE_FILES) ps -q senma-security 2>/dev/null)"; \
+	  if [ -z "$$cid" ]; then echo "ERROR: senma-security is not running" >&2; exit 1; fi; \
+	  echo "==> senma-sip-auth"; docker exec "$$cid" fail2ban-client status senma-sip-auth; \
+	  echo "==> senma-sip-scanner"; docker exec "$$cid" fail2ban-client status senma-sip-scanner
+
+# IP must arrive as a Make cmdline var (exported into the env). The helper
+# validates with ipaddress and never evals. Do not interpolate $(IP) into
+# unquoted shell words here.
+security-unban: require-runtime
+	@bash scripts/security-unban.sh
+
+security-reload: require-runtime
+	@set -a; . ./.env; set +a; \
+	  cid="$$(COMPOSE_PROFILES="$(FIXTURE_PROFILE)" $(COMPOSE) $(COMPOSE_FILES) ps -q senma-security 2>/dev/null)"; \
+	  if [ -z "$$cid" ]; then echo "ERROR: senma-security is not running" >&2; exit 1; fi; \
+	  docker exec "$$cid" fail2ban-client reload
 
 # TASK-0035E5 / I8: restore must preserve pilot/host runtime topology and
 # never silently fall back to bare bridge compose.yaml.

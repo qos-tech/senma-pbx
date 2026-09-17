@@ -803,6 +803,33 @@ check_logs
 check_backup_destination
 check_certificate
 
+# TASK-0035E10: SIP abuse protection is fail-open for telephony. Service
+# down is WARN (not FAIL) so doctor exit 0 remains usable when Asterisk
+# is healthy but Fail2ban is stopped/absent.
+check_sip_abuse_protection() {
+    local cid state jails
+    cid="$($COMPOSE ps -q senma-security 2>/dev/null || true)"
+    if [ -z "$cid" ]; then
+        record "SIP abuse protection" "WARN" "senma-security container not running -- SIP Fail2ban inactive (Asterisk continues; SECURITY_FAIL_OPEN_TELEPHONY)"
+        return 0
+    fi
+    state="$(docker inspect -f '{{.State.Status}}' "$cid" 2>/dev/null || true)"
+    if [ "$state" != "running" ]; then
+        record "SIP abuse protection" "WARN" "senma-security state=$state -- SIP Fail2ban inactive (SECURITY_FAIL_OPEN_TELEPHONY)"
+        return 0
+    fi
+    jails="$(docker exec "$cid" fail2ban-client status 2>/dev/null | tr -d '\r' || true)"
+    if printf '%s' "$jails" | grep -q 'senma-sip-auth' \
+        && printf '%s' "$jails" | grep -q 'senma-sip-scanner'; then
+        record "SIP abuse protection" "PASS" "senma-security running; jails senma-sip-auth + senma-sip-scanner loaded"
+    elif printf '%s' "$jails" | grep -qi 'pong\|Jail list'; then
+        record "SIP abuse protection" "WARN" "senma-security running but expected SIP jails not listed -- check docker/fail2ban/jail.d"
+    else
+        record "SIP abuse protection" "WARN" "senma-security running but fail2ban-client status unavailable"
+    fi
+}
+check_sip_abuse_protection
+
 # =============================================================================
 # Report
 # =============================================================================
