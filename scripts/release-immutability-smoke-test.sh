@@ -77,7 +77,7 @@ fi
 # 3. Static dependency graph: operational targets -> require-runtime
 # ---------------------------------------------------------------------------
 log "==> 3: operational targets depend on require-runtime (not build-capable targets)"
-OPS_TARGETS="backup reconcile reconcile-check migrate migrate-check secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password"
+OPS_TARGETS="backup reconcile reconcile-check migrate migrate-check secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password security-status security-bans security-unban security-reload"
 GRAPH_FAIL=0
 for t in $OPS_TARGETS; do
     line="$(grep -E "^${t}:" "$MAKEFILE" | head -1 || true)"
@@ -115,7 +115,7 @@ else
     GRAPH_FAIL=1
 fi
 if [ "$GRAPH_FAIL" = "0" ]; then
-    harness_ok "3: operational graph" "backup/reconcile/migrate/secrets/rotate -> require-runtime"
+    harness_ok "3: operational graph" "backup/reconcile/migrate/secrets/rotate/security-* -> require-runtime"
 fi
 
 # ---------------------------------------------------------------------------

@@ -52,6 +52,10 @@ for name in ("app", "asterisk", "db"):
         ok = False; msgs.append(f"{name} still has ports={s.get('ports')}")
     if s.get("networks"):
         ok = False; msgs.append(f"{name} still has networks={s.get('networks')}")
+# TASK-0035E10: senma-security must remain host-mode on the pilot path.
+sec = d["services"].get("senma-security") or {}
+if sec.get("network_mode") != "host":
+    ok = False; msgs.append(f"senma-security network_mode={sec.get('network_mode')!r} want host")
 app_env = d["services"]["app"].get("environment") or {}
 for k, v in {
     "DB_HOST": "127.0.0.1",
@@ -71,9 +75,9 @@ sys.exit(0 if ok else 1)
 PY
 PY_OUT="$(cat /tmp/host-compose-py.out 2>/dev/null || echo FAIL)"
 if [ "$PY_OUT" = "OK" ]; then
-    harness_ok "host overlay: no ports/networks; loopback env; mariadb cnf" "$PY_OUT"
+    harness_ok "host overlay: no ports/networks; loopback env; mariadb cnf; senma-security host" "$PY_OUT"
 else
-    harness_bad "host overlay: no ports/networks; loopback env; mariadb cnf" "$PY_OUT"
+    harness_bad "host overlay: no ports/networks; loopback env; mariadb cnf; senma-security host" "$PY_OUT"
 fi
 
 log "==> bridge compose still intact for regression"

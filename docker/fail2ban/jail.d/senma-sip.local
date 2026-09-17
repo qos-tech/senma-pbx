@@ -1,0 +1,40 @@
+# TASK-0035E10 — SENMA SIP abuse protection jails.
+#
+# Conservatively thresholded. No web/NPM/Apache jails — E1 owns application
+# login throttling. Ban action: senma-sip-iptables (5060 tcp+udp only).
+
+[DEFAULT]
+# Base allowlist is injected by senma-fail2ban-entrypoint.sh into
+# zz-senma-ignoreip.local (loopback + compose mag net + env lists).
+bantime  = 30m
+findtime = 10m
+maxretry = 8
+backend  = auto
+usedns   = no
+chain    = INPUT
+bantime.increment = true
+bantime.factor     = 4
+bantime.maxtime   = 24h
+banaction = senma-sip-iptables
+
+[senma-sip-auth]
+enabled  = true
+filter   = asterisk-pjsip-auth
+logpath  = /var/log/asterisk/full
+port     = 5060
+protocol = tcp,udp
+maxretry = 8
+findtime = 10m
+bantime  = 30m
+action   = %(banaction)s[name=%(__name__)s, port="%(port)s", protocol="%(protocol)s", chain="%(chain)s"]
+
+[senma-sip-scanner]
+enabled  = true
+filter   = asterisk-pjsip-scanner
+logpath  = /var/log/asterisk/full
+port     = 5060
+protocol = tcp,udp
+maxretry = 6
+findtime = 10m
+bantime  = 30m
+action   = %(banaction)s[name=%(__name__)s, port="%(port)s", protocol="%(protocol)s", chain="%(chain)s"]

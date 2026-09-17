@@ -378,6 +378,54 @@ services:
     restart: unless-stopped
     logging: *senma-default-logging
 
+  # TASK-0035E10 — SIP abuse protection (Fail2ban). Fail-open for telephony:
+  # Asterisk does NOT depend_on this service.
+  #
+  # HOST-MODE CONTRACT (pilot/production — mandatory, not optional):
+  #   app + asterisk + db + senma-security all use network_mode: host
+  #   (see compose.host.yaml / compose.pilot.yaml for app/asterisk/db).
+  #   senma-security is host-mode in this base file so bans always land in
+  #   the host netns that receives direct SIP 5060 under pilot topology.
+  #   Bridge/dev may exercise filters + host iptables insertion, but that
+  #   is NOT proof of public SIP firewall enforcement.
+  #
+  # Capabilities: NET_ADMIN only (proven sufficient for iptables-nft chain
+  # create/jump/REJECT). NET_RAW removed — not required. No privileged,
+  # no SYS_ADMIN, no docker.sock.
+  senma-security:
+    image: crazymax/fail2ban:1.1.1-debian@sha256:d4140e2848f98d600ea104cda982540b6420c164df5d559153e8e873d150e1f5
+    network_mode: host
+    cap_add:
+      - NET_ADMIN
+    # No NET_RAW, no SYS_ADMIN, no privileged, no docker.sock.
+    security_opt:
+      - no-new-privileges:true
+    environment:
+      TZ: "${TZ:-America/Sao_Paulo}"
+      F2B_LOG_TARGET: STDOUT
+      F2B_LOG_LEVEL: INFO
+      F2B_DB_PURGE_AGE: 7d
+      IPTABLES_MODE: auto
+      SENMA_SECURITY_IGNOREIP: "${SENMA_SECURITY_IGNOREIP:-}"
+      SENMA_SIP_PROVIDER_ALLOWLIST: "${SENMA_SIP_PROVIDER_ALLOWLIST:-}"
+    volumes:
+      - mag-asterisk-log:/var/log/asterisk:ro
+      - ./docker/fail2ban:/senma-fail2ban-src:ro
+      - senma-fail2ban-data:/data
+    entrypoint: ["/senma-fail2ban-src/senma-fail2ban-entrypoint.sh"]
+    command: ["fail2ban-server", "-f", "-x", "-v", "start"]
+    # Lightweight: must not compete materially with Asterisk.
+    mem_limit: 128m
+    cpus: 0.25
+    healthcheck:
+      test: ["CMD-SHELL", "fail2ban-client ping 2>/dev/null | grep -q pong"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 20s
+    restart: unless-stopped
+    logging: *senma-default-logging
+
 networks:
   mag:
     # TASK-0005: pinned explicitly (rather than left to Docker's
@@ -425,6 +473,8 @@ volumes:
   mag-asterisk-var:
   mag-asterisk-spool:
   mag-asterisk-log:
+  # TASK-0035E10: Fail2ban sqlite + generated ignoreip (not customer PBX data).
+  senma-fail2ban-data:
   # TASK-0015: independent from asterisk-etc/mag-asterisk-var -- the
   # provider simulator is a completely separate Asterisk instance with
   # its own config/state, not a second copy of SENMA's own.
