@@ -401,20 +401,29 @@
                         </table>
                     </div> <!-- /.contentHolder -->
                 </div> <!-- /.statusBlock -->
+                <?php
+                // TASK-0034I-R3: removed orphaned "SNEP Version" block that
+                // only echoed indexData['apt']. No current producer sets
+                // that key (SystemstatusController populates indexData['snep']
+                // from configs/snep_version instead, already shown in Server
+                // Status above). Do not call apt/apt-get on page render.
+                // Optional legacy apt string: render only when explicitly present.
+                if (!empty($this->indexData['apt'])):
+                ?>
                 <div class="statusBlock">
                     <div class="iconHolder">
                         <span class="sn-status-disk"> </span>
                         <h2><?php echo $this->translate("SNEP Version"); ?></h2>
                     </div>
                     <div class="contentHolder">
-
                         <table>
                             <tr>
-                                <th style="text-align: left;" >[<?php echo $this->indexData["apt"]; ?>]</th>
+                                <th style="text-align: left;">[<?php echo $this->escape($this->indexData['apt']); ?>]</th>
                             </tr>
                         </table>
                     </div>  <!-- /.contentHolder -->
                 </div> <!-- /.statusBlock -->
+                <?php endif; ?>
             </div> <!-- /.statusBColumn -->
         </div> <!-- /.statusBody -->
     </div> <!-- /.containerStatus -->

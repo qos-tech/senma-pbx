@@ -108,4 +108,57 @@ class Snep_Reports {
             
     }
 
+    /**
+     * Read a saved Calls Report period for a user row from session.
+     *
+     * TASK-0034I-R3: Snep_Users_Manager::getName() may return false/null
+     * (PDO fetch miss) or an array missing 'name'. First-access sessions
+     * also lack $_SESSION[$name]['period']. Never index those shapes
+     * directly.
+     *
+     * @param mixed $user result of Snep_Users_Manager::getName()
+     * @param array $session typically $_SESSION
+     * @return string|null period string when present; null for default dates
+     */
+    public static function getSavedPeriod($user, array $session) {
+        if (!is_array($user) || !isset($user['name']) || !is_string($user['name']) || $user['name'] === '') {
+            return null;
+        }
+        $name = $user['name'];
+        if (!isset($session[$name]) || !is_array($session[$name])) {
+            return null;
+        }
+        if (!array_key_exists('period', $session[$name])) {
+            return null;
+        }
+        $period = $session[$name]['period'];
+        if ($period === null || $period === false || $period === '') {
+            return null;
+        }
+        return (string) $period;
+    }
+
+    /**
+     * Persist a Calls Report period into session for a valid user row.
+     *
+     * Does not fabricate usernames. Returns false when $user is not a
+     * usable row so callers can skip the write without warnings.
+     *
+     * @param mixed $user
+     * @param array $session typically $_SESSION (by reference)
+     * @param string $period
+     * @return bool
+     */
+    public static function setSavedPeriod($user, array &$session, $period) {
+        if (!is_array($user) || !isset($user['name']) || !is_string($user['name']) || $user['name'] === '') {
+            return false;
+        }
+        $name = $user['name'];
+        if (!isset($session[$name]) || !is_array($session[$name])) {
+            $session[$name] = array();
+        }
+        $session[$name]['period'] = (string) $period;
+        return true;
+    }
+
 }
