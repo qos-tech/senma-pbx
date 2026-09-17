@@ -1,0 +1,13 @@
+# TASK-0035E10 — optional documentation stub.
+#
+# Ban action is the stock fail2ban 1.1 `iptables[type=multiport]` action
+# scoped to port 5060 tcp,udp (see jail.d/senma-sip.local). A custom
+# all-traffic DROP action is intentionally NOT used.
+#
+# This file exists so repository layout keeps an action.d directory and
+# so greps for senma-sip scope remain discoverable. It is not loaded as
+# an action (no [Definition] ban commands).
+
+[Init]
+# intentional no-op marker for TASK-0035E10 documentation/layout
+senma_sip_action_scope = 5060/tcp,5060/udp

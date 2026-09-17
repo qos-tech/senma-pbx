@@ -16,6 +16,11 @@
 # the Apache HTTP backend bind on the host as configured by entrypoints /
 # env (default HTTP :8080).
 #
+# TASK-0035E10: senma-security MUST also be network_mode: host in pilot /
+# production (declared in compose.yaml and re-asserted below). Fail2ban
+# must manipulate the same host INPUT path that receives SIP 5060.
+# DOCKER-USER does not apply to host-networked SIP.
+#
 # Requires native Linux. Docker Desktop (macOS/Windows) is NOT equivalent.
 # Development/regression continues to use plain compose.yaml (bridge).
 #
@@ -69,3 +74,9 @@ services:
       # stock mariadb image listens on 0.0.0.0:3306 on the shared host
       # namespace — a security failure for pilot/production.
       - ./docker/mariadb-host.cnf:/etc/mysql/conf.d/zz-senma-host-bind.cnf:ro
+
+  # TASK-0035E10 — re-assert host networking for SIP abuse protection.
+  # Base compose.yaml already sets network_mode: host; this overlay makes
+  # the pilot/production contract explicit and merge-visible.
+  senma-security:
+    network_mode: host
