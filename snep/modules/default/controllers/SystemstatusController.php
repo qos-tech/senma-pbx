@@ -52,7 +52,9 @@ class SystemstatusController extends Zend_Controller_Action {
 
         $db = Zend_Registry::get('db');
 
-        if(!$_SESSION['cloud_noticed']){
+        // TASK-0034I-R2: empty() is existence-safe (no undefined-key warning).
+        // unset/false => run CloudNotice once; true => skip for this session.
+        if (Snep_SystemStatus_OptionalRuntime::shouldRunCloudNotice($_SESSION)) {
           $tdmboards = $this->CloudNotice();
           $_SESSION['cloud_noticed'] = true;
         }
@@ -540,11 +542,9 @@ class SystemstatusController extends Zend_Controller_Action {
         $tdm['tdm'] = array();
 
         $register = Snep_Register_Manager::get();
-
-        $tdm['auth'] = array(
-          'api_key' => $register['api_key'],
-          'client_key' => $register['client_key']
-        );
+        // TASK-0034I-R2: get() returns false when itc_register has no row
+        // (PDO fetch). Do not index a non-array; do not invent secrets.
+        $tdm['auth'] = Snep_SystemStatus_OptionalRuntime::registerAuthPayload($register);
         // Khomp Boards
         $khomp = $asterisk->Command('khomp summary concise');
         $tdmkhomp = str_replace("<K> ","",str_getcsv($khomp['data'],"\n"));
@@ -602,8 +602,14 @@ class SystemstatusController extends Zend_Controller_Action {
           "disk" => $disk
         );
 
+        // TASK-0034I-R2: Asterisk 22 AMI often returns a single Output line
+        // in data (index 0). Never use a positional second-line index.
         $ast_v = $asterisk->Command('core show version');
-        $asterisk_version = str_getcsv($ast_v['data'],"\n")[1];
+        $asterisk_version = Snep_SystemStatus_OptionalRuntime::asteriskVersionFromAmiCommand($ast_v);
+        if ($asterisk_version === null) {
+            error_log('SystemstatusController: Asterisk core show version unavailable or unparsable');
+            $asterisk_version = Snep_SystemStatus_HostResources::UNAVAILABLE;
+        }
 
         $slt = $db->select()->from('peers')->where('peer_type = ?', 'R');
         $peers = $db->query($slt)->fetchAll();
