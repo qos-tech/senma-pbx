@@ -1,0 +1,3 @@
+[Sep 16 21:01:55] NOTICE[83] res_pjsip/pjsip_distributor.c: Request 'REGISTER' from '<sip:1922@asterisk>' failed for '198.51.100.66:43842' (callid: 64f977bd1367c196) - No matching endpoint found
+[Sep 16 21:01:56] NOTICE[83] res_pjsip/pjsip_distributor.c: Request 'OPTIONS' from '<sip:scan@asterisk>' failed for '198.51.100.66:5060' (callid: opt-1) - No matching endpoint found
+[Sep 16 21:01:57] NOTICE[83] res_pjsip/pjsip_distributor.c: Request 'REGISTER' from '<sip:9999@asterisk>' failed for '2001:db8::66:5060' (callid: v6-scan-1) - No matching endpoint found

@@ -83,6 +83,8 @@ run_suite "release-immutability-smoke" "release-immutability-smoke-test.sh"
 run_suite "operational-compose-run-immutability" "operational-compose-run-immutability-smoke-test.sh"
 # TASK-0035E8: shared recording storage + permissions (host snep/arquivos).
 run_suite "recording-storage" "recording-storage-smoke-test.sh"
+# TASK-0035E10: SIP abuse protection (Fail2ban filters/jails/firewall action).
+run_suite "sip-abuse-protection" "sip-abuse-protection-smoke-test.sh"
 run_suite "preauth-security"       "preauth-security-smoke-test.sh"
 # TASK-0026C: placed right after preauth-security and before
 # authorization -- both are pre-/independent-of-authorization SQL-

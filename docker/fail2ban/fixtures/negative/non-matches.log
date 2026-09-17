@@ -1,0 +1,11 @@
+[Sep 16 22:43:56] VERBOSE[83] res_pjsip_registrar.c: Added contact 'sip:phone@203.0.113.10:5060' to AOR '1001' with expiration of 600 seconds
+[Sep 16 22:44:00] NOTICE[83] res_pjsip/pjsip_distributor.c: Request 'REGISTER' from '<sip:1001@pbx>' failed for '203.0.113.10:5060' (callid: should-not-match-success-path) - Successful registration placeholder
+[Sep 16 22:46:54] WARNING[83] res_pjsip_outbound_registration.c: Failed to create authenticated REGISTER request to server 'sip:provider:5060' from client 'sip:senma-outbound@provider:5060'
+[Sep 16 22:47:11] WARNING[83] res_pjsip_outbound_authenticator_digest.c: noendpoint:172.28.0.2: Authentication credentials not accepted by server. Credential failed to authenticate (PJSIP_EFAILEDCREDENTIAL)
+[Sep 16 22:51:04] VERBOSE[1] res_musiconhold.c: Files not found in /var/lib/asterisk/moh for moh class:default
+[Sep 16 22:51:04] NOTICE[1] res_fax.c: Configuration file 'res_fax.conf' not found, using default options.
+[Sep 16 22:51:04] ERROR[1] res_clialiases.c: res_clialiases configuration file 'cli_aliases.conf' not found
+[Sep 16 23:00:00] NOTICE[1] loader.c: 318 modules will be loaded.
+10.60.20.20 - - [16/Sep/2026:23:00:01 +0000] "POST /index.php/auth/login HTTP/1.1" 302
+[Sep 16 23:01:00] NOTICE[83] res_pjsip/pjsip_distributor.c: Request 'REGISTER' from '<sip:1000@pbx>' failed for '' (callid: malformed-no-ip) - Failed to authenticate
+[Sep 16 23:01:01] NOTICE[83] something_else.c: Request 'REGISTER' from '<sip:1000@pbx>' failed for '203.0.113.99:5060' (callid: wrong-module) - Failed to authenticate
