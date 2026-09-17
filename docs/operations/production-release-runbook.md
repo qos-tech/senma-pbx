@@ -136,8 +136,11 @@ volume needs more than ~100 simultaneous calls). Use it instead of
 plain `make up`/`make dev` for a pilot deployment:
 
 ```bash
-make pilot-config   # review the merged, published-port configuration first
-make pilot-up       # starts app/asterisk/db only -- provider is Compose-profile-gated (CH-3), cannot start here
+make pilot-config   # review the merged host-networking configuration first
+make pilot-up       # starts app/asterisk/db/senma-security -- provider is Compose-profile-gated (CH-3), cannot start here
+# TASK-0035E10-R1: senma-security is part of the canonical pilot stack.
+# Asterisk does not depend_on it (fail-open telephony), but pilot-up must
+# start it. Use `make pilot-down` to stop the same four services.
 ```
 
 If the pilot adds a `tls` transport (not seeded by default — an
@@ -225,7 +228,7 @@ rollback procedure below; it is never committed).
 ```bash
 export RELEASE_VERSION=v1.0.0   # must match step 5's VERSION exactly
 export COMPOSE_FILES="-f compose.yaml -f compose.pilot.yaml"
-export SERVICES="app asterisk db"
+export SERVICES="app asterisk db senma-security"
 make pilot-up
 make ps      # confirm all services report healthy (app/asterisk/db only -- no provider)
 ```

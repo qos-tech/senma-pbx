@@ -1,4 +1,4 @@
-.PHONY: dev dev-build dev-up ensure-dev-stack require-runtime up pilot-config pilot-up release-build release-info release-artifact-smoke release-immutability-smoke operational-compose-run-immutability-smoke recording-storage-smoke restore-runtime-topology-smoke status-detail-ux-smoke sip-abuse-protection-smoke security-status security-bans security-unban security-reload down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke cnl-upload-authorization-security-smoke itc-registration-authorization-security-smoke notification-dismiss-authorization-security-smoke dashboard-preferences-authorization-security-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke admin-bootstrap-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke wss-proxy-termination-smoke webrtc-endpoint-contract-smoke webrtc-browser-nat-smoke host-networking-architecture-smoke asterisk-console-observability-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke system-status-runtime-smoke systemstatus-dashboard-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke fresh-install-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke bootstrap-admin-credentials bootstrap-admin-credentials-clear doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate ami-acl-smoke
+.PHONY: dev dev-build dev-up ensure-dev-stack require-runtime up pilot-config pilot-up pilot-down release-build release-info release-artifact-smoke release-immutability-smoke operational-compose-run-immutability-smoke recording-storage-smoke restore-runtime-topology-smoke status-detail-ux-smoke sip-abuse-protection-smoke security-status security-bans security-unban security-reload down restart logs ps shell db-shell asterisk-cli test smoke authorization-coverage harness-lib-selftest authorization-smoke cnl-upload-authorization-security-smoke itc-registration-authorization-security-smoke notification-dismiss-authorization-security-smoke dashboard-preferences-authorization-security-smoke preauth-security-smoke sql-security-smoke residual-sql-security-smoke shell-security-smoke pjsip-config-security-smoke api-security-smoke api-sql-security-smoke session-csrf-security-smoke auth-hardening-security-smoke admin-bootstrap-smoke disclosure-path-security-smoke legacy-maintenance-exposure-security-smoke cdr-window-selftest call-smoke trunk-smoke pjsip-external-trunk-smoke pjsip-lifecycle-smoke wss-platform-smoke wss-proxy-termination-smoke webrtc-endpoint-contract-smoke webrtc-browser-nat-smoke host-networking-architecture-smoke asterisk-console-observability-smoke tls-cert-management-smoke cert-check wss-cert-check wss-certificate-runtime-smoke pjsip-runtime-status-smoke extensions-trunks-admin-experience-smoke transport-smoke dialplan-legacy-closure-smoke restart-smoke system-status-runtime-smoke systemstatus-dashboard-smoke external-failure-smoke external-content-smoke lint regression doctor reset config backup restore backup-smoke backup-restore-smoke fresh-install-smoke reconcile reconcile-check pjsip-reconcile-smoke secrets-check rotate-secrets rotate-db-password rotate-db-root-password rotate-ami-password secrets-consistency-smoke secret-rotation-smoke bootstrap-admin-credentials bootstrap-admin-credentials-clear doctor-smoke doctor-failure-smoke compose-profile-isolation-smoke release-artifact-smoke readiness-smoke readiness-failure-smoke migrate migrate-check db-migration-smoke db-migration-failure-smoke ami-acl-migrate ami-acl-smoke
 
 COMPOSE ?= docker compose
 
@@ -11,7 +11,7 @@ COMPOSE ?= docker compose
 # behavior for development is byte-for-byte unchanged. Export once per
 # pilot operator shell session:
 #   export COMPOSE_FILES="-f compose.yaml -f compose.pilot.yaml"
-#   export SERVICES="app asterisk db"
+#   export SERVICES="app asterisk db senma-security"
 # See docs/operations/production-release-runbook.md and
 # docs/tasks/0034b-production-network-exposure-hardening.md -- without
 # this, `up`'s default (no file flags, no service filter) drops the
@@ -21,7 +21,9 @@ COMPOSE ?= docker compose
 # TASK-0034 CH-3) structurally, via the Compose profile gate below and
 # in compose.yaml -- that part no longer depends on these two variables
 # being exported at all, but COMPOSE_FILES/SERVICES are still required
-# for the port-exposure half.
+# for the port-exposure half. TASK-0035E10-R1: pilot/production canonical
+# stack is app + asterisk + db + senma-security (security is fail-open for
+# Asterisk depends_on, but NOT omitted from pilot-up orchestration).
 COMPOSE_FILES ?=
 SERVICES ?=
 
@@ -107,6 +109,11 @@ ensure-dev-stack: refuse-non-dev-build dev-build up
 
 # Runtime/operator prerequisite: stack must already be running.
 # Never builds, never starts, never retags.
+# TASK-0035E10-R1: require-runtime still checks app/asterisk/db only.
+# senma-security is fail-open for telephony ops (backup/migrate/etc.);
+# doctor WARNs if it is down. security-* targets check it themselves.
+# Canonical pilot-up nevertheless starts senma-security (orchestration
+# inclusion ≠ hard depends_on).
 require-runtime:
 	@missing=""; \
 	for svc in app asterisk db; do \
@@ -161,6 +168,10 @@ pilot-config:
 # exist locally -- the two guards below close that gap explicitly,
 # rather than silently allowing an unvetted just-in-time build here that
 # never went through release-build.sh's dirty-tree/tag-match checks.
+# TASK-0035E10-R1: canonical pilot/production stack is
+#   app + asterisk + db + senma-security
+# Asterisk must NOT depend_on senma-security (SECURITY_FAIL_OPEN_TELEPHONY),
+# but pilot-up MUST start senma-security. Do not omit it from this list.
 pilot-up:
 	@if [ "$(RELEASE_VERSION)" = "dev" ] || [ -z "$(RELEASE_VERSION)" ]; then \
 		echo "ERROR: pilot-up refuses to deploy the mutable 'dev' tag (TASK-0034 CH-9 -- no mutable-only release)." >&2; \
@@ -173,7 +184,12 @@ pilot-up:
 		echo "Run 'make release-build VERSION=$(RELEASE_VERSION)' first -- pilot-up never builds an image of its own." >&2; \
 		exit 1; \
 	fi
-	COMPOSE_PROFILES= $(COMPOSE) -f compose.yaml -f compose.pilot.yaml up -d --no-build app asterisk db
+	COMPOSE_PROFILES= $(COMPOSE) -f compose.yaml -f compose.pilot.yaml up -d --no-build app asterisk db senma-security
+
+# TASK-0035E10-R1: stop the canonical pilot service set with the same
+# compose files as pilot-up. Does not remove volumes. Never builds.
+pilot-down:
+	COMPOSE_PROFILES= $(COMPOSE) -f compose.yaml -f compose.pilot.yaml stop app asterisk db senma-security
 
 # TASK-0034D: builds the SENMA-owned production images (app, asterisk --
 # never provider, TASK-0034 CH-3) with an explicit release version,

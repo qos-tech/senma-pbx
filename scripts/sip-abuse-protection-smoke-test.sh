@@ -79,6 +79,18 @@ else
     harness_bad "1: network/caps" "expected host networking + NET_ADMIN only on senma-security"
 fi
 
+# TASK-0035E10-R1: Makefile pilot-up must orchestrate senma-security.
+PILOT_UP_LINE="$(awk '/^pilot-up:/{p=1;next} p&&/^[^[:space:]#]/{exit} p&&/up -d --no-build/{print}' "$REPO_ROOT/Makefile" | tail -1)"
+if printf '%s\n' "$PILOT_UP_LINE" | grep -Eq '(^|[[:space:]])app([[:space:]]|$)' \
+   && printf '%s\n' "$PILOT_UP_LINE" | grep -Eq '(^|[[:space:]])asterisk([[:space:]]|$)' \
+   && printf '%s\n' "$PILOT_UP_LINE" | grep -Eq '(^|[[:space:]])db([[:space:]]|$)' \
+   && printf '%s\n' "$PILOT_UP_LINE" | grep -Eq '(^|[[:space:]])senma-security([[:space:]]|$)' \
+   && printf '%s\n' "$PILOT_UP_LINE" | grep -q -- '--no-build'; then
+    harness_ok "1: pilot-up includes senma-security" "$PILOT_UP_LINE"
+else
+    harness_bad "1: pilot-up includes senma-security" "unexpected: $PILOT_UP_LINE"
+fi
+
 # ---------------------------------------------------------------------------
 # 2. Filter fixtures (positive / negative)
 # ---------------------------------------------------------------------------

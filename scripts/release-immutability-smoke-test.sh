@@ -73,6 +73,45 @@ else
     harness_bad "2: pilot-up --no-build + image guards" "pilot-up recipe unsafe: $PILOT_RECIPE"
 fi
 
+# TASK-0035E10-R1: pilot-up must start the canonical four-service set.
+log "==> 2b: pilot-up includes senma-security (canonical pilot stack)"
+UP_LINE="$(printf '%s\n' "$PILOT_RECIPE" | grep -E 'up -d --no-build' | tail -1)"
+MISSING_SVC=0
+for svc in app asterisk db senma-security; do
+    # Word-boundary match so we do not double-count substrings.
+    if ! printf '%s\n' "$UP_LINE" | grep -Eq "(^|[[:space:]])${svc}([[:space:]]|$)"; then
+        harness_bad "2b: pilot-up includes $svc" "missing from: $UP_LINE"
+        MISSING_SVC=1
+    fi
+done
+if [ "$MISSING_SVC" -eq 0 ]; then
+    # No duplicated service tokens on the up line.
+    for svc in app asterisk db senma-security; do
+        count="$(printf '%s\n' "$UP_LINE" | tr ' ' '\n' | grep -c "^${svc}$" || true)"
+        if [ "$count" -ne 1 ]; then
+            harness_bad "2b: no duplicate $svc" "count=$count in: $UP_LINE"
+            MISSING_SVC=1
+        fi
+    done
+fi
+if [ "$MISSING_SVC" -eq 0 ]; then
+    harness_ok "2b: pilot-up canonical services" "app asterisk db senma-security once each; --no-build"
+fi
+
+# pilot-down mirrors the same four services + compose files, never builds.
+PILOT_DOWN="$(awk '
+  /^pilot-down:/{in_p=1; next}
+  in_p && /^[^[:space:]#]/{exit}
+  in_p {print}
+' "$MAKEFILE")"
+if printf '%s\n' "$PILOT_DOWN" | grep -q 'compose.pilot.yaml' \
+   && printf '%s\n' "$PILOT_DOWN" | grep -Eq 'stop[[:space:]].*senma-security' \
+   && ! printf '%s\n' "$PILOT_DOWN" | grep -qE -- '(^|[[:space:]])--build([[:space:]]|$)'; then
+    harness_ok "2b: pilot-down symmetry" "stops app asterisk db senma-security; no build"
+else
+    harness_bad "2b: pilot-down symmetry" "unexpected recipe: $PILOT_DOWN"
+fi
+
 # ---------------------------------------------------------------------------
 # 3. Static dependency graph: operational targets -> require-runtime
 # ---------------------------------------------------------------------------

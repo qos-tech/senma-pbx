@@ -252,13 +252,101 @@ Future authorized pilot proof **must** run with `senma-security` /
 → SIP-only host INPUT block → unban → security stop leaves Asterisk healthy →
 no NPM collateral.
 
-## E7 / release
+---
+
+## TASK-0035E10-R1 — Pilot startup regression
+
+**Status:** fix implemented — awaiting checkpoint authorization (no commit yet)
+**Decision candidate:** `PILOT_STARTUP_SECURITY_PASS`
+**Does not:** retag/rebuild `v0.1.0-rc.11`, create `v0.1.0-rc.12`, deploy, resume E7
+
+### Pilot evidence (TEXTE-PBX-001 / rc.11)
+
+`make pilot-up` executed:
+
+```text
+docker compose -f compose.yaml -f compose.pilot.yaml \
+  up -d --no-build app asterisk db
+```
+
+and **omitted** `senma-security`. Operators had to start it manually:
+
+```text
+docker compose -f compose.yaml -f compose.pilot.yaml \
+  up -d --no-build senma-security
+```
+
+After manual start: healthy, host network, `CAP_NET_ADMIN` only, jails loaded,
+real Internet attacks banned, firewall enforcement PASS, unban PASS,
+fail-open PASS. Runtime implementation was correct; **orchestration was incomplete**.
+
+### Root cause
+
+`Makefile` `pilot-up` hardcodes an explicit service list that predated E10:
+
+```text
+up -d --no-build app asterisk db
+```
+
+`make up` with empty `SERVICES` already started `senma-security` (no Compose
+profile gate). Only the pilot path omitted it.
+
+### Corrected contract
+
+Canonical pilot/production startup set:
+
+- `app`
+- `asterisk`
+- `db`
+- `senma-security`
+
+Fail-open distinction preserved:
+
+- Asterisk has **no** `depends_on: senma-security`
+- `require-runtime` still requires only app/asterisk/db (ops remain usable if security is down; doctor WARNs)
+- `pilot-up` **must** still start `senma-security` (orchestration inclusion ≠ hard dependency)
+
+Also added:
+
+- `make pilot-down` — stops the same four services with the same compose files
+- restore stop/start includes `senma-security` (best-effort start; fail-open warning)
+- host topology verify inspects `senma-security` when present
+
+### Validation (E10-R1)
+
+| Gate | Result |
+|---|---|
+| `make doctor-smoke` | **PASS** |
+| `make sip-abuse-protection-smoke` | **PASS** (31/31; includes pilot-up service-set check) |
+| `make host-networking-architecture-smoke` | **PASS** |
+| `make release-immutability-smoke` | **PASS** (includes 2b pilot-up/pilot-down) |
+| `make lint` | **PASS** |
+| `make regression` A | **PASS** |
+| `make regression` B | **PASS** |
+| `git diff --check` | **PASS** |
+
+Evidence: `/tmp/e10r1-clean-validation.log` (`E10R1_CLEAN_DONE`).
+
+Earlier interrupted suite had unrelated failures (trailing whitespace in this doc — fixed; doctor DRIFT from stale `release-manifest.json` after rc.11 build — removed; transport-smoke AUTO endpoint load flake — passed on consecutive clean runs without repair).
+
+- `v0.1.0-rc.11` remains **immutable** (do not retag/rebuild under the same version)
+- Next candidate after this fix merges: **`v0.1.0-rc.12`** (not created in this task)
+- TASK-0035E7 remains **paused**; do not close pilot on rc.11 as final
+
+### E7 / release
 
 E7 paused. After E10 merge: next RC `v0.1.0-rc.11` (do not mutate rc.10).
+After E10-R1 merge: next candidate **`v0.1.0-rc.12`** (do not mutate rc.11).
 
-## Proposed commit split
+## Proposed commit split (E10 original)
 
 1. `feat(security): add SIP abuse protection service`
 2. `test(security): cover fail2ban filters and firewall actions`
 3. `ops(security): add status and unban commands`
 4. `docs(security): record TASK-0035E10 closure`
+
+## Proposed commit split (E10-R1)
+
+1. `fix(ops): include security in pilot startup`
+2. `test(ops): cover full pilot service set`
+3. `docs(security): record E10 pilot startup regression`
