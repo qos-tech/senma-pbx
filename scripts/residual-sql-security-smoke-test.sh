@@ -1094,7 +1094,13 @@ manager_check() {
     after_total="$(fatal_count)"
     tail_text="$(app_exec 'tail -c 4000 /var/log/apache2/mag-error.log 2>/dev/null')"
     total_delta=$((after_total - before_total))
-    if [ "$total_delta" -eq 0 ] && ! echo "$tail_text" | grep -qi "SQLSTATE\|syntax error"; then
+    # TASK-0034I-R3 gate note: assert 42000-class / syntax-error signatures
+    # only. Broader "SQLSTATE" matched leftover SQLSTATE[22007] data-type
+    # rejections from earlier apostrophe probes in the same suite (e.g.
+    # users_permissions.user_id) and falsely failed later manager_check
+    # calls whose own requests produced only clean NotFound/BadArg
+    # (fatal_delta=0). Matches the suite's documented 42000-class discipline.
+    if [ "$total_delta" -eq 0 ] && ! echo "$tail_text" | grep -qi "SQLSTATE\[42\|syntax error"; then
         harness_ok "$label" "no PHP Fatal Error, no SQL/syntax error"
     else
         harness_bad "$label" "fatal_delta=${total_delta}; log tail: $(echo "$tail_text" | tr '\n' ' ' | tail -c 300)"
@@ -1114,7 +1120,8 @@ manager_check_get() {
     after_total="$(fatal_count)"
     tail_text="$(app_exec 'tail -c 4000 /var/log/apache2/mag-error.log 2>/dev/null')"
     total_delta=$((after_total - before_total))
-    if [ "$total_delta" -eq 0 ] && ! echo "$tail_text" | grep -qi "SQLSTATE\|syntax error"; then
+    # Same 42000-class discipline as manager_check() (TASK-0034I-R3).
+    if [ "$total_delta" -eq 0 ] && ! echo "$tail_text" | grep -qi "SQLSTATE\[42\|syntax error"; then
         harness_ok "$label" "no PHP Fatal Error, no SQL/syntax error"
     else
         harness_bad "$label" "fatal_delta=${total_delta}; log tail: $(echo "$tail_text" | tr '\n' ' ' | tail -c 300)"

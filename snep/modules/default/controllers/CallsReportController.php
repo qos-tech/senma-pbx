@@ -78,8 +78,10 @@ class CallsReportController extends Zend_Controller_Action
         $auth = Zend_Auth::getInstance();
         $username = $auth->getIdentity();
         $user = Snep_Users_Manager::getName($username);
-        if ($_SESSION[$user['name']]['period']) {
-            $dateForm = explode(" - ", $_SESSION[$user['name']]['period']);
+        // TASK-0034I-R3: getName() may be false/null; session period may be absent.
+        $period = Snep_Reports::getSavedPeriod($user, $_SESSION);
+        if ($period !== null) {
+            $dateForm = explode(" - ", $period);
             $date = Snep_Reports::fmt_date($dateForm[0], $dateForm[1]);
             $this->view->startDate = $dateForm[0];
             $this->view->endDate = $dateForm[1];
@@ -108,7 +110,8 @@ class CallsReportController extends Zend_Controller_Action
         $auth = Zend_Auth::getInstance();
         $username = $auth->getIdentity();
         $user = Snep_Users_Manager::getName($username);
-        $_SESSION[$user['name']]['period'] = $filter["period"];
+        // TASK-0034I-R3: only persist period when getName() returned a usable row.
+        Snep_Reports::setSavedPeriod($user, $_SESSION, $filter["period"]);
 
         // TASK-0034A: $exceptions is only ever assigned inside the
         // $user['id'] != '1' branch below (from

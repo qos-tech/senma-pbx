@@ -26,6 +26,12 @@ require_once 'Zend/View/Helper/Placeholder/Container/Standalone.php';
 /**
  * Zend_Layout_View_Helper_HeadLink
  *
+ * PHP 8 compatibility (TASK-0034I-R3): createDataStylesheet() /
+ * createDataAlternate() called compact(..., 'extras') without always
+ * defining $extras. PHP 8+ emits "Undefined variable $extras" on the
+ * common path that omits optional $extras. Initialize $extras = array()
+ * before that branch; empty extras keep the same <link> HTML.
+ *
  * @see        http://www.w3.org/TR/xhtml1/dtds.html
  * @uses       Zend_View_Helper_Placeholder_Container_Standalone
  * @package    Zend_View
@@ -385,6 +391,8 @@ class Zend_View_Helper_HeadLink extends Zend_View_Helper_Placeholder_Container_S
             }
         }
 
+        // TASK-0034I-R3: always define $extras for compact() under PHP 8+.
+        $extras = array();
         if(0 < count($args) && is_array($args[0])) {
             $extras = array_shift($args);
             $extras = (array) $extras;
@@ -430,6 +438,8 @@ class Zend_View_Helper_HeadLink extends Zend_View_Helper_Placeholder_Container_S
         $type  = array_shift($args);
         $title = array_shift($args);
 
+        // TASK-0034I-R3: always define $extras for compact() under PHP 8+.
+        $extras = array();
         if(0 < count($args) && is_array($args[0])) {
             $extras = array_shift($args);
             $extras = (array) $extras;
