@@ -80,6 +80,170 @@ class QueuesController extends Zend_Controller_Action {
     }
 
     /**
+     * TASK-0034I-R5: complete ADD-mode default model for addedit.phtml.
+     * Empty strings for optional text/sound selects; radio defaults match
+     * the historical ADD UI (ringinuse already defaulted to No) plus the
+     * same No/no selections for the other radios that previously had no
+     * ADD initialization at all.
+     *
+     * @return array
+     */
+    protected function defaultQueueFormModel() {
+        return array(
+            'name' => '',
+            'musiconhold' => '',
+            'announce' => '',
+            'context' => '',
+            'timeout' => '',
+            'queue_youarenext' => '',
+            'queue_thereare' => '',
+            'queue_callswaiting' => '',
+            'queue_thankyou' => '',
+            'announce_frequency' => '',
+            'retry' => '',
+            'wrapuptime' => '',
+            'maxlen' => '',
+            'servicelevel' => '',
+            'strategy' => '',
+            'joinempty' => 'no',
+            'leavewhenempty' => '0',
+            'reportholdtime' => '0',
+            'memberdelay' => '',
+            'weight' => '',
+            'ringinuse' => '0',
+        );
+    }
+
+    /**
+     * TASK-0034I-R5: build the queues row payload from the request without
+     * indexing missing optional POST keys. Radios may be absent when the
+     * browser submits an incomplete form; fall back to explicit defaults
+     * (ADD) or the existing queue values (EDIT).
+     *
+     * Empty strings for nullable integer columns are normalized to null
+     * so MariaDB strict mode does not reject the INSERT/UPDATE
+     * (SQLSTATE 22007 / Incorrect integer value: '').
+     *
+     * @param string $name
+     * @param array|null $defaults
+     * @return array
+     */
+    protected function queuePayloadFromRequest($name, $defaults = null) {
+        if (!is_array($defaults)) {
+            $defaults = $this->defaultQueueFormModel();
+        }
+        $req = $this->_request;
+        $pick = function ($key) use ($req, $defaults) {
+            $fallback = array_key_exists($key, $defaults) ? $defaults[$key] : '';
+            return $req->getPost($key, $fallback);
+        };
+
+        $dados = array(
+            'name' => $name,
+            'musiconhold' => $pick('musiconhold'),
+            'announce' => $pick('announce'),
+            'context' => $pick('context'),
+            'timeout' => $pick('timeout'),
+            'queue_youarenext' => $pick('queue_youarenext'),
+            'queue_thereare' => $pick('queue_thereare'),
+            'queue_callswaiting' => $pick('queue_callswaiting'),
+            'queue_thankyou' => $pick('queue_thankyou'),
+            'announce_frequency' => $pick('announce_frequency'),
+            'retry' => $pick('retry'),
+            'wrapuptime' => $pick('wrapuptime'),
+            'maxlen' => $pick('maxlen'),
+            'servicelevel' => $pick('servicelevel'),
+            'strategy' => $pick('strategy'),
+            'joinempty' => $pick('joinempty'),
+            'leavewhenempty' => $pick('leavewhenempty'),
+            'reportholdtime' => $pick('reportholdtime'),
+            'memberdelay' => $pick('memberdelay'),
+            'weight' => $pick('weight'),
+            'ringinuse' => $pick('ringinuse'),
+        );
+
+        return $this->normalizeQueuePayloadIntegers($dados);
+    }
+
+    /**
+     * Convert blank form values for nullable int columns to SQL NULL.
+     *
+     * @param array $dados
+     * @return array
+     */
+    protected function normalizeQueuePayloadIntegers(array $dados) {
+        $nullableInts = array(
+            'timeout',
+            'announce_frequency',
+            'retry',
+            'wrapuptime',
+            'maxlen',
+            'servicelevel',
+            'memberdelay',
+            'weight',
+        );
+        foreach ($nullableInts as $key) {
+            if (!array_key_exists($key, $dados)) {
+                continue;
+            }
+            if ($dados[$key] === '' || $dados[$key] === null) {
+                $dados[$key] = null;
+            }
+        }
+        // ringinuse is NOT NULL with default 1 — never persist blank.
+        if (!array_key_exists('ringinuse', $dados) || $dados['ringinuse'] === '' || $dados['ringinuse'] === null) {
+            $dados['ringinuse'] = '0';
+        }
+        // reportholdtime is tinyint nullable — blank → null
+        if (array_key_exists('reportholdtime', $dados) && $dados['reportholdtime'] === '') {
+            $dados['reportholdtime'] = null;
+        }
+        return $dados;
+    }
+
+    /**
+     * Apply radio "checked" view flags from a queue row / default model.
+     *
+     * @param array $queue
+     */
+    protected function applyQueueRadioViewFlags(array $queue) {
+        $this->view->joinempty_yes = '';
+        $this->view->joinempty_no = '';
+        $this->view->joinempty_strict = '';
+        if (isset($queue['joinempty']) && $queue['joinempty'] === 'yes') {
+            $this->view->joinempty_yes = 'checked';
+        } elseif (isset($queue['joinempty']) && $queue['joinempty'] === 'no') {
+            $this->view->joinempty_no = 'checked';
+        } else {
+            $this->view->joinempty_strict = 'checked';
+        }
+
+        if (isset($queue['leavewhenempty']) && (string) $queue['leavewhenempty'] === '1') {
+            $this->view->leavewhenemptyTrue = 'checked';
+            $this->view->leavewhenemptyFalse = '';
+        } else {
+            $this->view->leavewhenemptyTrue = '';
+            $this->view->leavewhenemptyFalse = 'checked';
+        }
+
+        if (isset($queue['ringinuse']) && (string) $queue['ringinuse'] === '1') {
+            $this->view->ringinuseTrue = 'checked';
+            $this->view->ringinuseFalse = '';
+        } else {
+            $this->view->ringinuseTrue = '';
+            $this->view->ringinuseFalse = 'checked';
+        }
+
+        if (isset($queue['reportholdtime']) && (string) $queue['reportholdtime'] === '1') {
+            $this->view->reportholdtimeTrue = 'checked';
+            $this->view->reportholdtimeFalse = '';
+        } else {
+            $this->view->reportholdtimeTrue = '';
+            $this->view->reportholdtimeFalse = 'checked';
+        }
+    }
+
+    /**
      *  AddAction - Add Queue
      */
     public function addAction() {
@@ -108,58 +272,43 @@ class QueuesController extends Zend_Controller_Action {
 
         }
         $this->view->strategy = $strategy;
-        $this->view->ringinuseFalse = "checked";
+
+        // After POST — process before rendering so a successful create
+        // redirects without re-rendering the empty ADD form, and so
+        // optional POST keys are never read via bare $_POST[...] .
+        if ($this->_request->getPost()) {
+
+            $name = (string) $this->_request->getPost('name', '');
+            $dados = $this->queuePayloadFromRequest($name);
+
+            // getName(): false = not found (allow); array = duplicate (reject).
+            // Do not count(); false is not Countable under PHP 8.
+            $existing = Snep_Queues_Manager::getName($name);
+
+            if ($existing !== false) {
+                $message = $this->view->translate("Name already exists.");
+                $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
+                return;
+            }
+
+            $id = Snep_Queues_Manager::add($dados);
+
+            //audit
+            Snep_Audit_Manager::SaveLog("Added", 'queues', $id, $this->view->translate("Queues") . " " . $name);
+
+            $this->_redirect($this->getRequest()->getControllerName());
+            return;
+        }
+
+        // ADD GET: explicit default model + radio selections (TASK-0034I-R5).
+        $defaults = $this->defaultQueueFormModel();
+        $this->view->queue = $defaults;
+        $this->applyQueueRadioViewFlags($defaults);
+        $this->view->disabled = '';
 
         //Define the action and others and load form
         $this->view->action = "add" ;
         $this->renderScript( $this->getRequest()->getControllerName().'/addedit.phtml' );
-
-        // After POST
-        if ($this->_request->getPost()) {
-
-            $dados = array('name' => $_POST['name'],
-                'musiconhold' => $_POST['musiconhold'],
-                'announce' => $_POST['announce'],
-                'context' => $_POST['context'],
-                'timeout' => $_POST['timeout'],
-                'queue_youarenext' => $_POST['queue_youarenext'],
-                'queue_thereare' => $_POST['queue_thereare'],
-                'queue_callswaiting' => $_POST['queue_callswaiting'],
-                'queue_thankyou' => $_POST['queue_thankyou'],
-                'announce_frequency' => $_POST['announce_frequency'],
-                'retry' => $_POST['retry'],
-                'wrapuptime' => $_POST['wrapuptime'],
-                'maxlen' => $_POST['maxlen'],
-                'servicelevel' => $_POST['servicelevel'],
-                'strategy' => $_POST['strategy'],
-                'joinempty' => $_POST['joinempty'],
-                'leavewhenempty' => $_POST['leavewhenempty'],
-                'reportholdtime' => $_POST['reportholdtime'],
-                'memberdelay' => $_POST['memberdelay'],
-                'weight' => $_POST['weight'],
-                'ringinuse' => $_POST['ringinuse'],
-            );
-
-            $form_isValid = true;
-
-            $newId = Snep_Queues_Manager::getName($_POST['name']);
-
-            if (count($newId) > 1) {
-                $form_isValid = false;
-                $message = $this->view->translate("Name already exists.");
-                $this->_helper->redirector('sneperror','error',null,array('error_message'=>$message));
-            }
-
-            if ($form_isValid) {
-
-                $id = Snep_Queues_Manager::add($dados);
-
-                //audit
-                Snep_Audit_Manager::SaveLog("Added", 'queues', $id, $this->view->translate("Queues") . " " . $_POST['name']);
-                
-                $this->_redirect($this->getRequest()->getControllerName());
-            }
-        }
 
     }
 
@@ -177,12 +326,32 @@ class QueuesController extends Zend_Controller_Action {
 
         $queue = Snep_Queues_Manager::get($id);
 
-        $this->view->queue = $queue;
-
         // PHP 8 compatibility: getSounds() uses $this internally, so it
         // must be called on an instance (TASK-0002 P1-B). See
         // docs/tasks/0002-php84-compatibility-baseline.md.
         $this->view->sounds = (new Snep_SoundFiles_Manager())->getSounds(true);
+
+        if ($queue === false || !is_array($queue)) {
+            $message = $this->view->translate("Queue not found.");
+            $this->_helper->redirector('sneperror', 'error', null, array('error_message' => $message));
+            return;
+        }
+
+        // After POST — same optional-field hardening as addAction.
+        if ($this->_request->getPost()) {
+
+            $dados = $this->queuePayloadFromRequest($queue['name'], $queue);
+
+            Snep_Queues_Manager::edit($dados);
+
+            //audit (use the looked-up queue id; edit payload has no id key)
+            Snep_Audit_Manager::SaveLog("Updated", 'queues', $queue['id'], $this->view->translate("Queue") . " " . $queue['name']);
+
+            $this->_redirect($this->getRequest()->getControllerName());
+            return;
+        }
+
+        $this->view->queue = $queue;
 
         // Music On Hold available x registered
         $musiconhold = "";
@@ -200,74 +369,13 @@ class QueuesController extends Zend_Controller_Action {
 
         $this->view->strategy = $strategy;
 
-        // Others queue definitions
-        if($queue['joinempty'] == "no"){
-          $this->view->joinempty_no = "checked";
-        }elseif($queue['joinempty'] == "yes"){
-          $this->view->joinempty_yes = "checked";
-        }else{
-          $this->view->joinempty_strict = "checked";
-        }
-
-        if($queue['leavewhenempty'] == "1"){
-            $this->view->leavewhenemptyTrue = "checked";
-        }else{
-            $this->view->leavewhenemptyFalse = "checked";
-        }
-
-        if($queue['ringinuse'] == "1"){
-            $this->view->ringinuseTrue = "checked";
-        }else{
-            $this->view->ringinuseFalse = "checked";
-        }
-
-        if($queue['reportholdtime'] == "1"){
-            $this->view->reportholdtimeTrue = "checked";
-        }else{
-            $this->view->reportholdtimeFalse = "checked";
-        }
+        $this->applyQueueRadioViewFlags($queue);
 
         //Define the action and load form
         $this->view->action = "edit" ;
         $this->view->disabled = "disabled";
 
         $this->renderScript( $this->getRequest()->getControllerName().'/addedit.phtml' );
-
-        // After POST
-        if ($this->_request->getPost()) {
-
-            $dados = array('name' => $queue['name'],
-                'musiconhold' => $_POST['musiconhold'],
-                'announce' => $_POST['announce'],
-                'context' => $_POST['context'],
-                'timeout' => $_POST['timeout'],
-                'queue_youarenext' => $_POST['queue_youarenext'],
-                'queue_thereare' => $_POST['queue_thereare'],
-                'queue_callswaiting' => $_POST['queue_callswaiting'],
-                'queue_thankyou' => $_POST['queue_thankyou'],
-                'announce_frequency' => $_POST['announce_frequency'],
-                'retry' => $_POST['retry'],
-                'wrapuptime' => $_POST['wrapuptime'],
-                'maxlen' => $_POST['maxlen'],
-                'servicelevel' => $_POST['servicelevel'],
-                'strategy' => $_POST['strategy'],
-                'joinempty' => $_POST['joinempty'],
-                'leavewhenempty' => $_POST['leavewhenempty'],
-                'reportholdtime' => $_POST['reportholdtime'],
-                'memberdelay' => $_POST['memberdelay'],
-                'weight' => $_POST['weight'],
-                'ringinuse' => $_POST['ringinuse'],
-            );
-
-
-            Snep_Queues_Manager::edit($dados);
-            
-            //audit
-            Snep_Audit_Manager::SaveLog("Updated", 'queues', $dados['id'], $this->view->translate("Queue") . " " . $queue['name']);
-            
-            $this->_redirect($this->getRequest()->getControllerName());
-
-        }
 
     }
 

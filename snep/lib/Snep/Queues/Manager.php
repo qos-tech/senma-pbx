@@ -404,9 +404,21 @@ class Snep_Queues_Manager {
     }
 
     /**
-     * Method to get queue by name
-     * @param <string> $id
-     * @return Array
+     * Look up a queue by unique name (duplicate-name probe).
+     *
+     * TASK-0034I-R5 contract (PDO/Zend `$stmt->fetch()`, not fetchAll):
+     *   - associative array `{id, name}` when exactly one row matches
+     *   - `false` when no row matches ("not found")
+     *   - never returns a multi-row list (name is unique; fetch() is single-row)
+     *   - DB/query failures raise Zend_Db exceptions; they are not mapped to false
+     *
+     * Callers must treat `false` and an array as distinct. Do not
+     * `count($row)` — under PHP 8 `count(false)` is a TypeError, and
+     * under PHP 7 `count(false)===1` made the legacy `count($newId) > 1`
+     * check only work by accident (a found row has two columns).
+     *
+     * @param string $name
+     * @return array|false
      */
     public static function getName($name) {
 
