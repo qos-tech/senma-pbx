@@ -261,6 +261,20 @@ if [ ! -f "$ASTERISK_ETC/rtp.conf" ] && [ -f "$ASTERISK_CONFIG_SRC/rtp.conf" ]; 
     cp "$ASTERISK_CONFIG_SRC/rtp.conf" "$ASTERISK_ETC/rtp.conf"
 fi
 
+# TASK-0034I-R4: app_queue declines to load when queues.conf is absent
+# (rc.14 pilot: "No call queueing config file (queues.conf)", Queue /
+# QueueStatus unavailable, PHP foreach(false) in AMI::get_queues()).
+# Existing asterisk-etc volumes never received this file (it was never
+# among docker/asterisk-config/*.conf), so the first-boot block below
+# never retrofits it. Seed when missing only -- never overwrite an
+# operator-customized queues.conf, and never duplicate Realtime queue
+# definitions into this file (extconfig queues/queue_members remain
+# the sole source of truth for queue objects).
+if [ ! -f "$ASTERISK_ETC/queues.conf" ] && [ -f "$ASTERISK_CONFIG_SRC/queues.conf" ]; then
+    echo "[asterisk-entrypoint] seeding queues.conf (TASK-0034I-R4, app_queue base init; Realtime remains SoT)"
+    cp "$ASTERISK_CONFIG_SRC/queues.conf" "$ASTERISK_ETC/queues.conf"
+fi
+
 # TASK-0035E3: project-owned logger.conf contract. Existing asterisk-etc
 # volumes still carry the TASK-0005 "full-only" file (no console channel),
 # which is exactly why `asterisk -rvvv` shows no useful live diagnostics
