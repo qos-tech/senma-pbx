@@ -291,6 +291,10 @@ run_suite "php8-runtime-warning-smoke" "php8-runtime-warning-smoke-test.sh"
 # get_queues false-vs-empty hardening. Recreates asterisk once to prove
 # entrypoint seed; restores queues.conf on cleanup.
 run_suite "queue-runtime-smoke" "queue-runtime-smoke-test.sh"
+# TASK-0034I-R5: QueuesController ADD/EDIT PHP 8 hardening (rc.15 pilot
+# HTTP 500 on /queues/add). Owns a disposable queue fixture cleaned up
+# on success/failure.
+run_suite "queue-management-php8-smoke" "queue-management-php8-smoke-test.sh"
 # TASK-0033A: lightweight, non-destructive backup/restore validation --
 # placed after restart-smoke (both are infra/lifecycle-adjacent rather
 # than a specific controller's CRUD flow) and before the external-*
