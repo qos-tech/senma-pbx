@@ -23,6 +23,18 @@ require_once "AMI.php";
 $ami = new AMI() ;
 $queues = $ami->get_queues() ;
 
+header('Content-Type: application/json; charset=UTF-8');
+
+// TASK-0034I-R4: distinguish QueueStatus failure (false) from a valid
+// empty queue list ([]). Failure must not foreach(false), must not
+// fabricate queue rows, and must degrade the AJAX poller safely (non-2xx
+// so jQuery success does not treat null as an update payload).
+if ( $queues === false ) {
+    http_response_code(503);
+    echo 'null';
+    exit;
+}
+
 $ret = array() ;
 
 foreach ($queues as $key => $value) {
