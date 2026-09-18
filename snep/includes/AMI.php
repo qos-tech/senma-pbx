@@ -295,6 +295,36 @@
 
             $cmd_return = $this->sendrecv( $cmd, "Event: QueueStatusComplete\r\n" );
 
+            // TASK-0034I-R4: documented contract is array on success /
+            // false on failure. sendrecv may return:
+            //   - false (socket/timeout/hard failure)
+            //   - [['response'=>'Error', ...]] when QueueStatus is
+            //     unavailable (e.g. app_queue Not Running) -- that is
+            //     still failure, not an empty queue list
+            //   - [] when QueueStatus completed with zero queues
+            // Do not foreach(false), cast false to array, or treat an
+            // AMI Error response as successful empty [].
+            if ( $cmd_return === false || !is_array( $cmd_return ) )
+            {
+                return false;
+            }
+
+            if ( isset( $cmd_return["response"] )
+                && strcasecmp( (string) $cmd_return["response"], "Error" ) === 0 )
+            {
+                return false;
+            }
+
+            foreach ( $cmd_return as $packet )
+            {
+                if ( is_array( $packet )
+                    && isset( $packet["response"] )
+                    && strcasecmp( (string) $packet["response"], "Error" ) === 0 )
+                {
+                    return false;
+                }
+            }
+
             $queues = array(); // holding all the queues and their data
             $queue_members = array(); // holding all queue members
 

@@ -287,6 +287,10 @@ run_suite "system-status-runtime-smoke" "system-status-runtime-smoke-test.sh"
 # and docs/tasks/0034i-system-status-dependency-runtime-resource-closure.md.
 run_suite "systemstatus-dashboard-smoke" "systemstatus-dashboard-smoke-test.sh"
 run_suite "php8-runtime-warning-smoke" "php8-runtime-warning-smoke-test.sh"
+# TASK-0034I-R4: queue runtime (queues.conf / app_queue) + AMI
+# get_queues false-vs-empty hardening. Recreates asterisk once to prove
+# entrypoint seed; restores queues.conf on cleanup.
+run_suite "queue-runtime-smoke" "queue-runtime-smoke-test.sh"
 # TASK-0033A: lightweight, non-destructive backup/restore validation --
 # placed after restart-smoke (both are infra/lifecycle-adjacent rather
 # than a specific controller's CRUD flow) and before the external-*
