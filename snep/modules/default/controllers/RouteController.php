@@ -157,7 +157,9 @@ class RouteController extends Zend_Controller_Action {
         $this->view->routes = $routes;
         $this->view->lineNumber = $lineNumber;
         $this->view->hide_routes = $hide_routes;
-        $this->view->url = "{$this->getFrontController()->getBaseUrl()}/{$this->getRequest()->getControllerName()}";
+        // TASK-0034I-R7: prefer canonical action URL over raw getBaseUrl()
+        // concatenation (getBaseUrl() may already include /index.php).
+        $this->view->url = Snep_Url::actionUrl($this->getRequest()->getControllerName());
 
 
     }
@@ -313,7 +315,6 @@ class RouteController extends Zend_Controller_Action {
      */
     public function editAction() {
 
-        $id = $this->getRequest()->getParam('id');
         $this->view->breadcrumb = Snep_Breadcrumb::renderPath(array(
                     $this->view->translate("Routes"),
                     $this->view->translate("Edit")));
@@ -321,8 +322,16 @@ class RouteController extends Zend_Controller_Action {
         $form = $this->getForm();
         $this->view->form = $form;
 
+        // TASK-0034I-R7: mysql_escape_string() removed in PHP 7+ — fatal on
+        // every edit. PBX_Rules::get() already binds id with where('id = ?').
+        // Cast to int for the numeric PK; reject non-positive ids as 404.
+        $id = (int) $this->getRequest()->getParam('id');
+        if ($id < 1) {
+            throw new Zend_Controller_Action_Exception('Page not found.', 404);
+        }
+
         try {
-            $rule = PBX_Rules::get(mysql_escape_string($id));
+            $rule = PBX_Rules::get($id);
         } catch (PBX_Exception_NotFound $ex) {
             throw new Zend_Controller_Action_Exception('Page not found.', 404);
         }
@@ -371,13 +380,17 @@ class RouteController extends Zend_Controller_Action {
         $form = $this->getForm();
         $this->view->form = $form;
 
-        $id = $this->getRequest()->getParam('id');
+        // TASK-0034I-R7: same mysql_escape_string() fatal as editAction.
+        $id = (int) $this->getRequest()->getParam('id');
+        if ($id < 1) {
+            throw new Zend_Controller_Action_Exception('Page not found.', 404);
+        }
         $this->view->breadcrumb = Snep_Breadcrumb::renderPath(array(
                     $this->view->translate("Routes"),
                     $this->view->translate("Duplicate")));
 
         try {
-            $rule = PBX_Rules::get(mysql_escape_string($id));
+            $rule = PBX_Rules::get($id);
         } catch (PBX_Exception_NotFound $ex) {
             throw new Zend_Controller_Action_Exception('Page not found.', 404);
         }
@@ -432,10 +445,19 @@ class RouteController extends Zend_Controller_Action {
 
         $assert = true;
 
-        parse_str($post['actions_order'], $actions_order);
+        parse_str(isset($post['actions_order']) ? $post['actions_order'] : '', $actions_order);
         $forms = array();
+        // TASK-0034I-R7: empty/missing actions_order must not foreach(null)
+        // under PHP 8 (bare create path).
+        $action_ids = (isset($actions_order['actions_list']) && is_array($actions_order['actions_list']))
+            ? $actions_order['actions_list']
+            : array();
 
-        foreach ($actions_order['actions_list'] as $action) {
+        foreach ($action_ids as $action) {
+            if (!isset($post["action_$action"]["action_type"])) {
+                $assert = false;
+                continue;
+            }
             $real_action = new $post["action_$action"]["action_type"]();
             $action_config = new Snep_Rule_ActionConfig($real_action->getConfig());
             $action_config->setActionId("action_$action");
@@ -626,7 +648,13 @@ class RouteController extends Zend_Controller_Action {
 
         if (isset($post['actions_order'])) {
             parse_str($post['actions_order'], $actions_order);
-            foreach ($actions_order['actions_list'] as $action) {
+            $action_ids = (isset($actions_order['actions_list']) && is_array($actions_order['actions_list']))
+                ? $actions_order['actions_list']
+                : array();
+            foreach ($action_ids as $action) {
+                if (!isset($post["action_$action"]["action_type"])) {
+                    continue;
+                }
                 $real_action = new $post["action_$action"]["action_type"]();
                 $action_config = new Snep_Rule_ActionConfig($real_action->getConfig());
                 $real_action->setConfig($action_config->parseConfig($post["action_$action"]));

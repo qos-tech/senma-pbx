@@ -32,18 +32,18 @@ $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/route.css" );
       <div class="panel panel-default">
         <div class="panel-heading">
           <div class="snep-body-top-buttons">
-            <a class="btn btn-outline btn-add" style="margin-right: 5px;" href="<?php echo $this->baseUrl(); ?>/simulator " role="button" data-intro="<?php echo $this->translate('You can Simulate what will happen when a call are made!');?>"><?php echo $this->translate("Simulator")?></a>
-            <a class="btn btn-add" href="<?php echo $this->url ?>/add/ " role="button"><?php echo $this->translate("Add Rule")?></a>
+            <a class="btn btn-outline btn-add" style="margin-right: 5px;" href="<?php echo Snep_Url::actionUrl('simulator'); ?>" role="button" data-intro="<?php echo $this->translate('You can Simulate what will happen when a call are made!');?>"><?php echo $this->translate("Simulator")?></a>
+            <a class="btn btn-add" href="<?php echo $this->url ?>/add" role="button"><?php echo $this->translate("Add Rule")?></a>
             <div class="btn-group">
               <button type="button" class="btn btn-default dropdown-toggle" data-toggle="dropdown" aria-haspopup="true" aria-expanded="false">
                 <?php echo $this->translate("Filter by")?> <span class="caret"></span>
               </button>
               <ul class="dropdown-menu" >
-                <li><a class="btn-default" href="<?php echo $this->baseUrl(); ?>/index.php/route?type=incoming"><?php echo $this->translate("Incoming Rule Only")?></a></li>
-                <li><a class="btn-default" href="<?php echo $this->baseUrl(); ?>/index.php/route?type=outgoing"><?php echo $this->translate("Outgoing Rule Only")?></a></li>
-                <li><a class="btn-default" href="<?php echo $this->baseUrl(); ?>/index.php/route?type=others"><?php echo $this->translate("Others Rule Only")?></a></li>
+                <li><a class="btn-default" href="<?php echo Snep_Url::actionUrl('route'); ?>?type=incoming"><?php echo $this->translate("Incoming Rule Only")?></a></li>
+                <li><a class="btn-default" href="<?php echo Snep_Url::actionUrl('route'); ?>?type=outgoing"><?php echo $this->translate("Outgoing Rule Only")?></a></li>
+                <li><a class="btn-default" href="<?php echo Snep_Url::actionUrl('route'); ?>?type=others"><?php echo $this->translate("Others Rule Only")?></a></li>
                 <li role="separator" class="divider"></li>
-                <li><a class="btn-default" href="<?php echo $this->baseUrl(); ?>/index.php/route"><?php echo $this->translate("All rules")?></a></li>
+                <li><a class="btn-default" href="<?php echo Snep_Url::actionUrl('route'); ?>"><?php echo $this->translate("All rules")?></a></li>
               </ul>
             </div>
             <?php if ($this->hide_routes === "1") {?>
@@ -55,7 +55,7 @@ $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/route.css" );
 
             <div class="snep-body-search" >
               <?php if($this->key){ ?>
-                <a class='sn-dash-add' href="<?php echo $this->baseUrl(); ?>/default/index/index?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>" data-intro="<?php echo $this->translate('You can Add a shortcut of this screen to your Dashboard')?>"></a>
+                <a class='sn-dash-add' href="<?php echo Snep_Url::actionUrl('index', 'index', array(), 'default'); ?>?dashboard_add=<?php echo $this->key ?>" title="<?php echo $this->translate('Add to dashboard');?>" data-intro="<?php echo $this->translate('You can Add a shortcut of this screen to your Dashboard')?>"></a>
               <?php } ?>
             </div>
           </div>
@@ -96,9 +96,9 @@ $this->headLink()->appendStylesheet( $this->baseUrl() . "/css/route.css" );
                     <div class="checkbox">
                       <label><input type="checkbox" data-toggle="toggle" data-size="small" <?php echo $route['ativa'] === '1' ? 'checked' : ''; ?> id="rule_state" value="<?php echo $route['id'];?>" onchange="change_status(this.value)" ></label>
                     </div>
-                    <a class="btn btn-default btn-sm"  href='<?php echo $this->baseUrl(); ?>/index.php/route/duplicate/<?php echo $route['id']?>' ><?php echo $this->translate('Duplicate')?></a>
-                    <a class="btn btn-edit btn-sm"  href='<?php echo $this->baseUrl(); ?>/index.php/route/edit/<?php echo $route['id'] ?>'><?php echo $this->translate('Edit')?></a>
-                    <a class="btn btn-danger btn-sm"  href="<?php echo $this->baseUrl(); ?>/route/remove/id/<?php echo $route['id'] ?>" role="button"><?php echo $this->translate('Delete')?></a>
+                    <a class="btn btn-default btn-sm"  href="<?php echo Snep_Url::actionUrl('route', 'duplicate', array('id' => $route['id'])); ?>" ><?php echo $this->translate('Duplicate')?></a>
+                    <a class="btn btn-edit btn-sm"  href="<?php echo Snep_Url::actionUrl('route', 'edit', array('id' => $route['id'])); ?>"><?php echo $this->translate('Edit')?></a>
+                    <a class="btn btn-danger btn-sm"  href="<?php echo Snep_Url::actionUrl('route', 'remove', array('id' => $route['id'])); ?>" role="button"><?php echo $this->translate('Delete')?></a>
                   </td>
                 </tr>
               <?php endforeach ?>
@@ -129,6 +129,6 @@ jQuery(document).ready(function() {
  * @param id - rule id
  */
 function change_status(id) {
-    jQuery.post('<?php echo $this->baseUrl(); ?>/index.php/route/toogle/', {route: id});
+    jQuery.post('<?php echo Snep_Url::actionUrl('route', 'toogle'); ?>/', {route: id});
 }
 </script>
