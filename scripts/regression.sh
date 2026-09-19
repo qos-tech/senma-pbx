@@ -295,6 +295,9 @@ run_suite "queue-runtime-smoke" "queue-runtime-smoke-test.sh"
 # HTTP 500 on /queues/add). Owns a disposable queue fixture cleaned up
 # on success/failure.
 run_suite "queue-management-php8-smoke" "queue-management-php8-smoke-test.sh"
+# TASK-0034I-R6: recording report static URL + date resolution (rc.16 pilot
+# /index.php/arquivos bug + CDR UTC vs recording-local midnight boundary).
+run_suite "recording-report-url-smoke" "recording-report-url-smoke-test.sh"
 # TASK-0033A: lightweight, non-destructive backup/restore validation --
 # placed after restart-smoke (both are infra/lifecycle-adjacent rather
 # than a specific controller's CRUD flow) and before the external-*
