@@ -27,6 +27,16 @@
  * @copyright Copyright (c) 2010 OpenS Tecnologia
  * @author    Rafael Pereira Bozzetti <rafael@opens.com.br>
  *
+ * Modified for SENMA PBX:
+ * Copyright (C) 2026 QOS Tech
+ * SPDX-License-Identifier: GPL-3.0-or-later
+ *
+ * TASK-0034I-R6: static recording URLs must use the public web base
+ * (path.web), not the front-controller base URL (which may include
+ * /index.php). Recording directory resolution prefers the embedded
+ * YYYYMMDD from CDR userfield when present, then calldate, then
+ * calldate reinterpreted from UTC into system timezone (CDR vs AGI
+ * recording-local date mismatch).
  */
 class Snep_Manutencao {
 
@@ -98,6 +108,96 @@ class Snep_Manutencao {
     }
 
     /**
+     * Public (static-asset) web base URL for recordings under /arquivos.
+     *
+     * Distinct from Zend_Controller_Front::getBaseUrl(), which is the
+     * front-controller base and may include "/index.php" when the
+     * request is served through the front controller. Static files live
+     * under DocumentRoot and must not be prefixed with the script name.
+     *
+     * Uses setup.conf path.web (TASK-0012): "" for root deployment,
+     * "/subdir" for subdirectory deployment. Never hardcodes a host.
+     *
+     * @return string
+     */
+    public static function publicAssetBaseUrl() {
+        $config = Zend_Registry::get('config');
+        $web = '';
+        if (isset($config->system->path->web)) {
+            $web = (string) $config->system->path->web;
+        }
+        return rtrim($web, '/');
+    }
+
+    /**
+     * Candidate YYYY-MM-DD directory names for a recording lookup.
+     *
+     * Order (first match that exists on disk wins in arquivoExiste):
+     * 1. Embedded YYYYMMDD tokens from userfield (AGI recording-local
+     *    date from date() under system timezone — canonical when the
+     *    configured userfield pattern includes AA/MM/DD).
+     * 2. calldate calendar day (historical behavior).
+     * 3. calldate reinterpreted as UTC into system timezone (covers the
+     *    known CDR=UTC vs recording-local midnight boundary without
+     *    requiring a userfield date token).
+     *
+     * @param string $calldate
+     * @param string $userfield
+     * @return string[]
+     */
+    public static function recordingDateCandidates($calldate, $userfield) {
+        $candidates = array();
+
+        if (is_string($userfield) && $userfield !== '') {
+            if (preg_match_all('/(?<!\d)(\d{4})(\d{2})(\d{2})(?!\d)/', $userfield, $matches, PREG_SET_ORDER)) {
+                foreach ($matches as $match) {
+                    $y = (int) $match[1];
+                    $m = (int) $match[2];
+                    $d = (int) $match[3];
+                    if (checkdate($m, $d, $y)) {
+                        $candidates[] = sprintf('%04d-%02d-%02d', $y, $m, $d);
+                    }
+                }
+            }
+        }
+
+        if (is_string($calldate) && strlen($calldate) >= 10) {
+            $fromCalldate = substr($calldate, 0, 10);
+            if (preg_match('/^\d{4}-\d{2}-\d{2}$/', $fromCalldate)) {
+                $candidates[] = $fromCalldate;
+            }
+        }
+
+        if (is_string($calldate) && strlen($calldate) >= 19) {
+            try {
+                $config = Zend_Registry::get('config');
+                $tzName = isset($config->system->timezone)
+                    ? (string) $config->system->timezone
+                    : 'America/Sao_Paulo';
+                $utc = new DateTime(substr($calldate, 0, 19), new DateTimeZone('UTC'));
+                $utc->setTimezone(new DateTimeZone($tzName));
+                $candidates[] = $utc->format('Y-m-d');
+            } catch (Exception $e) {
+                // Keep prior candidates; filesystem probe remains authoritative.
+            }
+        }
+
+        return array_values(array_unique($candidates));
+    }
+
+    /**
+     * Build the browser URL for a recording relative path under /arquivos.
+     *
+     * @param string $relative e.g. "2026-09-18/file.wav" or "storage_x/..."
+     * @return string
+     */
+    public static function recordingPublicUrl($relative) {
+        $base = self::publicAssetBaseUrl();
+        $relative = ltrim(str_replace('\\', '/', (string) $relative), '/');
+        return $base . '/arquivos/' . $relative;
+    }
+
+    /**
      * Busca arquivo de gravacao, retorna caminho do mesmo ou não
      * @param <string> $calldate
      * @param <string> $userfield
@@ -110,72 +210,98 @@ class Snep_Manutencao {
      * its only external call site (CallsReportController.php:471)
      * already uses ::. Declared static to match. See
      * docs/tasks/0002-php84-compatibility-baseline.md.
+     *
+     * TASK-0034I-R6: returns a static public URL (/arquivos/...), never
+     * /index.php/arquivos/..., and resolves the dated directory using
+     * recordingDateCandidates().
      */
     public static function arquivoExiste($calldate, $userfield) {
 
-        $data = substr($calldate, 0, 10);
-        $ano = substr($calldate, 0, 4);
-        $mes = substr($calldate, 5, 2);
-        $dia = substr($calldate, 8, 2);
-        $hora = substr($calldate, 11, 2);
         $config = Zend_Registry::get('config');
         $file_dir = $config->ambiente->path_voz;
         $arquivos = substr($file_dir, 0, strlen($file_dir) - 1);
 
-        // TASK-0012: was hardcoded "/snep/arquivos/..." -- this is a
-        // browser-facing URL (rendered as an <audio src> in the calls
-        // report), not a filesystem path, so it must respect the
-        // deployment's actual base URL. See
-        // docs/tasks/0012-web-base-path-cleanup.md.
-        $baseUrl = Zend_Controller_Front::getInstance()->getBaseUrl();
-
-        $conference = explode("_", $userfield);
-        if ($conference[3] >= 901 && $conference[3] <= 915) {
-            $conf = true;
-        } else {
-            $conf = false;
+        $conference = explode("_", (string) $userfield);
+        $conf = false;
+        if (isset($conference[3]) && is_numeric($conference[3])) {
+            $room = (int) $conference[3];
+            if ($room >= 901 && $room <= 915) {
+                $conf = true;
+            }
         }
 
-
-        if (file_exists($arquivos)) {
-
-            // Se existir pasta com data, já organizado pelo movefiles.
-            if (file_exists($arquivos . "/" . $data . "/" . $userfield . ".wav")) {
-                return $baseUrl . "/arquivos/" . $data . "/" . $userfield . ".wav";
-            } elseif (file_exists($arquivos . "/" . $data . "/" . $userfield . ".mp3")) {
-                return $baseUrl . "/arquivos/" . $data . "/" . $userfield . ".mp3";
-            }elseif (file_exists($arquivos . "/" . $data . "/" . $userfield . ".wav")) {
-                return $baseUrl . "/arquivos/" . $data . "/" . $userfield . ".wav";
-            } elseif (file_exists($arquivos . "/" . $data . "/" . $userfield . ".WAV")) {
-                return $baseUrl . "/arquivos/" . $data . "/" . $userfield . ".WAV";
-            } elseif ($conf == true) {
-
-                if (file_exists($arquivos . "/" . $conference[3] . "/" . $userfield . ".wav")) {
-                    return $baseUrl . "/arquivos/" . $conference[3] . "/" . $userfield . ".wav";
-                }
-            } else {
-
-                $storages = self::listaStorage($arquivos);
-
-                foreach ($storages as $storage) {
-
-                    if (file_exists($arquivos . "/" . $storage . "/" . $data . "/" . $userfield . ".wav")) {
-                        return $baseUrl . "/arquivos/" . $storage . "/" . $data . "/" . $userfield . ".wav";
-                    } elseif (file_exists($arquivos . "/" . $storage . "/" . $data . "/" . $userfield . ".mp3")) {
-                        return $baseUrl . "/arquivos/" . $storage . "/" . $data . "/" . $userfield . ".mp3";
-                    } elseif (file_exists($arquivos . "/" . $storage . "/" . $data . "/" . $userfield . ".WAV")) {
-                        return $baseUrl . "/arquivos/" . $storage . "/" . $data . "/" . $userfield . ".WAV";
-                    } elseif ($conf == true) {
-
-                        if (file_exists($arquivos . "/" . $storage . "/" . $conference[3] . "/" . $userfield . ".wav")) {
-                            return $baseUrl . "/arquivos/" . $storage . "/" . $conference[3] . "/" . $userfield . ".wav";
-                        }
-                    }
-                }
-            }
-        } else {
+        if (!file_exists($arquivos)) {
             return false;
         }
+
+        $dateCandidates = self::recordingDateCandidates($calldate, $userfield);
+
+        foreach ($dateCandidates as $data) {
+            $found = self::findRecordingUnderDate($arquivos, $data, $userfield, $conf, $conference);
+            if ($found !== false) {
+                return $found;
+            }
+        }
+
+        // Conference rooms historically live under /arquivos/<room>/ without
+        // a date directory — try once regardless of date candidates.
+        if ($conf === true && isset($conference[3])) {
+            $room = $conference[3];
+            if (file_exists($arquivos . "/" . $room . "/" . $userfield . ".wav")) {
+                return self::recordingPublicUrl($room . "/" . $userfield . ".wav");
+            }
+            $storages = self::listaStorage($arquivos);
+            foreach ($storages as $storage) {
+                if (file_exists($arquivos . "/" . $storage . "/" . $room . "/" . $userfield . ".wav")) {
+                    return self::recordingPublicUrl($storage . "/" . $room . "/" . $userfield . ".wav");
+                }
+            }
+        }
+
+        return false;
+    }
+
+    /**
+     * Probe dated + storage paths for one YYYY-MM-DD candidate.
+     *
+     * @param string $arquivos
+     * @param string $data
+     * @param string $userfield
+     * @param bool $conf
+     * @param array $conference
+     * @return string|false
+     */
+    private static function findRecordingUnderDate($arquivos, $data, $userfield, $conf, $conference) {
+        $exts = array('.wav', '.mp3', '.WAV');
+        foreach ($exts as $ext) {
+            if (file_exists($arquivos . "/" . $data . "/" . $userfield . $ext)) {
+                return self::recordingPublicUrl($data . "/" . $userfield . $ext);
+            }
+        }
+
+        if ($conf === true && isset($conference[3])) {
+            $room = $conference[3];
+            if (file_exists($arquivos . "/" . $room . "/" . $userfield . ".wav")) {
+                return self::recordingPublicUrl($room . "/" . $userfield . ".wav");
+            }
+        }
+
+        $storages = self::listaStorage($arquivos);
+        foreach ($storages as $storage) {
+            foreach ($exts as $ext) {
+                if (file_exists($arquivos . "/" . $storage . "/" . $data . "/" . $userfield . $ext)) {
+                    return self::recordingPublicUrl($storage . "/" . $data . "/" . $userfield . $ext);
+                }
+            }
+            if ($conf === true && isset($conference[3])) {
+                $room = $conference[3];
+                if (file_exists($arquivos . "/" . $storage . "/" . $room . "/" . $userfield . ".wav")) {
+                    return self::recordingPublicUrl($storage . "/" . $room . "/" . $userfield . ".wav");
+                }
+            }
+        }
+
+        return false;
     }
 
     /**
@@ -227,10 +353,8 @@ class Snep_Manutencao {
 
         $zip->close();
 
-        // TASK-0012: was hardcoded "/snep/arquivos/..." -- see
-        // docs/tasks/0012-web-base-path-cleanup.md.
-        $baseUrl = Zend_Controller_Front::getInstance()->getBaseUrl();
-        return $baseUrl . "/arquivos/" . $strNomeArquivo;
+        // TASK-0012 / TASK-0034I-R6: static asset URL, not front-controller.
+        return self::recordingPublicUrl($strNomeArquivo);
     }
 
 }
