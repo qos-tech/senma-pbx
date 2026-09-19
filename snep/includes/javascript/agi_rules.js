@@ -330,7 +330,7 @@ addAction = function(action_spec) {
     newAction.actionType  = action_spec.type;
     newAction.rawId       = action_spec.id;
 
-    caption = "<a class='removeButton' href='#' onclick=\"removeAction($('" + action_spec.id + "')); return false;\"><img src='/snep/images/remover.png'></a>" + caption;
+    caption = "<a class='removeButton' href='#' onclick=\"removeAction($('" + action_spec.id + "')); return false;\"><img src='" + (typeof SNEP_BASEURL !== 'undefined' ? SNEP_BASEURL : '') + "/images/remover.png'></a>" + caption;
 
     newAction.innerHTML = caption;
 

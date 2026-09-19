@@ -25,6 +25,10 @@ Snep_Config::setConfigFile(APPLICATION_PATH . '/includes/setup.conf');
 
 $config = Snep_Config::getConfig();
 
+// TASK-0034I-R7: keep JS globals aligned with Snep_Url contract
+// (path.web = deployment base; never put index.php into static assets).
+require_once "Snep/Url.php";
+
 defined('SNEP_VENDOR') || define('SNEP_VENDOR', $config->ambiente->emp_nome);
 defined('SNEP_VERSION') || define('SNEP_VERSION', trim(file_get_contents(APPLICATION_PATH . "/configs/snep_version")));
 
@@ -35,5 +39,5 @@ defined('APPLICATION_ENV')
 
 ?>
 SNEP_VERSION = "<?php echo SNEP_VERSION; ?>";
-SNEP_BASEURL = "<?php echo $config->system->path->web; ?>";
-SNEP_SCRIPTURL = "<?php echo $config->system->path->web; ?>/index.php";
+SNEP_BASEURL = "<?php echo Snep_Url::webBasePath(); ?>";
+SNEP_SCRIPTURL = "<?php echo Snep_Url::scriptUrl(); ?>";
