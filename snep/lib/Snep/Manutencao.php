@@ -121,12 +121,11 @@ class Snep_Manutencao {
      * @return string
      */
     public static function publicAssetBaseUrl() {
-        $config = Zend_Registry::get('config');
-        $web = '';
-        if (isset($config->system->path->web)) {
-            $web = (string) $config->system->path->web;
-        }
-        return rtrim($web, '/');
+        // TASK-0034I-R7: delegate to the canonical URL contract.
+        // require_once keeps CLI probes (R6 smoke) working without the
+        // full Zend/Snep autoloader bootstrap.
+        require_once dirname(__FILE__) . '/Url.php';
+        return Snep_Url::publicAssetBaseUrl();
     }
 
     /**
