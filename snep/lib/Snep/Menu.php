@@ -310,13 +310,10 @@ class Snep_Menu {
             $font = $this->getFont();
 
             if ($font == 'sn-dashboard') {
-                // TASK-0012: was hardcoded "/snep/..." -- see
-                // docs/tasks/0012-web-base-path-cleanup.md. Safe to call
-                // Zend_Controller_Front here (unlike Snep_Modules'
-                // bootstrap-time menu construction): this runs during
-                // normal layout/view rendering, well after MVC dispatch.
-                $dashboardBaseUrl = Zend_Controller_Front::getInstance()->getBaseUrl();
-                $html .= "<a href='{$dashboardBaseUrl}/index.php/default/index'><i class='sn-dashboard fa-fw'></i><span class='side-menu-title'>Dashboard</span></a>";
+                // TASK-0012 / TASK-0034I-R7: do not append /index.php on top of
+                // Zend getBaseUrl() (often already "/index.php") — that produced
+                // /index.php/index.php/default/index. Use the canonical helper.
+                $html .= "<a href='" . Snep_Url::actionUrl('index', 'index', array(), 'default') . "'><i class='sn-dashboard fa-fw'></i><span class='side-menu-title'>Dashboard</span></a>";
             } else {
 
                 if (count(explode("_", $html)) == 2) {
