@@ -555,12 +555,14 @@ class CallsReportController extends Zend_Controller_Action
 
             $result_data[$value['uniqueid']]['file_path'] = false;
             if ($record) {
+                // TASK-0034I-R6: file_path = static public URL (/arquivos/...);
+                // file_name = basename only (download= attribute). Do not put
+                // the front-controller base (/index.php/...) into either field.
                 $filePath = Snep_Manutencao::arquivoExiste($value['calldate'], $value['userfield']);
                 $result_data[$value['uniqueid']]["file_name"] = $value['userfield'] . ".wav";
 
                 if ($filePath) {
                     $result_data[$value['uniqueid']]['file_path'] = $filePath;
-                    $result_data[$value['uniqueid']]['file_name'] = $filePath;
                     $result_data[$value['uniqueid']]['record'] = true;
                 }
             }
